@@ -1,0 +1,9 @@
+{
+  "name": "ardupilot-mcp",
+  "version": "0.1.2",
+  "description": "Diagnose ArduPilot DataFlash flight logs over MCP, with a /diagnose command.",
+  "author": { "name": "Furkan IŞIKAY" },
+  "repository": "https://github.com/furkanisikay/ardupilot-mcp",
+  "license": "MIT",
+  "keywords": ["ardupilot", "mcp", "flight-logs", "diagnostics", "dataflash"]
+}

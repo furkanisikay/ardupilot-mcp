@@ -1,0 +1,36 @@
+# AI maintenance — lets maintainers/contributors invoke Claude on issues & PRs by
+# mentioning "@claude" (e.g. "@claude add a check for compass-vs-GPS heading", or
+# "@claude this diagnosis looks wrong on my attached log"). Claude follows the repo
+# rules in AGENTS.md (add a check = one module + one test + cite the source + update
+# the docs), opens a PR, and CI gates it before it can reach main.
+#
+# OPT-IN: this workflow only runs once an ANTHROPIC_API_KEY repository secret is set.
+name: Claude
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened]
+
+jobs:
+  claude:
+    if: |
+      (github.event.issue.pull_request != null || github.event_name == 'issues') &&
+      (contains(github.event.comment.body, '@claude') || contains(github.event.issue.body, '@claude'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Run Claude
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}

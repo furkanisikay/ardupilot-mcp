@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ardupilot-mcp"
+dynamic = ["version"]
+description = "ArduPilot uçuş loglarını teşhis eden deterministik MCP sunucusu · Deterministic MCP server that diagnoses ArduPilot DataFlash flight logs"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Furkan IŞIKAY" }]
+keywords = ["mcp", "model-context-protocol", "ardupilot", "dataflash", "flight-log", "diagnostics", "mavlink", "drone", "uav"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+dependencies = [
+    "mcp>=1.27",
+    "pymavlink>=2.4.49",
+    "numpy>=2.0",
+]
+
+# Lint/type tools are pinned so local and CI use the exact same versions
+# (a newer ruff/mypy can introduce new rules and fail CI that passed locally).
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "ruff==0.15.17", "mypy==2.1.0", "build>=1.2"]
+
+[project.urls]
+Homepage = "https://github.com/furkanisikay/ardupilot-mcp"
+Repository = "https://github.com/furkanisikay/ardupilot-mcp"
+Issues = "https://github.com/furkanisikay/ardupilot-mcp/issues"
+Changelog = "https://github.com/furkanisikay/ardupilot-mcp/blob/main/CHANGELOG.md"
+
+[project.scripts]
+ardupilot-mcp = "ardupilot_mcp.__main__:main"
+
+[tool.hatch.version]
+path = "ardupilot_mcp/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["ardupilot_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = ["ardupilot_mcp", "README.md", "README.en.md", "LICENSE", "CHANGELOG.md", "docs/SOURCES.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+# pycodestyle(E,W), pyflakes(F), isort(I), pyupgrade(UP), bugbear(B), comprehensions(C4)
+select = ["E", "W", "F", "I", "UP", "B", "C4"]
+ignore = [
+    "E501",   # line length handled by the formatter, not enforced as an error
+    "UP042",  # `class X(str, Enum)` is a deliberate choice (clean Pydantic/JSON value serialization)
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+files = ["ardupilot_mcp"]
+warn_unused_ignores = true

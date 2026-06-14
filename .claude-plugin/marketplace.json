@@ -1,0 +1,13 @@
+{
+  "name": "ardupilot-tools",
+  "owner": { "name": "Furkan IŞIKAY" },
+  "plugins": [
+    {
+      "name": "ardupilot-mcp",
+      "source": "./",
+      "description": "Diagnose ArduPilot DataFlash flight logs over MCP, with a /diagnose command.",
+      "version": "0.1.2",
+      "author": { "name": "Furkan IŞIKAY" }
+    }
+  ]
+}

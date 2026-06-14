@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ardupilot-mcp": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": ["ardupilot-mcp"]
+    }
+  }
+}

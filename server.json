@@ -1,0 +1,20 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.furkanisikay/ardupilot-mcp",
+  "description": "Diagnoses ArduPilot DataFlash flight logs over the Model Context Protocol.",
+  "repository": {
+    "url": "https://github.com/furkanisikay/ardupilot-mcp",
+    "source": "github"
+  },
+  "version": "0.1.2",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "ardupilot-mcp",
+      "version": "0.1.2",
+      "runtimeHint": "uvx",
+      "transport": { "type": "stdio" }
+    }
+  ]
+}

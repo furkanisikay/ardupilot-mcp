@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Logs / fixtures (büyük .bin/.tlog/.ulog dosyaları repoya girmesin — fixture'lar ayrı yönetilecek)
+*.tlog
+*.ulg
+# NOT: test fixture .bin dosyaları için tests/fixtures/ altında seçici allow-list kullanılacak (plan aşamasında)
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local Claude Code settings (machine-specific)
+.claude/settings.local.json
+
+# Demo output
+examples/*.bin
+
+# Downloaded real logs (third-party data; not ours to redistribute)
+_reallogs/

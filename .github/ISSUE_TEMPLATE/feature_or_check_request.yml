@@ -1,0 +1,21 @@
+name: "Feature or new check request"
+description: Suggest a new diagnostic check, tool, or capability.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What should it detect / do?
+      description: e.g. "detect compass-vs-GPS heading divergence (toilet-bowl)", or "support PX4 ULog".
+    validations:
+      required: true
+  - type: textarea
+    id: signal
+    attributes:
+      label: How would it be detected from a log? (if you know)
+      description: Which DataFlash message(s)/parameter(s) and what threshold/behaviour signals the problem?
+  - type: textarea
+    id: source
+    attributes:
+      label: Authoritative source (if any)
+      description: An ArduPilot doc/forum/firmware reference for the threshold or behaviour. We require sources for thresholds.

@@ -1,0 +1,94 @@
+name: Publish to PyPI
+
+# Automatic release: bump __version__ in ardupilot_mcp/__init__.py and merge to main.
+# When main carries a version that isn't tagged yet, this builds, publishes to PyPI
+# (Trusted Publishing — no token), then tags vX.Y.Z and creates a GitHub release.
+# No manual `git tag` needed. (Run manually for the first/any release via the Actions
+# tab → "Publish to PyPI" → Run workflow.)
+on:
+  push:
+    branches: [main]
+    paths: ["ardupilot_mcp/__init__.py"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Detect new version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      is_new: ${{ steps.v.outputs.is_new }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # need existing tags to tell whether this version is already released
+      - id: v
+        run: |
+          PKG=$(python -c "import re,pathlib; print(re.search(r'__version__\s*=\s*\"([^\"]+)\"', pathlib.Path('ardupilot_mcp/__init__.py').read_text()).group(1))")
+          echo "version=$PKG" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$PKG" >/dev/null 2>&1; then
+            echo "is_new=false" >> "$GITHUB_OUTPUT"
+            echo "v$PKG is already tagged — nothing to release."
+          else
+            echo "is_new=true" >> "$GITHUB_OUTPUT"
+            echo "New version v$PKG — building and publishing."
+          fi
+
+  build:
+    name: Build distribution
+    needs: check
+    if: needs.check.outputs.is_new == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: [check, build]
+    if: needs.check.outputs.is_new == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # OIDC for PyPI Trusted Publishing (no API token needed)
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true  # re-runs don't fail if the version is already on PyPI
+
+  tag-and-release:
+    name: Tag and GitHub release
+    needs: [check, publish]
+    if: needs.check.outputs.is_new == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # create the tag and the GitHub release
+    steps:
+      - uses: actions/checkout@v6
+      - name: Create and push tag
+        env:
+          V: v${{ needs.check.outputs.version }}
+        run: |
+          git tag "$V"
+          git push origin "$V"
+      - name: GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ needs.check.outputs.version }}
+          name: v${{ needs.check.outputs.version }}
+          generate_release_notes: true

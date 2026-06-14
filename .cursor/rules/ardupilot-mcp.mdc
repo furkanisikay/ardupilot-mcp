@@ -1,0 +1,26 @@
+---
+description: Project rules for ardupilot-mcp (read AGENTS.md)
+globs: ["**/*.py"]
+alwaysApply: true
+---
+
+The authoritative rules are in `AGENTS.md` at the repo root — follow it.
+
+Non-negotiables when editing this codebase:
+
+- **Deterministic core, LLM explains.** Findings come from deterministic checks
+  (thresholds/math/decoded events), never from a model. Don't add model-judgement
+  logic to the server.
+- **Offline & read-only.** The server only parses local files. Never add network I/O,
+  vehicle actuation, or parameter writes — that is the project's safety guarantee.
+- **No unsupported assumptions.** Every threshold/enum/default/fact must be backed by an
+  authoritative source (ArduPilot wiki/firmware, MAVLink, MCP spec), cited in a comment
+  and in `docs/SOURCES.md`. Label our own cut-offs as design choices.
+- **Keep docs in sync.** Adding/renaming a check or MCP tool requires updating
+  `README.md`, `CHANGELOG.md` (and `docs/SOURCES.md` for new thresholds);
+  `tests/test_docs_sync.py` enforces it.
+- **Tests gate everything.** `ruff check`, `ruff format --check`, `mypy ardupilot_mcp`
+  and `pytest` must pass.
+
+Adding a check = one module in `ardupilot_mcp/checks/` (decorated `@register_check`,
+listed in `checks/__init__._CHECK_MODULES`) + one test in `tests/checks/`. See AGENTS.md.

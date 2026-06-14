@@ -1,0 +1,28 @@
+name: "Bug report"
+description: Something broke — a crash, a parse error, a tool that errors, install/setup trouble.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What went wrong?
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      render: text
+  - type: textarea
+    id: error
+    attributes:
+      label: Error output / traceback
+      render: text
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "OS, Python version, ardupilot-mcp version, MCP client (e.g. Claude Desktop)"
+    validations:
+      required: true

@@ -1,0 +1,48 @@
+name: "Wrong or missed diagnosis"
+description: The tool got it wrong on a real log — missed a fault, or flagged a healthy flight. These drive new/fixed checks.
+labels: ["diagnosis"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks — log cases where we got it wrong are the single most useful contribution.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What happened?
+      options:
+        - "Missed a real problem (false negative)"
+        - "Flagged a healthy flight (false positive)"
+        - "Wrong explanation / wrong cause"
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened to the aircraft?
+      description: e.g. "crashed on takeoff — turned out to be an ESC desync", or "flew fine, no issue".
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: What did the tool report?
+      description: Paste the relevant findings from analyze_log (or "nothing").
+      render: text
+  - type: input
+    id: firmware
+    attributes:
+      label: Vehicle & firmware
+      placeholder: "ArduCopter 4.5.7, quad"
+  - type: textarea
+    id: log
+    attributes:
+      label: Log / evidence
+      description: Attach the .bin if you can (drag-and-drop), or paste the relevant message/parameter values. A link to a forum thread also helps.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: I can share this log (it contains no sensitive location data I'm worried about), or I've described the relevant data.
+          required: false
