@@ -6,13 +6,13 @@
     "url": "https://github.com/furkanisikay/ardupilot-mcp",
     "source": "github"
   },
-  "version": "0.1.2",
+  "version": "0.1.3",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "ardupilot-mcp",
-      "version": "0.1.2",
+      "version": "0.1.3",
       "runtimeHint": "uvx",
       "transport": { "type": "stdio" }
     }

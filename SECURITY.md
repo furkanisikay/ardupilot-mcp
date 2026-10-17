@@ -12,9 +12,13 @@ intended use; follow the MCP authorization guidance and bind to localhost.
 
 ## Reporting a vulnerability
 
-Please report security issues privately via GitHub's **"Report a vulnerability"** (Security
-→ Advisories) on this repository, rather than opening a public issue. We'll acknowledge and
-work with you on a fix and disclosure timeline.
+Please report security issues privately, rather than opening a public issue, in either of
+these ways:
+
+- GitHub's **"Report a vulnerability"** (Security → Advisories) on this repository, or
+- email **contact@furkanisikay.com** (security contact).
+
+We'll acknowledge and work with you on a fix and disclosure timeline.
 
 ## Scope notes
 

@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-10-17
+
+### Fixed
+- Pinned `mcp` to `>=1.27,<2`. mcp 2.0 (July 2026) removed `mcp.server.fastmcp`, so fresh
+  installs (`uvx ardupilot-mcp`, `pip install ardupilot-mcp`) crashed on startup with
+  `ModuleNotFoundError`.
+
+### Added
+- `.oss-scanner/Dockerfile` and `.oss-scanner/threat_model.md` for Anthropic's OSS Scanner.
+- A security contact email in `SECURITY.md`.
+
 ## [0.1.2] — 2026-06-14
 
 ### Added
@@ -66,6 +77,7 @@ findings.
   authoritative sources.
 
 [Unreleased]: https://github.com/furkanisikay/ardupilot-mcp/commits/main
+[0.1.3]: https://pypi.org/project/ardupilot-mcp/0.1.3/
 [0.1.2]: https://pypi.org/project/ardupilot-mcp/0.1.2/
 [0.1.1]: https://pypi.org/project/ardupilot-mcp/0.1.1/
 [0.1.0]: https://pypi.org/project/ardupilot-mcp/0.1.0/
