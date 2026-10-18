@@ -22,7 +22,9 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          # The oldest supported Python, matching mypy's python_version: newer numpy
+          # releases (>=3.12 only) ship stubs that a 3.11 target cannot parse.
+          python-version: "3.11"
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
       - name: Ruff (lint)
