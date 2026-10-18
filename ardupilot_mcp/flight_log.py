@@ -17,6 +17,7 @@ the small, event-like message types checks iterate over (ERR/EV/MODE/MSG/...).
 from __future__ import annotations
 
 import math
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Literal
@@ -217,6 +218,9 @@ class FlightLog:
         # decoded on first use (only the notch advice reads them; see ``batches``).
         self._batches: list[ImuBatch] = []
         self._batch_loader: Callable[[FlightLog], list[ImuBatch]] | None = None
+        # The MCP server runs tools on worker threads that share one parsed log, so the
+        # lazily built parts (batches, instance index) are built under this lock.
+        self._lazy_lock = threading.RLock()
         for mtype, records in (messages or {}).items():
             self._tables[mtype] = _Table.from_records(records)
         for mtype, cols in (columns or {}).items():
@@ -357,18 +361,20 @@ class FlightLog:
         Raw sensor-rate data can be most of a large log, so it is not held for tools that
         never look at it. A loader that fails leaves no batches (they are optional data).
         """
-        loader, self._batch_loader = self._batch_loader, None
-        if loader is not None:
-            try:
-                self._batches = loader(self)
-            except Exception:  # noqa: BLE001 - batch data is optional; never fail a tool over it
-                self._batches = []
-        return self._batches
+        with self._lazy_lock:
+            loader, self._batch_loader = self._batch_loader, None
+            if loader is not None:
+                try:
+                    self._batches = loader(self)
+                except Exception:  # noqa: BLE001 - batch data is optional; never fail a tool over it
+                    self._batches = []
+            return self._batches
 
     @batches.setter
     def batches(self, value: list[ImuBatch]) -> None:
-        self._batches = list(value)
-        self._batch_loader = None
+        with self._lazy_lock:
+            self._batches = list(value)
+            self._batch_loader = None
 
     @property
     def available_messages(self) -> set[str]:
@@ -432,14 +438,18 @@ class FlightLog:
         cached = self._instance_index.get(mtype)
         if cached is not None:
             return cached
-        out: dict[int, np.ndarray] = {}
-        name = self.instance_field(mtype)
-        if name is not None:
-            col = self._numeric(self._tables[mtype].cols[name])
-            for v in np.unique(col[np.isfinite(col)]):
-                out[int(v)] = np.flatnonzero(col == v)
-        self._instance_index[mtype] = out
-        return out
+        with self._lazy_lock:
+            cached = self._instance_index.get(mtype)
+            if cached is not None:
+                return cached
+            out: dict[int, np.ndarray] = {}
+            name = self.instance_field(mtype)
+            if name is not None:
+                col = self._numeric(self._tables[mtype].cols[name])
+                for v in np.unique(col[np.isfinite(col)]):
+                    out[int(v)] = np.flatnonzero(col == v)
+            self._instance_index[mtype] = out
+            return out
 
     def _index(self, mtype: str, instance: int | None) -> np.ndarray | slice | None:
         """Record selector for ``instance`` (None = all records; None result = no such instance).

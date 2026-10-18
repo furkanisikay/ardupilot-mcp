@@ -63,7 +63,8 @@ ardupilot_mcp/
                    data/params/ (facts only; regenerate with scripts/gen_param_meta.py)
   ardupilot_meta.py  ArduPilot reference data (modes, ERR/EV enums, frame classes)
   ardupilot_docs.py  curated, verified ArduPilot doc URLs attached to findings
-  server.py        FastMCP server + the read-only MCP tools
+  server.py        MCPServer (MCP Python SDK 2) + the read-only MCP tools; tools run on
+                   worker threads, so the log cache is locked
   __main__.py      `python -m ardupilot_mcp` (stdio)
 tests/             pytest; synthetic logs via tests/helpers.py + tests/synth_bin.py
 tests/scenarios/   labelled fault-injection flights in Copter-4.6.3's exact log format

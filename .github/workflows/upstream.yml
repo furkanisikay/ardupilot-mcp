@@ -35,9 +35,11 @@ jobs:
           echo "list=$v" >> "$GITHUB_OUTPUT"
           echo "$v"
       - name: Run tests
+        id: tests
         run: pytest
       - name: Report the break
-        if: failure()
+        # Only a test failure is an upstream break; an install or network error is not.
+        if: failure() && steps.tests.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSIONS: ${{ steps.versions.outputs.list }}

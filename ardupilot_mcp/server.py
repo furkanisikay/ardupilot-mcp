@@ -16,7 +16,7 @@ import math
 import os
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from typing import TypeGuard
 
@@ -88,6 +88,8 @@ class _Entry:
     log: FlightLog
     report: DiagnosisReport | None = None
     timeline: IncidentTimeline | None = None
+    # Computes the diagnosis and the timeline once, however many threads ask for them.
+    lock: threading.RLock = field(default_factory=threading.RLock, repr=False, compare=False)
 
 
 # Parsed logs (and their diagnosis, once computed), most recently used last.
@@ -95,9 +97,19 @@ class _Entry:
 # open many logs; a conversation usually works on one or two at a time.
 _CACHE: OrderedDict[str, _Entry] = OrderedDict()
 _CACHE_MAX = 2
-# One parse at a time: concurrent tool calls on the same log share the result instead of
-# parsing it twice, and the LRU order is never mutated from two threads.
-_CACHE_LOCK = threading.RLock()
+# The SDK runs tools on worker threads. _CACHE_LOCK guards the dict and is never held
+# while a log is parsed; a per-file lock makes concurrent calls on one log share a single
+# parse while other logs parse in parallel.
+_CACHE_LOCK = threading.Lock()
+_PARSE_LOCKS: dict[str, threading.Lock] = {}
+
+
+def _cached(apath: str, key: tuple[float, int]) -> _Entry | None:
+    cached = _CACHE.get(apath)
+    if cached is not None and cached.key == key:
+        _CACHE.move_to_end(apath)
+        return cached
+    return None
 
 
 def _entry(path: str) -> _Entry:
@@ -107,15 +119,22 @@ def _entry(path: str) -> _Entry:
     st = os.stat(apath)
     key = (st.st_mtime, st.st_size)
     with _CACHE_LOCK:
-        cached = _CACHE.get(apath)
-        if cached is not None and cached.key == key:
-            _CACHE.move_to_end(apath)
-            return cached
-        _CACHE.pop(apath, None)
-        while len(_CACHE) >= _CACHE_MAX:
-            _CACHE.popitem(last=False)
+        hit = _cached(apath, key)
+        if hit is not None:
+            return hit
+        parse_lock = _PARSE_LOCKS.setdefault(apath, threading.Lock())
+    with parse_lock:
+        with _CACHE_LOCK:
+            hit = _cached(apath, key)  # another thread parsed it while we waited
+            if hit is not None:
+                return hit
+        # Parse before evicting anything, so a log that fails to parse costs no cached log.
         entry = _Entry(key, parse_tlog(apath) if is_tlog(apath) else parse_bin(apath))
-        _CACHE[apath] = entry
+        with _CACHE_LOCK:
+            _CACHE.pop(apath, None)
+            while len(_CACHE) >= _CACHE_MAX:
+                _CACHE.popitem(last=False)
+            _CACHE[apath] = entry
         return entry
 
 
@@ -125,7 +144,7 @@ def _load(path: str) -> FlightLog:
 
 def _report(entry: _Entry) -> DiagnosisReport:
     """The diagnosis of a cached log, computed once: analyze_log and incident_timeline share it."""
-    with _CACHE_LOCK:
+    with entry.lock:
         if entry.report is None:
             entry.report = diagnose(entry.log)
         return entry.report
@@ -178,7 +197,7 @@ def incident_timeline(path: str) -> IncidentTimeline:
     Use it to answer "what failed first, and is the rest just the crash?". Time order only — never causation.
     """
     entry = _entry(path)
-    with _CACHE_LOCK:
+    with entry.lock:
         if entry.timeline is None:
             entry.timeline = build_timeline(entry.log, _report(entry).findings)
         return entry.timeline

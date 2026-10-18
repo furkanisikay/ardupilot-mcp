@@ -11,7 +11,7 @@ import asyncio
 
 import pytest
 from mcp import Client
-from mcp.types.version import LATEST_HANDSHAKE_VERSION, LATEST_MODERN_VERSION
+from mcp.types.version import LATEST_HANDSHAKE_VERSION
 
 from ardupilot_mcp import __version__
 from ardupilot_mcp.server import mcp
@@ -40,7 +40,8 @@ def log_path(tmp_path):
     return str(path)
 
 
-@pytest.mark.parametrize("mode", ["legacy", LATEST_MODERN_VERSION])
+# The revision the docs promise, pinned: a newer SDK default must not silently replace it.
+@pytest.mark.parametrize("mode", ["legacy", "2026-07-28"])
 def test_a_client_lists_read_only_tools_and_gets_a_structured_report(mode, log_path):
     async def session() -> tuple[str, list, dict]:
         async with Client(mcp, mode=mode) as client:
@@ -53,7 +54,7 @@ def test_a_client_lists_read_only_tools_and_gets_a_structured_report(mode, log_p
     assert version == (LATEST_HANDSHAKE_VERSION if mode == "legacy" else mode)
     assert {t.name for t in tools} >= {"analyze_log", "incident_timeline", "forum_report"}
     assert all(t.annotations and t.annotations.read_only_hint for t in tools)
-    assert all(t.annotations.open_world_hint is False for t in tools)
+    assert all(t.annotations.idempotent_hint and t.annotations.open_world_hint is False for t in tools)
     assert report["log_summary"]["path"].endswith("flight.bin")
     assert any(f["check_id"] == "vibration" for f in report["findings"])
 
