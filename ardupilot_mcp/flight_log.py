@@ -18,6 +18,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import Literal
 
 import numpy as np
 
@@ -81,7 +82,7 @@ class LogMeta:
     integrity: LogIntegrity = LogIntegrity.OK
     integrity_detail: str | None = None
     #: "dataflash" (the onboard .bin log) or "tlog" (a ground station's MAVLink telemetry log).
-    source: str = "dataflash"
+    source: Literal["dataflash", "tlog"] = "dataflash"
     #: True when the log records the arm state throughout (a telemetry log's heartbeats), so
     #: its arm/disarm records are complete and no arming is inferred from LOG_DISARMED.
     arming_recorded: bool = False
@@ -497,6 +498,11 @@ class FlightLog:
             col = tb.cols.get(n)
             out[n] = self._numeric(col[idx])[keep] if col is not None else np.full(int(keep.sum()), np.nan)
         return t[keep], out
+
+    @property
+    def is_telemetry(self) -> bool:
+        """A ground station's telemetry log: a missing message or a gap is the link, not the vehicle."""
+        return self.meta.source == "tlog"
 
     @property
     def never_armed(self) -> bool:

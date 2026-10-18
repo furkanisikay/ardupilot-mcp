@@ -149,7 +149,7 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
     ended_armed = log_ended_armed(log, armed)
     # A telemetry log that stops while armed is the radio link or the ground station
     # stopping, so it is not taken as the impact (a caveat says so below).
-    telemetry_cut = ended_armed and log.meta.source == "tlog"
+    telemetry_cut = ended_armed and log.is_telemetry
     if ended_armed and not telemetry_cut and log.meta.duration_s is not None:
         impacts.append((float(log.meta.duration_s), "log ended while armed"))
 

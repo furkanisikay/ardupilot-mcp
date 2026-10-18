@@ -68,7 +68,7 @@ class SensorsCheck(Check):
         findings: list[Finding] = []
         # In a telemetry log a missing message is the ground station's stream selection,
         # not a silent sensor, so only the onboard log can show "configured but no data".
-        if log.meta.source != "tlog":
+        if not log.is_telemetry:
             findings.extend(self._rangefinder_finding(log))
             findings.extend(self._gps_finding(log))
         findings.extend(self._compass_health_finding(log))

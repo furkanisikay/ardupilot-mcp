@@ -266,12 +266,15 @@ def parse_tlog(path: str) -> FlightLog:
             if name and math.isfinite(float(m.param_value)):
                 params[name] = float(m.param_value)
 
-    vehicle = next(
-        (v for r in out.get("MSG", []) if (v := meta.vehicle_from_message(str(r["Message"]))) is not None),
-        None,
+    from .parser import _extract_firmware, _extract_max_alt, _extract_modes
+
+    # The firmware banner names the vehicle (as in an onboard log); else the heartbeat type.
+    fw, vehicle = _extract_firmware(FlightLog(messages={"MSG": out.get("MSG", [])}))
+    frame_class = params.get("FRAME_CLASS")
+    kind = (
+        meta.vehicle_kind(vehicle, frame_class) if vehicle else _HEARTBEAT_KIND.get(vehicle_type, "unknown")
     )
-    kind_hint = meta.vehicle_kind(vehicle) if vehicle else _HEARTBEAT_KIND.get(vehicle_type, "unknown")
-    _add_demand(out.get("ATT", []), demands, t0, _DEMANDED_AXES.get(kind_hint, ()))
+    _add_demand(out.get("ATT", []), demands, t0, _DEMANDED_AXES.get(kind, ()))
 
     log = FlightLog(
         messages=out,
@@ -280,10 +283,6 @@ def parse_tlog(path: str) -> FlightLog:
         path=path,
         instance_fields={"GPS": "I", "IMU": "I", "MAG": "I"},
     )
-    from .parser import _extract_firmware, _extract_max_alt, _extract_modes
-
-    fw, vehicle = _extract_firmware(log)
-    kind = meta.vehicle_kind(vehicle, log.params.get("FRAME_CLASS")) if vehicle else kind_hint
     log.meta.vehicle_type = vehicle
     log.meta.vehicle_kind = kind
     log.meta.firmware_version = fw
