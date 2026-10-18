@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """RC input check.
 
 Reads ``RCIN`` (the RC channels the autopilot *received*). The clearest failure

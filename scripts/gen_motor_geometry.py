@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generate ``ardupilot_mcp/motor_geometry.py`` from ArduPilot's motor matrix source.
 
 Usage (offline, against a local ArduPilot checkout at the tag you want to mirror)::

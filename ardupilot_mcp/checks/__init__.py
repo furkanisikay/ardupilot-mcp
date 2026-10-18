@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Check framework + catalogue.
 
 Importing this package registers every check via ``@register_check`` side effects.

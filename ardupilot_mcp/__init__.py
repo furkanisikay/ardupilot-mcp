@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Deterministic-grounded MCP server for diagnosing ArduPilot DataFlash logs."""
 
 from __future__ import annotations

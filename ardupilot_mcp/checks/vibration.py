@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Vibration check.
 
 Reads the ``VIBE`` message: per-axis vibration (VibeX/Y/Z, m/s^2) and the

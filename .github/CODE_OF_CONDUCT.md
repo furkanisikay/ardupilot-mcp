@@ -20,10 +20,9 @@ reasonably be considered inappropriate.
 
 ## Enforcement
 
-Instances of abusive or unacceptable behaviour may be reported to the maintainers via a
-private GitHub Security Advisory or by contacting the repository owner. Maintainers will
-review and respond, and may remove, edit, or reject contributions or comments that violate
-this Code of Conduct.
+Report abusive or unacceptable behaviour to contact@furkanisikay.com. The maintainer
+reviews every report and may remove, edit or reject contributions or comments that
+violate this Code of Conduct.
 
 This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org),
 version 2.1.

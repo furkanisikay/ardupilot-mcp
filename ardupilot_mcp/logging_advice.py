@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Logging advisor: what to switch on so the next log can answer more.
 
 A check that skips because its data was not logged is a lost diagnosis. For

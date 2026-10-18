@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Compare two logs of the same vehicle: what changed since the last good flight?
 
 Most "it flew fine last week" regressions are a configuration change. This lists

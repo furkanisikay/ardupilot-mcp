@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Infer the aircraft's physical / architecture profile from a log.
 
 Gives the LLM concrete configuration to reason about — and to combine with

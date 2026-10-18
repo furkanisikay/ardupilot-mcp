@@ -31,8 +31,10 @@ Do all of the following:
    case per severity it can emit. If it catches a new kind of fault, add a labelled flight
    (plus a benign variant that must stay clean) to `tests/scenarios/flights.py`.
 
-5. **Update docs:** add the check to the catalogue in `README.md`, add a `CHANGELOG.md`
-   entry, and record any new threshold + its source in `docs/SOURCES.md`.
+5. **Update docs:** run `python scripts/gen_docs.py` (it adds the check to
+   `docs/reference.md`), add a `CHANGELOG.md` entry, and record any new threshold and its
+   source in `docs/SOURCES.md`. Start the new module with
+   `# SPDX-License-Identifier: AGPL-3.0-only`.
 
 6. **Verify green:** run `ruff check ardupilot_mcp tests`, `ruff format ardupilot_mcp tests`,
    `mypy ardupilot_mcp`, and `pytest` (including `tests/test_docs_sync.py`). If you have

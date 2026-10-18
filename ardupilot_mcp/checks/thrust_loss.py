@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Thrust loss on one motor, judged with the frame's own motor geometry.
 
 When a motor, ESC or propeller stops producing its share of thrust, the attitude

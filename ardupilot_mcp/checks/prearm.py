@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Startup & pre-arm message check.
 
 ArduPilot writes human-readable status lines into the ``MSG`` message (field

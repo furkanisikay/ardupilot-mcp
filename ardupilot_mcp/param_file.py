@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Parse a user-exported ArduPilot parameter file.
 
 The DataFlash log already carries a near-complete PARM dump, but it is a snapshot

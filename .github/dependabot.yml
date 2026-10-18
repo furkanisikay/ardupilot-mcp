@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+    labels: ["dependencies", "skip-changelog"]
+    groups:
+      python:
+        patterns: ["*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels: ["dependencies", "ci", "skip-changelog"]
+    groups:
+      actions:
+        patterns: ["*"]

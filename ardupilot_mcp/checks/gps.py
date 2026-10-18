@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """GPS quality check.
 
 Reads the ``GPS`` message and grades three independent concerns that each

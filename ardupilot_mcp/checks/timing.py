@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Scheduler timing & log gaps check.
 
 Two independent signals about whether the autopilot's main loop kept up and

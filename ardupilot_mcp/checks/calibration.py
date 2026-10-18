@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Sensor calibration check.
 
 Inspects *parameters* (not time-series) to judge whether the magnetometers and

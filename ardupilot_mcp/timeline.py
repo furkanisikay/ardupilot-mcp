@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Incident timeline: what went wrong first, and what followed the crash.
 
 A crash log is full of consequences: after an impact the vibration spikes, the

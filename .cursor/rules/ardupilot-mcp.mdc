@@ -16,9 +16,10 @@ Non-negotiables when editing this codebase:
 - **No unsupported assumptions.** Every threshold/enum/default/fact must be backed by an
   authoritative source (ArduPilot wiki/firmware, MAVLink, MCP spec), cited in a comment
   and in `docs/SOURCES.md`. Label our own cut-offs as design choices.
-- **Keep docs in sync.** Adding/renaming a check or MCP tool requires updating
-  `README.md`, `CHANGELOG.md` (and `docs/SOURCES.md` for new thresholds);
-  `tests/test_docs_sync.py` enforces it.
+- **Keep docs in sync.** Run `python scripts/gen_docs.py` after changing a tool, check or
+  the version; a new tool needs a row in both READMEs, a user-visible change a
+  `CHANGELOG.md` entry, a new threshold `docs/SOURCES.md`. `tests/test_docs_sync.py`
+  enforces the generated parts.
 - **Tests gate everything.** `ruff check`, `ruff format --check`, `mypy ardupilot_mcp`
   and `pytest` must pass.
 

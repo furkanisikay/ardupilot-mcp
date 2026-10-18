@@ -1,15 +1,17 @@
-<!-- Thanks for contributing! Keep PRs small and focused. See AGENTS.md / CONTRIBUTING.md. -->
-
 ## What & why
 
-<!-- What does this change and why? Link any related issue (e.g. "Fixes #12"). -->
+<!-- What changes and why. Link the issue, e.g. "Fixes #12". -->
 
 ## Checklist
 
-- [ ] `ruff check ardupilot_mcp tests` passes
-- [ ] `ruff format ardupilot_mcp tests` applied
-- [ ] `mypy ardupilot_mcp` passes
-- [ ] `pytest` passes (added/updated tests for the change)
-- [ ] New thresholds/enums/facts are backed by an authoritative source (comment + `docs/SOURCES.md`)
-- [ ] Docs updated if a check/tool was added or renamed (`README.md`, `CHANGELOG.md`)
-- [ ] No network access / vehicle actuation / parameter writes added (offline & read-only)
+- [ ] The title follows Conventional Commits (`feat:`, `fix:`, `docs:`, ...)
+- [ ] `ruff check`, `ruff format`, `mypy ardupilot_mcp` and `pytest` pass
+- [ ] Tests cover the change
+- [ ] New thresholds and facts have a source (comment and `docs/SOURCES.md`)
+- [ ] `CHANGELOG.md` has an entry if users notice the change
+- [ ] `python scripts/gen_docs.py` was run if a tool, check or version changed
+- [ ] No network access, vehicle actuation or parameter writes added
+
+## Contributor License Agreement
+
+- [ ] I have read the [Contributor License Agreement](https://github.com/furkanisikay/ardupilot-mcp/blob/main/.github/CLA.md) and agree to its terms.

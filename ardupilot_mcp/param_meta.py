@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Documented parameter metadata for the log's firmware, bundled for offline use.
 
 ArduPilot publishes each release's parameter definitions as ``apm.pdef.xml``

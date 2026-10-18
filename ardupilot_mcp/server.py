@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """FastMCP server exposing the ArduPilot log-diagnosis tools.
 
 Every tool is read-only (``readOnlyHint=True``): the server parses offline

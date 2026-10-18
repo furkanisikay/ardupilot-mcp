@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Compass / magnetometer check.
 
 Reads the ``MAG`` message: per-axis magnetic field (MagX/Y/Z, milligauss). A

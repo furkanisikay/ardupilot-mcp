@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: ArduPilot log-analysis help
+  - name: Help with your own flight log
     url: https://discuss.ardupilot.org/
-    about: For help reading your own flight log (not a tool bug), the ArduPilot forum is the place.
-  - name: Question / discussion
-    url: https://github.com/furkanisikay/ardupilot-mcp/discussions
-    about: Usage questions and ideas.
+    about: People on the ArduPilot forum read logs every day. Use forum_report to start the thread.
+  - name: Setup and troubleshooting
+    url: https://github.com/furkanisikay/ardupilot-mcp/blob/main/docs/clients.md
+    about: Configuration for every MCP client and a troubleshooting table.
+  - name: Report a security vulnerability
+    url: https://github.com/furkanisikay/ardupilot-mcp/security/advisories/new
+    about: Report vulnerabilities privately, not in a public issue.

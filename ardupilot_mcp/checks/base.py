@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Check protocol and the extensible check registry.
 
 A *check* is a small, independently-testable diagnostic unit. It declares the

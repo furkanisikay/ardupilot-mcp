@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Log integrity check.
 
 This is a meta-check: it does not look at any DataFlash message stream, it

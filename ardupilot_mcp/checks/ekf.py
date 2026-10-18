@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """EKF / estimator health check.
 
 ArduPilot's EKF logs normalised innovation/variance "test ratios" — one per

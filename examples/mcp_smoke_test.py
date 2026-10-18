@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """End-to-end MCP smoke test: spawn the server over stdio and drive it as a client.
 
 Proves the package works as a real MCP server (initialize -> list tools -> call
@@ -47,7 +48,9 @@ async def main() -> int:
             res = await session.call_tool("analyze_log", {"path": log_path})
             report = res.structuredContent
             assert report is not None, "expected structuredContent"
-            print(f"  critical={report['critical_count']} warn={report['warn_count']} info={report['info_count']}")
+            print(
+                f"  critical={report['critical_count']} warn={report['warn_count']} info={report['info_count']}"
+            )
             for f in report["findings"][:5]:
                 refs = ", ".join(r["url"].rsplit("/", 1)[-1] for r in f.get("references", []))
                 print(f"    [{f['severity']}] {f['check_id']}: {f['title']}")
@@ -58,9 +61,11 @@ async def main() -> int:
             print("\ncall vehicle_profile:")
             res = await session.call_tool("vehicle_profile", {"path": log_path})
             prof = res.structuredContent
-            print(f"  {prof.get('frame_class_name')} ({prof.get('frame_type_name')}), "
-                  f"{prof.get('motor_count')} motors, {prof.get('battery_cells')}S, "
-                  f"hover {prof.get('hover_throttle')}, margin {prof.get('power_margin_pct')}%")
+            print(
+                f"  {prof.get('frame_class_name')} ({prof.get('frame_type_name')}), "
+                f"{prof.get('motor_count')} motors, {prof.get('battery_cells')}S, "
+                f"hover {prof.get('hover_throttle')}, margin {prof.get('power_margin_pct')}%"
+            )
             for a in prof.get("assessment", []):
                 print(f"    • {a}")
 
@@ -71,8 +76,10 @@ async def main() -> int:
 
             print("\ncall list_checks:")
             res = await session.call_tool("list_checks", {})
-            print(f"    {res.structuredContent['total']} checks: "
-                  f"{[c['check_id'] for c in res.structuredContent['checks']]}")
+            print(
+                f"    {res.structuredContent['total']} checks: "
+                f"{[c['check_id'] for c in res.structuredContent['checks']]}"
+            )
 
     print("\nMCP smoke test OK")
     return 0

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Parse an ArduPilot DataFlash ``.bin`` into a :class:`FlightLog`.
 
 The only module that depends on ``pymavlink``. It is defensive by design:

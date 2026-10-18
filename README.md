@@ -3,385 +3,96 @@
 [![CI](https://github.com/furkanisikay/ardupilot-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/furkanisikay/ardupilot-mcp/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/ardupilot-mcp.svg)](https://pypi.org/project/ardupilot-mcp/)
 [![Python](https://img.shields.io/pypi/pyversions/ardupilot-mcp.svg)](https://pypi.org/project/ardupilot-mcp/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 
-🇹🇷 Türkçe · [🇬🇧 English](README.en.md)
+Türkçe · [English](README.en.md)
 
 <!-- mcp-name: io.github.furkanisikay/ardupilot-mcp -->
 
-**Drone'un mu düştü ya da kötü mü uçtu?** ArduPilot uçuş kontrolcüsü her uçuşta bir kara-kutu dosyası tutar — `.bin` uçuş logu. Bu araç o dosyayı okur ve bir yapay zekâ sohbet uygulamasının uçuşta ne olduğunu **düz dille** anlatmasını sağlar: düşük batarya, aşırı titreşim, GPS kaybı, kablo arızası, kötü ayar… Tahminle değil, deterministik bir kontrol motoruyla.
+ArduPilot uçuş loglarını teşhis eden bir MCP sunucusu. Claude Desktop, Cursor ya da VS Code gibi bir yapay zekâ istemcisine eklersin, `.bin` veya `.tlog` dosyanı verirsin; istemci uçuşta ne olduğunu sade bir dille anlatır: titreşim, düşük batarya, GPS kaybı, motor kaybı, hatalı ayar.
 
-**Nasıl bir şey bu?** Kendi penceresi/uygulaması yok. Bir yapay zekâ sohbet uygulamasına takılır — **Claude Desktop, Cursor, VS Code** gibi (bunlara "MCP istemcisi" denir). Önce o uygulamalardan birini kurarsın, bu aracı ona eklersin, sonra düz dille sorarsın. (MCP = Model Context Protocol; bu uygulamaların araçlarla konuştuğu standart "fiş".)
+Bulguları deterministik kontroller üretir. Her eşiğin kaynağı [docs/SOURCES.md](docs/SOURCES.md)'de yazılıdır; model bu bulguları yalnızca açıklar. Sunucu yalnızca yerel dosyaları okur, ağa bağlanmaz, araca komut göndermez ve parametre yazmaz.
 
-## Neden bunu kullanayım?
+## Hızlı başlangıç
 
-Mission Planner'ın [Auto Analysis](https://ardupilot.org/planner/docs/common-diagnosing-problems-using-logs.html)'i ve [UAV Log Viewer](https://plot.ardupilot.org/) zaten var ve iyiler — ama farklı bir iş yapıyorlar. Kısaca: o araçlar **veriyi gösterir, yorumu sen yaparsın**; bu araç **veriyi yorumlar, düz dille anlatır ve sorularını cevaplar.**
+Claude Desktop ile:
 
-| | MP Auto Analysis | UAV Log Viewer | **ardupilot-mcp** |
-|---|:---:|:---:|:---:|
-| Çıktı | sabit geç/kal listesi | grafik + 3B uçuş tekrarı | düz dille açıklama + sohbet |
-| "Neden düştü?" diye sorup gerekçeli cevap | — | — | **✓** |
-| Doğal dille takip sorusu ("15–30 sn titreşim?") | — | — | **✓** |
-| Konfig/kurulum hataları (param denetimi, kalibrasyon, kablo, pre-arm) | kısmen | — | **✓** |
-| Fiziksel muhakeme (güç marjı, itki/ağırlık) | — | — | **✓** |
-| Her bulguda resmi ArduPilot doküman linki | — | — | **✓** |
-| Grafik / 3B harita görselleştirme | — | **✓** | — |
-| Anında, kurulum yok | **✓** (MP'de hazır) | **✓** (web) | AI istemcisi + uv gerekir |
-
-**Diğerlerini ne zaman kullan:** bir sinyali grafikte görmek veya uçuş yolunu 3B izlemek için → **UAV Log Viewer**. Elinde Mission Planner açıkken hızlı bir geç/kal için → **MP Auto Analysis**. Bu araç onların yerini almaz; **"neden böyle oldu?"yu açıklaması ve takip sorularını cevaplaması**, kararı deterministik bir motora + resmi dokümana dayandırması, ve uçuş sinyallerinin yanı sıra **konfig/kurulum ve fiziksel** tarafı da kapsaması için var. Ayrıca tamamen offline ve salt-okunur çalışır.
-
-## Hızlı başlangıç (5 dakika)
-
-En kısa yol — Claude Desktop ile:
-
-1. **Claude Desktop'ı kur:** <https://claude.ai/download>
-2. **uv'yi kur** — bu aracı senin yerine indirip çalıştıran küçük, ücretsiz bir program (`uvx` onunla gelir):
-   - Windows (PowerShell): `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`
-   - macOS / Linux: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-   - Dokümanı: <https://docs.astral.sh/uv/getting-started/installation/> · Çalıştı mı: `uv --version` bir sürüm yazmalı.
-3. **Claude Desktop'ta** Settings → Developer → Edit Config; şunu yapıştır ve kaydet:
+1. [uv](https://docs.astral.sh/uv/getting-started/installation/)'yi kur.
+2. Claude Desktop'ta Settings → Developer → Edit Config ile şunu ekle:
    ```json
    { "mcpServers": { "ardupilot-mcp": { "command": "uvx", "args": ["ardupilot-mcp"] } } }
    ```
-   Sonra Claude Desktop'ı **tamamen kapatıp yeniden aç** — pencereyi kapatmak yetmez; sistem tepsisinden de çık.
-4. **Bir `.bin` logu edin** (aşağıdaki *Uçuş logunu nereden bulurum?*). Elinde yoksa *AI istemcisi olmadan dene* ile demo üret.
-5. **Sohbet kutusuna yaz:** *"C:\loglar\ucus.bin logunu analiz et — neden düştü?"* (yolu kendi dosyanla değiştir).
+3. Claude Desktop'tan tamamen çık ve yeniden aç.
+4. Sor: *"C:\loglar\00000042.BIN logunu analiz et, neden düştü?"*
 
-uv yerine pip kullanmak ya da başka bir uygulama (Cursor, VS Code, Cline, LM Studio…) eklemek için → [İstemcine ekle](#istemcine-ekle).
+Claude Code için tek satır yeterli: `claude mcp add ardupilot-mcp -- uvx ardupilot-mcp`. Cursor, VS Code, Windsurf, Cline, Zed, LM Studio ve diğer istemcilerin ayarları, sorun giderme ve istemcisiz deneme [docs/clients.md](docs/clients.md)'de.
 
-## Uçuş logunu (`.bin`) nereden bulurum?
+## Hangi log?
 
-Uçuş kontrolcün her uçuş için bir `.bin` DataFlash logu kaydeder. Bilgisayarına almak için:
+- **`.bin`** uçuş kontrolcüsünün kendi kaydıdır ve en ayrıntılı teşhisi verir. SD karttaki `APM/LOGS/` klasöründedir; Mission Planner'da DataFlash Logs → Download DataFlash Log Via Mavlink ile de indirilir.
+- **`.tlog`** yer istasyonunun kaydettiği telemetridir. Saniyede birkaç örnek ve yalnızca birincil sensör taşır, bu yüzden teşhis daha kabadır. Telsiz kopmasını araç arızası sanabilecek kontroller bu dosyada çalışmaz.
 
-- **En kolayı — Mission Planner:** USB ile bağlan → **Flight Data** → **DataFlash Logs** → **Download DataFlash Log Via Mavlink** → uçuşu seç → kaydet (ör. `C:\loglar\`). QGroundControl da olur.
-- **Ya da SD karttan:** kontrolcünün SD kartında genelde `APM/LOGS` veya `/LOGS` klasörü; dosya adı `00000042.BIN` gibi görünür.
+## Örnek
 
-Tam dosya yolunu not et — yapay zekâya vereceğin şey o. Detay: [ArduPilot — Downloading and Analyzing Data Logs](https://ardupilot.org/copter/docs/common-downloading-and-analyzing-data-logs-in-mission-planner.html).
+`python examples/analyze.py demo.bin` çıktısından bir bölüm. İstemci aynı bulguları senin dilinde anlatır.
 
-**`.bin` yok mu?** Yer istasyonunun kaydettiği `.tlog` dosyası da olur: Mission Planner her bağlantıda bir tane kaydeder, başka bir yer seçmediysen kurulum klasörünün `logs` alt klasörüne ([Telemetry Logs](https://ardupilot.org/planner/docs/mission-planner-telemetry-logs.html)). Bu, yer istasyonuna ulaşan telemetridir: saniyede birkaç örnek, yalnız birincil sensör ve telsizin koptuğu yerlerde boşluklar. Bu yüzden teşhis daha kabadır ve telsiz kopmasını araç arızası sanacak kontroller (log bütünlüğü, zamanlama) atlanır. Elinde `.bin` varsa onu kullan.
-
-## AI istemcisi olmadan dene
-
-Bir AI uygulaması kurmadan, motorun çalıştığını görmek istersen kaynağı indir (örnek scriptler pip paketinde gelmez, repoyu klonlaman gerekir):
-
-```bash
-git clone https://github.com/furkanisikay/ardupilot-mcp
-cd ardupilot-mcp
-pip install -e .
-python examples/generate_demo_log.py demo.bin   # gerçekçi bir kaza logu üretir
-python examples/analyze.py demo.bin              # tam teşhisi terminale yazar
+```text
+First anomaly while armed: Elevated VibeZ vibration @ 9s.
+6 critical, 2 warning, 3 info finding(s).
+[CRITICAL] vibration @ 9s: Elevated VibeZ vibration
+           VibeZ vibration peaks at 72 m/s^2 (>60); 20% of samples exceed 60 m/s^2.
+[CRITICAL] attitude  @ 20s: Attitude tracking failure (roll)
+           Roll failed to track the demand for 3.0 s, error up to 35 deg (sustained >25 deg).
+[CRITICAL] power     @ 25s: Battery reached critical voltage
+           Pack voltage fell to 13.22 V, at or below the critical-voltage level (13.50 V).
 ```
 
-Hazır olunca `demo.bin` yerine kendi `.bin` dosyanı ver.
+## Araçlar
 
-## Cevap neye benziyor?
+Bütün araçlar salt okunurdur.
 
-Yukarıdaki `analyze.py demo.bin` çıktısından (kısaltıldı). Bir AI istemcisinde aynı bulgular **senin dilinde**, sohbet havasında anlatılır:
+| Araç | Ne işe yarar |
+|---|---|
+| `analyze_log` | Bütün kontrolleri çalıştırır; önem sırasına dizilmiş bulguları resmi ArduPilot doküman linkleriyle döndürür. |
+| `incident_timeline` | İlk anomaliyi ve çarpma anını bulur, olayları zaman sırasına koyar. Neden-sonuç iddia etmez. |
+| `forum_report` | discuss.ardupilot.org'a yapıştırılacak Markdown yanıtı hazırlar. GPS konumu içermez. |
+| `compare_logs` | İki uçuş arasında değişen parametreleri, firmware'i ve metrikleri yan yana koyar. |
+| `log_summary` | Araç, firmware, süre, uçuş modları ve log bütünlüğü. |
+| `vehicle_profile` | Frame, motor sayısı, batarya, hover gazı ve güç marjı. |
+| `list_events` | `ERR`, `MODE`, `EV` ve `MSG` kayıtlarının zaman çizelgesi. |
+| `query_timeseries` | Bir bulgunun arkasındaki ham seri; çoklu sensörlerde instance seçilebilir. |
+| `get_params` | Logdaki parametreler ve o firmware sürümünde belgelenmiş aralık, birim ve değerler. |
+| `load_param_file` | Dışa aktarılmış `.param` dosyasını okur. |
+| `recommend_tuning` | Harmonik notch, PID ve autotune önerisi. Hiçbir şeyi uygulamaz. |
+| `list_checks` | Kayıtlı kontrollerin listesi. |
 
-```
-ArduCopter V4.5.7 — 30 sn uçuş — 8 kritik, 2 uyarı, 3 bilgi
-
-[KRİTİK] titreşim @ 9s  : VibeZ titreşimi 72 m/s² zirve yaptı (>60); örneklerin %20'si eşiği aştı.
-[KRİTİK] attitude @ 20s : Roll komutu 3 sn takip edilemedi, hata 35°'ye çıktı — kontrol kaybı / mekanik arıza.
-[KRİTİK] gps      @ 22s : GPS 3D fix'i 22–24 sn arasında kayboldu — konum desteği gitti.
-[KRİTİK] güç      @ 30s : Paket voltajı 13.22 V'a düştü (kritik 13.50 V failsafe) — acil iniş gerek.
-...
-TUNING (yalnız tavsiye): 80 Hz harmonik notch öner.
-```
-
-Her bulgu ilgili resmi ArduPilot doküman linkini ve somut sayıları (zaman, değer, eşik) taşır.
-
-## İstemcine ekle
-
-Tek tıkla:
-
-[![Add to Cursor](https://img.shields.io/badge/Add_to-Cursor-000000?style=flat-square&logo=cursor&logoColor=white)](cursor://anysphere.cursor-deeplink/mcp/install?name=ardupilot-mcp&config=eyJjb21tYW5kIjoidXZ4IiwiYXJncyI6WyJhcmR1cGlsb3QtbWNwIl19)
-[![Install in VS Code](https://img.shields.io/badge/VS_Code-Install_Server-0098FF?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=ardupilot-mcp&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22ardupilot-mcp%22%5D%7D)
-[![Install in VS Code Insiders](https://img.shields.io/badge/VS_Code_Insiders-Install_Server-24bfa5?style=flat-square&logo=visualstudiocode&logoColor=white)](https://insiders.vscode.dev/redirect/mcp/install?name=ardupilot-mcp&config=%7B%22command%22%3A%22uvx%22%2C%22args%22%3A%5B%22ardupilot-mcp%22%5D%7D&quality=insiders)
-[![Add to LM Studio](https://files.lmstudio.ai/deeplink/mcp-install-light.svg)](https://lmstudio.ai/install-mcp?name=ardupilot-mcp&config=eyJhcmR1cGlsb3QtbWNwIjp7ImNvbW1hbmQiOiJ1dngiLCJhcmdzIjpbImFyZHVwaWxvdC1tY3AiXX19)
-
-**Kurulum (bir kez).** Aşağıdaki config'lerin hepsi `uvx ardupilot-mcp` komutunu kullanır.
-
-- **Önerilen — uv:** yukarıdaki *Hızlı başlangıç* adım 2'deki tek satırla kur. uv kuruluysa config'ler olduğu gibi çalışır; ayrıca `pip install` gerekmez.
-- **Alternatif — pip:** `pip install ardupilot-mcp` yaptıysan, aşağıdaki config'lerde `"command": "uvx", "args": ["ardupilot-mcp"]` yerine `"command": "ardupilot-mcp"` yaz (args'sız). İkisi de çalışır; ikisini karıştırma.
-
-Python da gerekir (3.11+). Kontrol: terminalde `python --version` 3.11 veya üstünü yazmalı. Yoksa <https://python.org/downloads>'dan kur (Windows'ta kurulumda **"Add Python to PATH"**i işaretle). uv yolunu kullanırsan uv uygun bir Python'u kendi indirebilir, ayrıca kurman gerekmeyebilir.
-
-> **Önemli:** Config'i ekledikten/değiştirdikten sonra uygulamayı **yeniden yükle**. Dosya-tabanlı uygulamalarda (Claude Desktop, Cursor, VS Code, Windsurf, LM Studio, Zed) **tamamen kapatıp aç** — pencereyi kapatmak yetmez, tepside/menü çubuğunda açık kalır. Sonra araç listesini kontrol et.
-
-<details>
-<summary><b>Claude Code</b></summary>
-
-```bash
-claude mcp add ardupilot-mcp -- uvx ardupilot-mcp
-```
-
-Tüm projelerde kullanmak için `--scope user`, takımla paylaşmak için `--scope project` (repoya `.mcp.json` yazar). Doğrula: `claude mcp list`.
-
-Ya da eklenti olarak (MCP sunucusu + `/diagnose` komutu birlikte gelir):
-
-```
-/plugin marketplace add furkanisikay/ardupilot-mcp
-/plugin install ardupilot-mcp@ardupilot-tools
-```
-</details>
-
-<details>
-<summary><b>Claude Desktop</b></summary>
-
-Settings → Developer → Edit Config ile `claude_desktop_config.json`'a ekle, sonra Claude Desktop'ı tamamen kapatıp yeniden aç:
-
-```json
-{
-  "mcpServers": {
-    "ardupilot-mcp": { "command": "uvx", "args": ["ardupilot-mcp"] }
-  }
-}
-```
-</details>
-
-<details>
-<summary><b>Cursor</b></summary>
-
-Üstteki **Add to Cursor** düğmesi; ya da `~/.cursor/mcp.json` (projeye özel: `.cursor/mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "ardupilot-mcp": { "command": "uvx", "args": ["ardupilot-mcp"] }
-  }
-}
-```
-</details>
-
-<details>
-<summary><b>VS Code / VS Code Insiders</b></summary>
-
-Üstteki düğme; ya da `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "ardupilot-mcp": { "type": "stdio", "command": "uvx", "args": ["ardupilot-mcp"] }
-  }
-}
-```
-
-Komut satırı: `code --add-mcp '{"name":"ardupilot-mcp","command":"uvx","args":["ardupilot-mcp"]}'`
-</details>
-
-<details>
-<summary><b>Antigravity (IDE + CLI)</b></summary>
-
-`~/.gemini/config/mcp_config.json` (Windows: `%USERPROFILE%\.gemini\config\mcp_config.json`) — IDE ile CLI aynı dosyayı paylaşır:
-
-```json
-{
-  "mcpServers": {
-    "ardupilot-mcp": { "command": "uvx", "args": ["ardupilot-mcp"] }
-  }
-}
-```
-
-IDE: agent panelindeki **...** → **MCP Servers** → **View raw config** → yapıştır → **Refresh**. CLI: `agy` çalıştırıp `/mcp` ile doğrula.
-</details>
-
-<details>
-<summary><b>Windsurf</b></summary>
-
-`~/.codeium/windsurf/mcp_config.json` (Windows: `%USERPROFILE%\.codeium\windsurf\mcp_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "ardupilot-mcp": { "command": "uvx", "args": ["ardupilot-mcp"] }
-  }
-}
-```
-
-Cascade → MCP paneli → **View raw config** → yapıştır → **Refresh**.
-</details>
-
-<details>
-<summary><b>Cline</b></summary>
-
-Cline paneli → **MCP Servers** → **Configure** → `cline_mcp_settings.json`:
-
-```json
-{
-  "mcpServers": {
-    "ardupilot-mcp": { "command": "uvx", "args": ["ardupilot-mcp"], "disabled": false, "autoApprove": [] }
-  }
-}
-```
-</details>
-
-<details>
-<summary><b>Continue</b></summary>
-
-Çalışma alanında `.continue/mcpServers/ardupilot-mcp.yaml`:
-
-```yaml
-name: ArduPilot MCP
-version: 0.0.1
-schema: v1
-mcpServers:
-  - name: ArduPilot MCP
-    type: stdio
-    command: uvx
-    args:
-      - ardupilot-mcp
-```
-</details>
-
-<details>
-<summary><b>Zed</b></summary>
-
-`settings.json` (`context_servers` altına):
-
-```json
-{
-  "context_servers": {
-    "ardupilot-mcp": { "command": "uvx", "args": ["ardupilot-mcp"], "env": {} }
-  }
-}
-```
-</details>
-
-<details>
-<summary><b>Goose</b></summary>
-
-```bash
-goose configure
-# Add Extension → Command-line Extension → komut: uvx ardupilot-mcp
-```
-</details>
-
-<details>
-<summary><b>LM Studio (açık-kaynak / yerel modeller)</b></summary>
-
-Üstteki **Add to LM Studio** düğmesi; ya da `~/.lmstudio/mcp.json` (Windows: `%USERPROFILE%\.lmstudio\mcp.json`):
-
-```json
-{
-  "mcpServers": {
-    "ardupilot-mcp": { "command": "uvx", "args": ["ardupilot-mcp"] }
-  }
-}
-```
-</details>
-
-> **Model bağımsız:** ardupilot-mcp, MCP'yi stdio üzerinden konuşur; alttaki modelden bağımsız olarak MCP destekli her istemcide çalışır — tamamen açık-kaynak / yerel modeller dahil (ör. LM Studio'da yerel GGUF modeller; Ollama veya LM Studio'ya bağlanan Continue / Cline / Goose). Anthropic/OpenAI hesabı gerektirmez; yeterli olan, istemcinin seçtiği modelin araç-çağırma (tool-calling) desteğidir.
-
-### Çalışmıyorsa
-
-- **Araç hiç görünmüyor / "command not found: uvx"** → uv kurulu değil veya bulunamıyor. uv'yi kur (yukarıdaki link), ya da `pip install ardupilot-mcp` yapıp config'i `"command": "ardupilot-mcp"` olarak değiştir.
-- **Config'i düzenledim ama hâlâ yok** → uygulamayı **tamamen** kapatıp aç (pencere kapatmak yetmez; tepside/menü çubuğunda açık kalır).
-- **Doğru dosyayı mı düzenledim?** → her istemcinin kendi bölümünde yazan tam yolu kullan; JSON'da eksik virgül/parantez olmasın.
-- **"Dosya bulunamadı"** → `.bin` uzantısı dahil **tam yolu** ver; Windows'ta yolu çift tırnak içine al.
-- **Motorun kendisi çalışıyor mu?** → yukarıdaki *AI istemcisi olmadan dene* ile bağımsız teyit et (`python examples/analyze.py demo.bin`).
-
-## Araçlar (hepsi salt-okunur)
-
-| Araç | Ne yapar |
-|------|----------|
-| `analyze_log(path)` | Tüm kontrol paketini çalıştırır → önem-sıralı bulgular + özet. Her bulgu **resmi ArduPilot doküman linkleri** taşır; rapor 4.x firmware için sürüm-özel parametre dokümanlarını da içerir. **Manşet araç.** |
-| `incident_timeline(path)` | **Önce ne bozuldu, gerisi çarpmanın sonucu mu?** İlk anomali (armed iken), çarpma anı (crash check, crash disarm ya da armed iken biten log) ve tüm firmware hükümleri, hatalar, failsafe mod değişiklikleri ve bulgular zaman sırasında; her biri `before_onset / onset / after_onset / impact / after_impact` etiketli. Yalnız zaman sırası, nedensellik iddiası yok. |
-| `forum_report(path)` | **Foruma yapıştırılacak cevap.** discuss.ardupilot.org için hazır Markdown: araç ve firmware, ilk ne bozuldu (başlangıç ve çarpma), bulgular ve onları doğrulayan log kayıtları, her bulgunun arkasındaki veriden küçük bir metin grafiği. GPS konumu içermez, dosya yolu yalnız dosya adına iner; metin olarak döner, diske bir şey yazmaz. |
-| `compare_logs(path_a, path_b)` | **"Geçen hafta iyi uçuyordu, ne değişti?"** Aynı aracın iki logu arasında farklı olan yapılandırma parametreleri (otopilotun kendi öğrendiği/saydığı değerlerden ayrı), yalnız birinde olan parametreler, firmware değişikliği ve uçuş metrikleri (titreşim, hover gazı, batarya ve kart voltajı minimumları) yan yana. Sadece farkı söyler, hangisinin doğru olduğuna karar vermez. |
-| `log_summary(path)` | Araç, firmware, süre, mesaj sayıları, uçuş modları, max irtifa (eve göre), bütünlük. |
-| `vehicle_profile(path)` | **Fiziksel / mimari profil**: frame & tip, motor sayısı, batarya hücresi/kapasitesi, hover gazı, **güç marjı** ve itki/ağırlık. Fiziğe-dayalı muhakeme için. |
-| `list_events(path, kinds?, start_s?, end_s?)` | Çözümlenmiş `ERR`/`MODE`/`EV`/`MSG` zaman çizelgesi. |
-| `query_timeseries(path, message_type, fields, start_s?, end_s?, max_points?, instance?)` | Bir bulguya derinlemesine bakmak için seyreltilmiş sayısal seri. Çoklu sensörlü mesajlarda (IMU/GPS/pusula/batarya/EKF çekirdeği başına) tek bir `instance` döner; `available_instances` hangilerinin olduğunu söyler. |
-| `get_params(path, name_glob?)` | Logun PARM dökümünden parametre değerleri (ör. `INS_HNTCH_*`), toplam sayı, sürüm-özel metadata linki ve döküm eksikse bir uyarı. Dönen parametrelerin, logun firmware sürümü için belgelenmiş aralığı, birimi, listelenen değerleri ve bitmask bitleri de gelir (paketle gelen veriden, ağsız); o sürümün belgelemediği adlar `undocumented` altında listelenir. |
-| `load_param_file(path, name_glob?, firmware?)` | Kullanıcının dışa aktardığı `.param`/`.params` dosyasını okur — log dökümü kesikse veya "uçtuğu config vs şimdiki"yi karşılaştırmak için tam, otoriter config. `firmware` (ör. `ArduCopter V4.6.3`) verilirse belgelenmiş metadata eklenir ve o sürümde olmayan adlar (yazım hatası, script parametresi) listelenir. |
-| `recommend_tuning(path, area?)` | Tavsiye niteliğinde tuning (batch sampler, hızlı IMU, uçuş içi FFT ya da ESC RPM verisinden harmonik notch; PID; autotune). **Sadece öneri — asla uygulanmaz.** |
-| `list_checks()` | Kayıtlı teşhis kontrolleri (genişletilebilir katalog). |
-
-## Örnek kullanım senaryoları
-
-Sunucuyu istemcine ekledikten sonra yapay zekâya düz dille sor; ilgili araçları kendisi çağırır:
-
-- **"`C:\loglar\ucus.bin` neden düştü?"** — tüm kontrol paketini çalıştırır (`analyze_log`), önem-sıralı bulguları doküman linkleriyle açıklar.
-- **"Bu araç motorlarına göre yeterince güçlü müydü?"** — `vehicle_profile` ile frame / motor / batarya / hover gazından güç marjını ve itki-ağırlık oranını çıkarır.
-- **"15. ile 30. saniye arası titreşim yüksek miydi?"** — `query_timeseries` ile `VIBE` serisini çekip eşiklerle karşılaştırır.
-- **"Arming neden engellendi?"** — `list_events` ile `ERR`/`MSG` zaman çizelgesini ve pre-arm uyarılarını çözer.
-- **"`INS_HNTCH_*` parametrelerimi göster ve harmonik notch öner."** — `get_params` + `recommend_tuning` (yalnızca tavsiye, asla uygulanmaz).
-- **"Şu `.param` dosyasını logdaki ayarlarla karşılaştır."** — `load_param_file` ile uçtuğu config'i otoriter dosyayla karşılaştırır.
-
-**Claude Code** kullanıyorsan (Claude Desktop'tan farklı bir uygulama) **ve eklentiyi kurduysan** (yukarıdaki Claude Code bölümü — düz MCP-sunucu kurulumu `/diagnose` eklemez), tek komut yeter: **`/diagnose C:\loglar\ucus.bin`** — uçtan uca teşhisi yukarıdaki araçları sırayla kullanarak yapar. Diğer istemcilerde bunun yerine düz dille sor.
-
-## Neden log teşhisi?
-
-Bir ArduPilot `.bin` logunu okumak uzmanlık ister: `ERR` satırlarını filtreler, mekanik arıza için `ATT.DesRoll` ile `ATT.Roll`'u karşılaştırır, titreşim / EKF / batarya clipping'ine göz gezdirirsin. Drone'un düştüğünde "neden?" sorusunun cevabı bu logun içindedir ama okumak doktorun röntgen okuması gibidir. Bu sunucu o kontrolleri deterministik olarak çalıştırır ve yapay zekânın sonucu sade dille anlatmasını sağlar.
+Araçların argümanları ve 18 kontrolün tamamı [docs/reference.md](docs/reference.md)'de. Bu dosyayı `scripts/gen_docs.py` koddan üretir, CI da güncel olup olmadığını denetler.
 
 ## Nasıl çalışır
 
-```
-.bin ──▶ parser.py (pymavlink indeksi + numpy) ──▶ FlightLog (saf, sütunlu domain modeli)
-                                               │
-                                               ▼
-                       checks/ registry ──▶ Check eklentileri (her biri bir konu)
-                                               │
-                                               ▼
-                    orchestrator.diagnose() ──▶ DiagnosisReport (yapısal)
-                                               │
-                                               ▼
-                       server.py (FastMCP, stdio) ──▶ Yapay zekâ bulguları anlatır
-```
+Parser logu sütunlu bir `FlightLog` modeline çevirir. Kayıtlı kontroller bu modeli okur: verisi logda olmayan kontrol atlanır, araç tipine uymayan çalışmaz. Aynı olayın ERR kaydı, failsafe mod değişikliği ve firmware mesajı tek bulguda birleşir. Çarpmadan sonra başlayan bulgular listenin sonuna iner ve raporun başında çarpmadan önceki ilk anomali kalır.
 
-- **Anahtar ilke:** deterministik motor **tek doğruluk kaynağı**; yapay zekâ sadece açıklar ve kaynak gösterir, *karar vermez*.
-- **`FlightLog`** saf, `pymavlink`-bağımsız, sütun tabanlı (numpy) bir domain modelidir; bu yüzden kontroller ve testler gerçek `.bin` olmadan sentetik loglarla çalışır. Parser, pymavlink'in kendi indeksinden mesajları toplu çözer (20 dakikalık, 400 Hz IMU'lu bir log ~1,2 sn); sonuç pymavlink'in kendi çözümüyle alan alan test edilir.
-- **Bir olay, bir bulgu:** Aynı olay loga birkaç yoldan düşer: ERR kaydı, failsafe mod değişikliği ve firmware mesajı. Örneğin bir radyo failsafe'i bu üçüyle birlikte RC sinyal kaybının kendisi olarak da görünür. Bu yankılar olayı ölçen bulguya katılır ve onun `related` listesinde görünür; olay raporda bir kez yer alır.
-- **Çoklu sensör farkında:** 4.x firmware her IMU, GPS, pusula, batarya ve EKF çekirdeğini tek mesaj adı altında, bir instance alanıyla loglar. Her instance kendi verisiyle değerlendirilir; önem derecesini birincil sensör belirler (birincil EKF çekirdeği `XKF4.PI`, diğer GPS fix'i koruyorsa tek alıcı arızası uyarıya düşer).
-- **Kontroller** bağımsız, registry'e kayıtlı eklentilerdir (`@register_check`). Yeni bir tane eklemek = tek bir yeni modül. Orchestrator, verisi loglanmamış kontrolü zarifçe atlar, araç tipine uymayanı (ör. heli/uçakta motor-dengesi) çalıştırmaz ve hata fırlatan kontrolü izole eder.
-- **Firmware'in kendi hükümleri** ayrı bir kontrol: ArduPilot uçuşta "Potential Thrust Loss (motor N)", "Yaw Imbalance", "Crash: Disarming", "EKF Failsafe", "Vibration compensation ON" yazar ve her mod değişikliğinin nedenini (`MODE.Rsn`) loglar. Bunlar logdaki en kesin sinyaller; olduğu gibi raporlanır. İtki kaybı mesajını `thrust_loss` kontrolü raporlar ve motorun çıkış kanalını ve motor çıkışlarındaki kanıtı ekler.
-- **Olay zaman çizelgesi:** çarpmadan sonra başlayan bulgular (titreşim zirvesi, attitude hatası, GPS kaybı) `after_impact` işaretlenip listenin sonuna alınır; rapor özeti ilk anomaliyi ve çarpma anını söyler.
-- Katalog iki aile: **Uçuş dinamiği** — olaylar/hatalar, EKF sağlığı, titreşim, güç (BAT/CURR), GPS (fix/uydu/HDOP, armed pencerede), pusula, attitude takibi, motor dengesi, tek motorda itki kaybı (çerçevenin motor geometrisiyle: tam güçteki motor, karşısındaki en düşük motor), RC sinyal kaybı, zamanlama. **Konfigürasyon & kurulum** (çünkü çoğu kaza uçuş anında değil kurulum hatasıdır): riskli parametreler (kapalı arming/failsafe), çelişkili/kapalı/mantıksız değerlerin **parametre denetimi**, kalibrasyon (büyük/sıfır pusula offset'i), yapılandırılmış-ama-sessiz sensörler (kablo/bağlantı arızası), ve firmware'in kendi pre-arm/açılış uyarıları. Artı tavsiye niteliğinde tuning.
-- **Araç-farkında** (copter / heli / uçak / rover): çoklu-rotora özel kontroller bir helinin swashplate servolarında ya da bir uçağın kontrol yüzeylerinde çalışmaz. Copter 3.2–4.6, Plane, QuadPlane, Heli ve Rover'ı kapsayan **40 gerçek forum loguyla doğrulandı.**
-- Bulgular **doküman-temelli**: her biri ilgili resmi ArduPilot sayfasına link verir; raporlar 4.x için sürüm-özel parametre tanımlarını (`apm.pdef.xml`) yüzeye çıkarır. Sunucu offline/deterministik kalır; bu *işaretçileri* web erişimi olan yapay zekâya verir, o okur ve alıntılar.
-- **Fiziksel profil** (`vehicle_profile`) logu airframe gerçeklerine dönüştürür — frame, motor sayısı, batarya hücresi ve özellikle **güç marjı** (hover gazı → itki/ağırlık). Motorlarını sonuna kadar açıp düşen gerçek bir 12 kg'lık quad'da *"underpowered, %69 gazda asılı, sadece %31 pay"* diyor — kazanın asıl sebebi.
+4.x firmware her IMU, GPS, pusula, batarya ve EKF çekirdeğini tek mesaj adı altında yazar. Kontroller her birini ayrı değerlendirir. 4.1 öncesi loglarda ayrı adla yazılan ikincil sensörler de aynı yapıya çevrilir.
 
-## Güvenlik
+## Doğruluk ve sınırlar
 
-Bu sürüm **offline ve salt-okunur**. MAVLink bağlantısı yok, arming yok, parametre yazma yok, aktüasyon yok. Tuning çıktısı sadece tavsiyedir. Canlı-araç özellikleri (düzgün bir güvenlik gateway'i ile: SITL-önce, insan-onayı, kill switch) bilinçli olarak kapsam dışı ve ertelenmiş.
+Motor, forumdaki 49 gerçek kaza logu üzerinde ölçülür; logların sebebini o logu inceleyen bir geliştirici ya da deneyimli bir kullanıcı yazmıştır. Güncel skorlar ve yöntem [bench/README.md](bench/README.md)'de.
 
-## Kaynaklar & varsayımlar
+- Pusula yön hatasından kaynaklanan dairesel sürüklenme (toilet-bowl) henüz tespit edilmiyor.
+- Format tanımları bozulmuş bir log, kısmi sonuç yerine açık bir hata verir.
+- `.tlog` dosyasında ERR kaydı, batch sampler, hızlı IMU ve mod değişikliği nedeni yoktur.
+- Bulgular karar desteğidir. Uçuşa elverişlilik kararı vermez.
 
-Koddaki her sayısal eşik, enum, varsayılan ve davranışsal iddia otoriter kaynaklara karşı (ArduPilot wiki/firmware, MAVLink, MCP spec) [`docs/SOURCES.md`](docs/SOURCES.md)'de denetlenmiştir — her biri *onaylandı* (atıflı), *heuristik* (bizim ihtiyatlı seçimimiz, en yakın rehber atıflı) veya *tasarım kararı* (bizim severity sınırımız) olarak işaretli. Bu denetim 8 gerçek hatayı bulup düzeltti (ör. yanlış bir heli FRAME_CLASS kümesi, yanlış-numaralı event id'leri, innovation test-ratio'su olmayan bir EKF alanı).
+## Diğer araçlar
 
-## Geliştirme
+[UAV Log Viewer](https://plot.ardupilot.org/) ve Mission Planner'ın [Auto Analysis](https://ardupilot.org/planner/docs/common-diagnosing-problems-using-logs.html)'i veriyi gösterir, yorumu sana bırakır. ardupilot-mcp yorumu yapar ve takip sorularını cevaplar. Bir sinyali grafikte görmek ya da uçuşu 3B izlemek için UAV Log Viewer daha iyidir.
 
-Katkılar için: [CONTRIBUTING.md](CONTRIBUTING.md) ve [AGENTS.md](AGENTS.md) (insanlar ve yapay zekâ asistanları için kurallar).
+## Katkı
 
-```bash
-pip install -e ".[dev]"
-ruff check ardupilot_mcp tests        # lint
-mypy ardupilot_mcp                    # tip kontrolü
-pytest                                # testler
-```
-
-Kontroller sentetik in-memory loglarla (`tests/helpers.py`) test edilir; sentetik bir DataFlash yazıcısı (`tests/synth_bin.py`) parser'a round-trip için gerçek, hermetik bir `.bin` verir — repoya büyük ikili fixture girmez.
-
-### Gerçek kaza benchmark'ı
-
-[`bench/real_crashes.json`](bench/real_crashes.json) discuss.ardupilot.org'dan 49 gerçek uçuş logu içerir. Bunların nedenini, logu inceleyen bir geliştirici ya da deneyimli bir yardımcı belirtmiştir. Logların kendisi repoda yoktur: her kaydın kaynak linki, sha256'sı ve etiketi vardır. Logları kendin indirip `python -m bench.run --logs KLASÖR` çalıştırırsın. Ölçülenler: raporun ilk uyarısının doğru nedeni gösterip göstermediği (top-1), ilk üçte olup olmadığı (top-3) ve başka bir nedene işaret eden CRITICAL bulgular. Bu sürümdeki ölçüm: 41 puanlanabilir logda top-1 11, top-3 22; 49 logun 35'inde yanlış yönlendiren en az bir CRITICAL bulgu var. Ayrıntı: [`bench/README.md`](bench/README.md).
-
-## Bilinen sınırlamalar
-
-- **Toilet-bowl / pusula-heading** arızaları henüz tespit edilmiyor — sadece alan-büyüklüğü stabilitesi değil, dairesel-pozisyon-drift analizi gerektiriyor (planlı).
-- **Gerçekten bozuk bir log** (ör. bit-flip'li mesaj formatı) kısmi-kurtarma yerine net bir hatayla başarısız olur.
-- 85 MB'lık, ~1,6 milyon kayıtlı bir log ~1,2 sn'de parse olur ve ~0,4 GB bellek kullanır; sunucu son iki logu path+mtime ile cache'ler.
-- `.tlog` onboard log değil telemetridir: `ERR` kaydı, batch sampler ya da yüksek hızlı IMU (notch spektrumu) yoktur, yalnız birincil EKF çekirdeği gelir ve mod değişikliğinin nedeni bulunmaz; firmware failsafe kararları yalnız durum metinlerinden çıkar.
-- 4.1 öncesi loglarda ayrı adla yazılan ikincil sensörler ve EKF çekirdekleri (`IMU2`, `GPS2`, `MAG2`, `BAR2`, `BAT2`, `CUR2`, `NKF6`-`NKF9`, ...) instance olarak birleştirilir. Tek istisna ESC telemetrisi (`ESC1`-`ESC8`): 4.0 öncesi firmware'de RPM alanı motorun gerçek devrini değil elektriksel devri tutar, bu yüzden bu mesajlar birleştirilmez.
-
-## Yol haritası
-
-1. **Bu sürüm:** ArduPilot offline `.bin` teşhisi + tuning tavsiyesi + genişletilebilir kontrol çerçevesi.
-2. PX4 / ULog desteği (ayrı parser + kurallar; ortak teşhis soyutlaması).
-3. Canlı MAVLink bağlantısı (SITL-önce) + tam güvenlik gateway'i.
-4. Topluluk kontrol-paylaşımı; onay-kapılı tuning *uygulaması*.
+[CONTRIBUTING.md](.github/CONTRIBUTING.md) geliştirme ortamını, yeni kontrol eklemeyi ve PR sürecini anlatır. Yapay zekâ asistanlarının uyduğu kurallar [AGENTS.md](AGENTS.md)'de. Güvenlik açıklarını [SECURITY.md](.github/SECURITY.md)'deki yoldan bildir. Değişiklikler [CHANGELOG.md](CHANGELOG.md)'de.
 
 ## Lisans
 
-MIT. `ardupilot_mcp/data/params/` altındaki dosyalar ArduPilot'un sürüm-özel parametre tanımlarından (`apm.pdef.xml`, ArduPilot kaynak kodundan üretilir, GPLv3) çıkarılmış olgulardır: parametre adı, belgelenmiş aralık, birim, değer kodları, bitmask bit numaraları ve bayraklar. Açıklama ya da etiket metni kopyalanmaz.
+[GNU AGPL-3.0](LICENSE). Kodu değiştirip ağ üzerinden hizmet olarak sunan, değiştirdiği kaynak kodu o hizmetin kullanıcılarına açmak zorundadır. AGPL koşulları işine uymuyorsa ticari lisans için contact@furkanisikay.com adresine yaz. 0.1.3 ve önceki sürümler MIT lisansıyla yayımlandı ve öyle kalır.
+
+`ardupilot_mcp/data/params/` altındaki veri, ArduPilot'un GPLv3 lisanslı parametre tanımlarından (`apm.pdef.xml`) çıkarılmış olgulardan oluşur: aralık, birim, değer kodları ve bitmask bitleri. Açıklama metni kopyalanmaz.

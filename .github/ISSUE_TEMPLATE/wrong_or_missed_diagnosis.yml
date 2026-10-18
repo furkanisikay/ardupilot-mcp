@@ -1,48 +1,40 @@
-name: "Wrong or missed diagnosis"
-description: The tool got it wrong on a real log — missed a fault, or flagged a healthy flight. These drive new/fixed checks.
+name: Wrong or missed diagnosis
+description: On a real log the tool missed a fault, flagged a healthy flight or named the wrong cause.
 labels: ["diagnosis"]
 body:
   - type: markdown
     attributes:
-      value: |
-        Thanks — log cases where we got it wrong are the single most useful contribution.
+      value: A log where the tool got it wrong is the most useful thing you can send. It turns into a new or fixed check and a benchmark entry.
   - type: dropdown
     id: kind
     attributes:
-      label: What happened?
+      label: What went wrong?
       options:
-        - "Missed a real problem (false negative)"
-        - "Flagged a healthy flight (false positive)"
-        - "Wrong explanation / wrong cause"
+        - Missed a real problem (false negative)
+        - Flagged a healthy flight (false positive)
+        - Named the wrong cause
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: What actually happened to the aircraft?
-      description: e.g. "crashed on takeoff — turned out to be an ESC desync", or "flew fine, no issue".
+      label: What happened to the aircraft?
+      description: For example "crashed on takeoff, an ESC desync" or "flew fine".
     validations:
       required: true
   - type: textarea
     id: output
     attributes:
       label: What did the tool report?
-      description: Paste the relevant findings from analyze_log (or "nothing").
+      description: The relevant findings from analyze_log, or "nothing".
       render: text
   - type: input
     id: firmware
     attributes:
-      label: Vehicle & firmware
-      placeholder: "ArduCopter 4.5.7, quad"
+      label: Vehicle and firmware
+      placeholder: "ArduCopter 4.5.7, quad X"
   - type: textarea
     id: log
     attributes:
-      label: Log / evidence
-      description: Attach the .bin if you can (drag-and-drop), or paste the relevant message/parameter values. A link to a forum thread also helps.
-  - type: checkboxes
-    id: checks
-    attributes:
-      label: Confirmations
-      options:
-        - label: I can share this log (it contains no sensitive location data I'm worried about), or I've described the relevant data.
-          required: false
+      label: Log and evidence
+      description: Attach the log, link to it or to the forum thread, or paste the relevant values. A .bin or .tlog holds GPS positions; share it only if you are fine with that.

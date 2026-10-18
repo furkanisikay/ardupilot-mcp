@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Static ArduPilot reference data used by the parser and the events check.
 
 Kept deliberately small and in one place so decoding (mode numbers, ERR

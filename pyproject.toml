@@ -1,21 +1,21 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
 name = "ardupilot-mcp"
 dynamic = ["version"]
-description = "ArduPilot uçuş loglarını teşhis eden deterministik MCP sunucusu · Deterministic MCP server that diagnoses ArduPilot DataFlash flight logs"
+description = "ArduPilot uçuş loglarını teşhis eden deterministik MCP sunucusu · Deterministic MCP server that diagnoses ArduPilot flight logs"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "AGPL-3.0-only"
+license-files = ["LICENSE"]
 authors = [{ name = "Furkan IŞIKAY" }]
 keywords = ["mcp", "model-context-protocol", "ardupilot", "dataflash", "flight-log", "diagnostics", "mavlink", "drone", "uav"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -34,13 +34,14 @@ dependencies = [
 # Lint/type tools are pinned so local and CI use the exact same versions
 # (a newer ruff/mypy can introduce new rules and fail CI that passed locally).
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff==0.15.17", "mypy==2.1.0", "build>=1.2"]
+dev = ["pytest>=8.0", "ruff==0.15.17", "mypy==2.1.0", "build>=1.2", "pre-commit>=4.0"]
 
 [project.urls]
 Homepage = "https://github.com/furkanisikay/ardupilot-mcp"
 Repository = "https://github.com/furkanisikay/ardupilot-mcp"
 Issues = "https://github.com/furkanisikay/ardupilot-mcp/issues"
 Changelog = "https://github.com/furkanisikay/ardupilot-mcp/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/furkanisikay/ardupilot-mcp/blob/main/docs/reference.md"
 
 [project.scripts]
 ardupilot-mcp = "ardupilot_mcp.__main__:main"
@@ -52,10 +53,11 @@ path = "ardupilot_mcp/__init__.py"
 packages = ["ardupilot_mcp"]
 
 [tool.hatch.build.targets.sdist]
-include = ["ardupilot_mcp", "README.md", "README.en.md", "LICENSE", "CHANGELOG.md", "docs/SOURCES.md"]
+include = ["ardupilot_mcp", "README.md", "README.en.md", "LICENSE", "CHANGELOG.md", "docs/SOURCES.md", "docs/reference.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-q"
 
 [tool.ruff]

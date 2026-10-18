@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Tuning recommendations (advisory only — never writes parameters).
 
 This module is *not* a Check: it does not subclass :class:`Check` and is not

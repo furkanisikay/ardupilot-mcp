@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Attitude tracking check (the crown-jewel check).
 
 Reads the ``ATT`` message, which logs both the *demanded* attitude
