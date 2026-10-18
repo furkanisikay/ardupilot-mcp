@@ -204,3 +204,31 @@ def test_version_flag_prints_the_version_without_starting_the_server(capsys):
 
     main(["--version"])
     assert capsys.readouterr().out.strip() == f"ardupilot-mcp {__version__}"
+
+
+def test_list_events_skips_a_corrupt_record(monkeypatch):
+    from ardupilot_mcp import server
+    from tests.helpers import make_flight_log
+
+    log = make_flight_log(
+        {
+            "ERR": [
+                {"TimeUS": 1_000_000, "Subsys": "x", "ECode": 1},
+                {"TimeUS": 1_100_000, "Subsys": 3, "ECode": float("inf")},
+                {"TimeUS": 1_200_000, "ECode": 2},
+                {"TimeUS": 2_000_000, "Subsys": 3, "ECode": 2},
+                {"TimeUS": 3_000_000, "Subsys": 10, "ECode": 0},
+            ],
+            "EV": [{"TimeUS": 1_000_000, "Id": float("nan")}],
+        }
+    )
+    monkeypatch.setattr(server, "_load", lambda _p: log)
+    names = [e.name for e in list_events("x.bin").events]
+    assert names == ["COMPASS error (ECode 2)", "FLIGHT_MODE: could not switch to STABILIZE"]
+
+
+def test_recommend_tuning_accepts_an_area_with_spaces(mem_log):
+    from ardupilot_mcp.server import recommend_tuning
+
+    report = recommend_tuning("x.bin", " notch ")
+    assert not any("unknown tuning area" in n for n in report.notes)

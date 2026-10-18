@@ -221,17 +221,20 @@ class GpsCheck(Check):
         )
 
     def _hdop_finding(self, log: FlightLog, window, inst: int = 0, label: str = "GPS") -> Finding | None:
-        times, hdop = log.clip_to_window(*log.series("GPS", "HDop", inst), window)
-        if hdop.size == 0:
-            return None
         # HDOP only means something when there's a fix. Drop no-fix sentinel
         # readings (~99.99) so we don't mislabel "no signal" as "poor geometry"
-        # (the fix/sats findings already cover the no-fix case).
-        _, status = log.clip_to_window(*log.series("GPS", "Status", inst), window)
-        if status.size == hdop.size:
+        # (the fix/sats findings already cover the no-fix case). Status comes from the
+        # same records; without it, only the sentinel is dropped.
+        times, (hdop, status) = log.series_many("GPS", ["HDop", "Status"], inst)
+        if hdop.size:
+            _, status = log.clip_to_window(times, status, window)
+            times, hdop = log.clip_to_window(times, hdop, window)
             valid = (status >= FIX_3D) & (hdop < HDOP_SENTINEL)
         else:
+            times, hdop = log.clip_to_window(*log.series("GPS", "HDop", inst), window)
             valid = hdop < HDOP_SENTINEL
+        if hdop.size == 0:
+            return None
         times, hdop = times[valid], hdop[valid]
         if hdop.size == 0:
             return None

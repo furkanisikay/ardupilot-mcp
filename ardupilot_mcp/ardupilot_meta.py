@@ -77,6 +77,10 @@ ERR_SUBSYSTEMS: dict[int, str] = {
 # (ArduCopter/ekf_check.cpp: LOGGER_WRITE_ERROR(LogErrorSubsystem::EKF_PRIMARY, LogErrorCode(ekf_primary_core))).
 ERR_EKF_PRIMARY = 24
 
+# ERR FLIGHT_MODE carries the mode that could not be entered as its ECode
+# (ArduCopter/mode.cpp mode_change_failed: LOGGER_WRITE_ERROR(FLIGHT_MODE, mode->mode_number())).
+ERR_FLIGHT_MODE = 10
+
 # Subsystems whose non-zero ECode is a hard, safety-relevant failure.
 CRITICAL_ERR_SUBSYSTEMS: set[int] = {
     5,  # FAILSAFE_RADIO

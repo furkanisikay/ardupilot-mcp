@@ -109,22 +109,11 @@ class RCInputCheck(Check):
         ]
 
     def _pwm_findings(self, log: FlightLog) -> list[Finding]:
-        # Gather aligned primary channels by index.
-        chans: dict[str, np.ndarray] = {}
-        times: np.ndarray | None = None
-        for ch in _PRIMARY:
-            t, v = log.series("RCIN", ch)
-            if v.size == 0:
-                return []  # not enough channel data to reason about
-            chans[ch] = v
-            times = t if times is None else times
-        if times is None:
-            return []
-        n = min(times.size, *[v.size for v in chans.values()])
-        if n == 0:
-            return []
-        times = times[:n]
-        stack = np.vstack([chans[ch][:n] for ch in _PRIMARY])  # shape (4, n)
+        # The primary channels of each RCIN record, kept together.
+        times, cols = log.series_many("RCIN", list(_PRIMARY))
+        if times.size == 0:
+            return []  # not enough channel data to reason about
+        stack = np.vstack(cols)  # shape (4, n)
 
         # All four primary channels simultaneously below the no-signal threshold.
         all_low_b = np.all(stack <= NO_SIGNAL_US, axis=0)
@@ -143,7 +132,8 @@ class RCInputCheck(Check):
         log_end = float(times[-1])
         lost_to_end = (log_end - worst.end_s) < 1.0
 
-        min_val = float(stack.min())
+        in_loss = (times >= worst.start_s) & (times <= worst.end_s)
+        min_val = float(stack[:, in_loss].min()) if np.any(in_loss) else float(stack.min())
         sev = Severity.CRITICAL if (lost_to_end or worst.duration_s >= 2.0) else Severity.WARN
         tail = (
             " The link did not recover before the log ended, consistent with an RC-loss-induced crash."

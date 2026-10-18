@@ -294,3 +294,65 @@ def test_in_flight_divergence_still_critical_with_land_detector():
     log = make_flight_log({"ATT": recs, "EV": ev}, vehicle_kind="copter")
     f = AttitudeTrackingCheck().run(log)
     assert [x.severity for x in f] == [Severity.CRITICAL]
+
+
+def test_a_missing_demand_sample_does_not_shift_demand_against_actual():
+    # Roll tracks a square-wave demand exactly; one NaN DesRoll used to offset the
+    # two series by a sample and turn the steps into a tracking error.
+    n = 600
+    roll = [30.0 if (i // 5) % 2 == 0 else -30.0 for i in range(n)]
+    des = list(roll)
+    des[40] = float("nan")
+    recs = build_series(
+        0.0,
+        50.0,
+        Roll=roll,
+        DesRoll=des,
+        Pitch=[0.0] * n,
+        DesPitch=[0.0] * n,
+        Yaw=[0.0] * n,
+        DesYaw=[0.0] * n,
+    )
+    assert AttitudeTrackingCheck().run(_log(recs)) == []
+
+
+def test_motor_saturation_is_judged_in_the_divergence_window_only():
+    n = 1000  # 20 s at 50 Hz; roll diverges 30 deg from 12 s on
+    roll = [0.0] * 600 + [30.0] * 400
+    att = build_series(
+        0.0,
+        50.0,
+        Roll=roll,
+        DesRoll=[0.0] * n,
+        Pitch=[0.0] * n,
+        DesPitch=[0.0] * n,
+        Yaw=[0.0] * n,
+        DesYaw=[0.0] * n,
+    )
+    # Motors at 1500 for 12 s, pinned at 2000 for the last 8 s: the whole-flight mean is
+    # below saturation, the window's mean above it.
+    c1 = [1500.0] * 600 + [2000.0] * 400
+    rcou = build_series(0.0, 50.0, C1=c1, C2=c1, C3=c1, C4=c1)
+    findings = AttitudeTrackingCheck().run(_log(att, rcou_records=rcou))
+    crit = [f for f in findings if f.severity is Severity.CRITICAL]
+    assert crit and crit[0].evidence.samples.get("motors_saturated") == 1.0
+
+
+def test_a_one_sample_spike_still_sees_the_motor_outputs_around_it():
+    n = 500  # 10 s at 50 Hz, a single 40 deg roll sample at 5 s
+    roll = [0.0] * n
+    roll[250] = 40.0
+    att = build_series(
+        0.0,
+        50.0,
+        Roll=roll,
+        DesRoll=[0.0] * n,
+        Pitch=[0.0] * n,
+        DesPitch=[0.0] * n,
+        Yaw=[0.0] * n,
+        DesYaw=[0.0] * n,
+    )
+    c1 = [2000.0] * 100  # 10 Hz, every motor pinned
+    rcou = build_series(0.03, 10.0, C1=c1, C2=c1, C3=c1, C4=c1)
+    (finding,) = AttitudeTrackingCheck().run(_log(att, rcou_records=rcou))
+    assert finding.evidence.samples.get("motors_saturated") == 1.0

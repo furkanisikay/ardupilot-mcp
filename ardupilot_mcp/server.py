@@ -17,6 +17,7 @@ import os
 from collections import OrderedDict
 from dataclasses import dataclass
 from fnmatch import fnmatch
+from typing import TypeGuard
 
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
@@ -111,6 +112,10 @@ def _rec_time(rec: dict) -> float | None:
     """The normalised flight-relative timestamp of a record, as a float or None."""
     t = rec.get("timestamp")
     return float(t) if isinstance(t, (int, float)) else None
+
+
+def _finite_number(v: object) -> TypeGuard[int | float]:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
 def _in_window(t: float | None, start_s: float | None, end_s: float | None) -> bool:
@@ -211,10 +216,17 @@ def list_events(
 
     if wanted is None or "ERR" in wanted:
         for r in log.get("ERR"):
-            subsys = int(r.get("Subsys", 0))
-            ecode = int(r.get("ECode", 0))
+            raw_subsys, raw_ecode = r.get("Subsys"), r.get("ECode")
+            if not (_finite_number(raw_subsys) and _finite_number(raw_ecode)):
+                continue  # a corrupt record (missing, NaN, inf or non-numeric fields)
+            subsys, ecode = int(raw_subsys), int(raw_ecode)
             name = meta.err_subsystem_name(subsys)
-            label = f"{name} cleared" if ecode == 0 else f"{name} error (ECode {ecode})"
+            if subsys == meta.ERR_FLIGHT_MODE:
+                label = f"{name}: could not switch to {meta.mode_name(ecode, log.meta.vehicle_kind)}"
+            elif ecode == 0:
+                label = f"{name} cleared"
+            else:
+                label = f"{name} error (ECode {ecode})"
             events.append(
                 EventRecord(
                     time_s=_rec_time(r), kind="ERR", name=label, raw={"Subsys": subsys, "ECode": ecode}
@@ -226,7 +238,7 @@ def list_events(
             raw: dict[str, float | int | str]
             if isinstance(num, str):
                 name, raw = meta.mode_name(num), {"Mode": num}
-            elif isinstance(num, (int, float)):
+            elif _finite_number(num):
                 name, raw = meta.mode_name(int(num), log.meta.vehicle_kind), {"Mode": int(num)}
             else:
                 continue
@@ -234,7 +246,7 @@ def list_events(
     if wanted is None or "EV" in wanted:
         for r in log.get("EV"):
             eid = r.get("Id")
-            if eid is None:
+            if not _finite_number(eid):
                 continue
             events.append(
                 EventRecord(time_s=_rec_time(r), kind="EV", name=meta.ev_name(int(eid)), raw={"Id": int(eid)})
@@ -444,7 +456,7 @@ def recommend_tuning(path: str, area: str | None = None) -> TuningReport:
     sel: TuningArea | None = None
     if area:
         try:
-            sel = TuningArea(area.lower())
+            sel = TuningArea(area.strip().lower())
         except ValueError:
             notes.append(f"unknown tuning area {area!r}; valid: notch, pid, autotune. Running all.")
     recs = analyze_tuning(log, sel.value if sel else None)

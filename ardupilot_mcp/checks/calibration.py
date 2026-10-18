@@ -23,7 +23,7 @@ milligauss) is a direct quality signal:
   by firmware default, so flagging them produces constant false positives.
 
 A compass instance ``n`` is only considered when at least one of its OFS params
-is present in the log.
+is present in the log and neither ``COMPASS_USE{n}`` nor ``COMPASS_ENABLE`` is 0.
 
 Accelerometer (INFO only)
 -------------------------
@@ -79,8 +79,9 @@ class CalibrationCheck(Check):
         params = log.params
         for n, ofs_prefix, use_key, devid_key in _COMPASS_INSTANCES:
             comps = [params.get(ofs_prefix + a) for a in ("X", "Y", "Z")]
-            # Only consider this compass if at least one OFS param is present.
-            if all(c is None for c in comps):
+            # Only consider this compass if at least one OFS param is present, and not
+            # when it is switched off: the EKF never reads an unused compass.
+            if all(c is None for c in comps) or self._is_disabled(params, use_key):
                 continue
             # Treat missing axes as 0.0 so a partial set still yields a magnitude.
             ox, oy, oz = (float(c) if c is not None else 0.0 for c in comps)
@@ -137,6 +138,15 @@ class CalibrationCheck(Check):
                     )
                 )
         return out
+
+    @staticmethod
+    def _is_disabled(params: dict, use_key: str) -> bool:
+        """The log says this compass is off (COMPASS_USE{n} = 0 or COMPASS_ENABLE = 0)."""
+        for key in (use_key, "COMPASS_ENABLE"):
+            value = params.get(key)
+            if value is not None and int(round(float(value))) == 0:
+                return True
+        return False
 
     @staticmethod
     def _is_enabled(params: dict, use_key: str) -> bool:

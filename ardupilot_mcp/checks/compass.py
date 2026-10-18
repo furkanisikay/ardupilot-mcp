@@ -82,14 +82,11 @@ class CompassCheck(Check):
         """
         if log.meta.vehicle_kind not in THROTTLE_FRACTION_KINDS:
             return []
-        tm, mx = log.series("MAG", "MagX", inst)
-        _, my = log.series("MAG", "MagY", inst)
-        _, mz = log.series("MAG", "MagZ", inst)
+        tm, (mx, my, mz) = log.series_many("MAG", ["MagX", "MagY", "MagZ"], inst)
         tt, thr = log.series("CTUN", "ThO")
-        n = min(tm.size, mx.size, my.size, mz.size)
-        if n < MIN_SAMPLES or thr.size < MIN_SAMPLES:
+        if tm.size < MIN_SAMPLES or thr.size < MIN_SAMPLES:
             return []
-        tm, mag = tm[:n], np.sqrt(mx[:n] ** 2 + my[:n] ** 2 + mz[:n] ** 2)
+        mag = np.sqrt(mx**2 + my**2 + mz**2)
         armed = log.armed_mask(tm)
         if armed is not None:
             tm, mag = tm[armed], mag[armed]
@@ -134,14 +131,9 @@ class CompassCheck(Check):
         ]
 
     def _stability_findings(self, log: FlightLog, inst: int = 0) -> list[Finding]:
-        tx, mx = log.series("MAG", "MagX", inst)
-        _, my = log.series("MAG", "MagY", inst)
-        _, mz = log.series("MAG", "MagZ", inst)
-        n = min(mx.size, my.size, mz.size)
-        if n < MIN_SAMPLES:
+        times, (mx, my, mz) = log.series_many("MAG", ["MagX", "MagY", "MagZ"], inst)
+        if times.size < MIN_SAMPLES:
             return []
-        mx, my, mz = mx[:n], my[:n], mz[:n]
-        times = tx[:n] if tx.size >= n else tx
 
         mag = np.sqrt(mx * mx + my * my + mz * mz)
         # In flight only: on the ground the craft is carried, set down next to cars and
