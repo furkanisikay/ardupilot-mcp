@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- Pre-4.1 logs were judged on their primary sensor and EKF core only. Firmware before 4.1
+  logged a second or third IMU, GPS, compass, barometer and battery, and EKF cores 1 and 2,
+  under their own names (`IMU2`, `MAG2`, `BAR2`, `BAT2`, `CUR2`, `NKF6`-`NKF9`, `NK11`-`NK14`,
+  ...). These are now folded into the base message with the modern instance field when their
+  fields match, so every check judges them per instance as on 4.1+ logs. On 40 forum logs from
+  3.2-3.6, 31 had such messages (IMU 29, compass 24, EKF cores 24, barometer 2, battery 1) and
+  the findings changed on 18; the benchmark (all 4.x) is unchanged.
 - `metadata_url` was described as giving parameter defaults; `apm.pdef.xml` carries ranges,
   values and bitmasks but no defaults.
 - The parser left pymavlink's memory map of the log open until a garbage collection, so on

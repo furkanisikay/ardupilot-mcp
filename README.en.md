@@ -370,7 +370,7 @@ Checks are tested against synthetic in-memory logs (`tests/helpers.py`) and a sy
 - **Toilet-bowl / compass-heading faults** aren't detected yet — they need circular-position-drift analysis (planned), not just field-magnitude stability.
 - A **genuinely corrupt log** (e.g. a bit-flipped message format) fails to parse with a clear error rather than partial recovery.
 - An 85 MB log with ~1.6 M records parses in ~1.2 s using ~0.4 GB; the server caches the last two parsed logs by path+mtime.
-- In pre-4.0 logs, separately named secondary sensors (`GPS2`, `MAG2`, `IMU2`, `BAT2`) are not yet merged as instances; only the primary sensor is judged there.
+- In pre-4.1 logs, separately named secondary sensors and EKF cores (`IMU2`, `GPS2`, `MAG2`, `BAR2`, `BAT2`, `CUR2`, `NKF6`-`NKF9`, ...) are merged as instances. ESC telemetry (`ESC1`-`ESC8`) is the exception: before 4.0 its RPM field holds the electrical rather than the mechanical speed, so it is not merged.
 
 ## Roadmap
 

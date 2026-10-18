@@ -370,7 +370,7 @@ Kontroller sentetik in-memory loglarla (`tests/helpers.py`) test edilir; senteti
 - **Toilet-bowl / pusula-heading** arızaları henüz tespit edilmiyor — sadece alan-büyüklüğü stabilitesi değil, dairesel-pozisyon-drift analizi gerektiriyor (planlı).
 - **Gerçekten bozuk bir log** (ör. bit-flip'li mesaj formatı) kısmi-kurtarma yerine net bir hatayla başarısız olur.
 - 85 MB'lık, ~1,6 milyon kayıtlı bir log ~1,2 sn'de parse olur ve ~0,4 GB bellek kullanır; sunucu son iki logu path+mtime ile cache'ler.
-- Pre-4.0 loglardaki ayrı adlı ikincil sensörler (`GPS2`, `MAG2`, `IMU2`, `BAT2`) henüz instance olarak birleştirilmiyor; bu loglarda yalnız birincil sensör değerlendirilir.
+- 4.1 öncesi loglarda ayrı adla yazılan ikincil sensörler ve EKF çekirdekleri (`IMU2`, `GPS2`, `MAG2`, `BAR2`, `BAT2`, `CUR2`, `NKF6`-`NKF9`, ...) instance olarak birleştirilir. Tek istisna ESC telemetrisi (`ESC1`-`ESC8`): 4.0 öncesi firmware'de RPM alanı motorun gerçek devrini değil elektriksel devri tutar, bu yüzden bu mesajlar birleştirilmez.
 
 ## Yol haritası
 
