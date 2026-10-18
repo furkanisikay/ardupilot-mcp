@@ -1,15 +1,23 @@
-name: Publish to PyPI
+name: Release
 
-# Automatic release: bump __version__ in ardupilot_mcp/__init__.py and merge to main.
-# When main carries a version that isn't tagged yet, this builds, publishes to PyPI
-# (Trusted Publishing — no token), then tags vX.Y.Z and creates a GitHub release.
-# No manual `git tag` needed. (Run manually for the first/any release via the Actions
-# tab → "Publish to PyPI" → Run workflow.)
+# Automatic release: bump __version__ in ardupilot_mcp/__init__.py, run
+# scripts/gen_docs.py (it copies the version into server.json) and merge to main.
+# When main carries a version that isn't tagged yet, this builds and publishes to PyPI
+# (Trusted Publishing), publishes server.json to the MCP Registry (GitHub OIDC), then
+# tags vX.Y.Z and creates a GitHub release with notes grouped by label.
+#
+# Run it from the Actions tab with "registry" ticked to publish a version that is
+# already released to the MCP Registry only, for example after the registry step failed.
 on:
   push:
     branches: [main]
     paths: ["ardupilot_mcp/__init__.py"]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: "Publish the current version to the MCP Registry even if it is already released"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -70,6 +78,47 @@ jobs:
       - uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true  # re-runs don't fail if the version is already on PyPI
+
+  mcp-registry:
+    name: Publish to the MCP Registry
+    needs: [check, publish]
+    # After a new PyPI release, or on a manual run with "registry" ticked.
+    if: >-
+      !cancelled() && needs.check.result == 'success' &&
+      (needs.publish.result == 'success' ||
+       (needs.check.outputs.is_new == 'false' && inputs.registry))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # GitHub OIDC login for the io.github.furkanisikay namespace
+    env:
+      PUBLISHER: v1.8.1
+      PUBLISHER_SHA256: a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check server.json matches the release
+        env:
+          V: ${{ needs.check.outputs.version }}
+        run: |
+          jq -e --arg v "$V" '.version == $v and all(.packages[]; .version == $v)' server.json \
+            || { echo "server.json is not at $V; run scripts/gen_docs.py"; exit 1; }
+      - name: Install mcp-publisher
+        run: |
+          curl -sSfL -o mcp-publisher.tar.gz \
+            "https://github.com/modelcontextprotocol/registry/releases/download/$PUBLISHER/mcp-publisher_linux_amd64.tar.gz"
+          echo "$PUBLISHER_SHA256  mcp-publisher.tar.gz" | sha256sum -c -
+          tar xzf mcp-publisher.tar.gz mcp-publisher
+      - name: Log in with GitHub OIDC
+        run: ./mcp-publisher login github-oidc
+      - name: Publish server.json
+        # PyPI can take a minute to serve a new upload; the registry checks the package.
+        run: |
+          for attempt in 1 2 3 4 5; do
+            ./mcp-publisher publish && exit 0
+            echo "attempt $attempt failed; retrying in 30 s"
+            sleep 30
+          done
+          exit 1
 
   tag-and-release:
     name: Tag and GitHub release
