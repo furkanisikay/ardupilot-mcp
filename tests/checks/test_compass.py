@@ -42,10 +42,7 @@ def test_clean_steady_field_no_findings():
 
 
 def test_warn_moderate_variation():
-    # Magnitude alternates 450 <-> 650 along X only.
-    # mean ~550, cv ~0.18 (< WARN_CV) but range_ratio = 200/550 ~ 0.36...
-    # push it just over the WARN_RANGE_RATIO via a wider but bounded swing.
-    # Use 400 <-> 700: mean 550, pp 300, range_ratio ~0.55 -> tune to clear 0.60.
+    # Magnitude alternates 400 <-> 800 along X only: cv 0.33, in the WARN band.
     n = 50
     # Alternate to keep std moderate (cv stays between WARN_CV and CRIT_CV is
     # hard with a pure two-level signal, so design for cv in [0.30, 0.60)).
@@ -116,3 +113,13 @@ def test_check_is_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("compass") is not None
+
+
+def test_single_glitch_sample_is_not_instability():
+    # A steady 500 mGauss field with one 900 mGauss read: peak-to-peak is 80 % of the
+    # mean, but the field is stable (CV ~0.11). One glitch is not interference.
+    n = 60
+    mx = [500.0] * n
+    mx[30] = 900.0
+    recs = build_series(0.0, 10.0, MagX=mx, MagY=[0.0] * n, MagZ=[0.0] * n)
+    assert CompassCheck().run(_log(recs)) == []

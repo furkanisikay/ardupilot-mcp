@@ -53,6 +53,8 @@ ardupilot_mcp/
 tests/             pytest; synthetic logs via tests/helpers.py + tests/synth_bin.py
 tests/scenarios/   labelled fault-injection flights in Copter-4.6.3's exact log format
                    (tests/test_scenarios.py: expected findings fire, clean flights stay clean)
+bench/             real-crash benchmark: labelled forum flights (URL + sha256 + label, no
+                   logs) and an offline scorer, `python -m bench.run --logs DIR`
 docs/SOURCES.md    every assumption, audited + cited
 ```
 
@@ -90,7 +92,10 @@ A check is one module + one test. The registry makes it a drop-in.
    `docs/SOURCES.md` with its source.
 6. If the check fires on a new kind of fault, add a labelled flight to
    `tests/scenarios/flights.py` (and a benign variant that must stay clean).
-7. Run the commands below until green.
+7. Run the commands below until green. If you have the benchmark logs locally, run
+   `python -m bench.run --logs DIR` before and after, and put the change in top-1, top-3
+   and false criticals in the changelog entry (a threshold change must not raise false
+   criticals without a reason).
 
 ## Commands
 

@@ -359,6 +359,10 @@ pytest                                # testler
 
 Kontroller sentetik in-memory loglarla (`tests/helpers.py`) test edilir; sentetik bir DataFlash yazıcısı (`tests/synth_bin.py`) parser'a round-trip için gerçek, hermetik bir `.bin` verir — repoya büyük ikili fixture girmez.
 
+### Gerçek kaza benchmark'ı
+
+[`bench/real_crashes.json`](bench/real_crashes.json) discuss.ardupilot.org'dan 49 gerçek uçuş logu içerir. Bunların nedenini, logu inceleyen bir geliştirici ya da deneyimli bir yardımcı belirtmiştir. Logların kendisi repoda yoktur: her kaydın kaynak linki, sha256'sı ve etiketi vardır. Logları kendin indirip `python -m bench.run --logs KLASÖR` çalıştırırsın. Ölçülenler: raporun ilk uyarısının doğru nedeni gösterip göstermediği (top-1), ilk üçte olup olmadığı (top-3) ve başka bir nedene işaret eden CRITICAL bulgular. Bu sürümdeki ölçüm: 41 puanlanabilir logda top-1 8, top-3 20; 49 logun 35'inde yanlış yönlendiren en az bir CRITICAL bulgu var. Ayrıntı: [`bench/README.md`](bench/README.md).
+
 ## Bilinen sınırlamalar
 
 - **Toilet-bowl / pusula-heading** arızaları henüz tespit edilmiyor — sadece alan-büyüklüğü stabilitesi değil, dairesel-pozisyon-drift analizi gerektiriyor (planlı).
