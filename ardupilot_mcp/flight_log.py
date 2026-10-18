@@ -61,6 +61,25 @@ class LogMeta:
     max_altitude_m: float | None = None
 
 
+@dataclass
+class ImuBatch:
+    """One batch-sampler capture (ISBH header + its ISBD blocks): raw IMU at full rate.
+
+    AP_InertialSensor's BatchSampler logs ``smp_cnt`` consecutive samples of one sensor
+    as int16 scaled by ``mul`` (BatchSampler.cpp). ``post_filter`` is True for samples taken
+    after the filters, False for raw ones, None when the log cannot tell (INS_LOG_BAT_OPT).
+    """
+
+    time_s: float  # when the header was written (ISBH.TimeUS), on the log's rebased clock
+    sensor: str  # "gyro" or "accel"
+    instance: int
+    post_filter: bool | None
+    rate_hz: float
+    x: np.ndarray
+    y: np.ndarray
+    z: np.ndarray
+
+
 class _Table:
     """One message type: equal-length field columns plus a seconds time base.
 
@@ -164,6 +183,8 @@ class FlightLog:
         # mtype -> {instance: record indices}; built lazily per type.
         self._instance_index: dict[str, dict[int, np.ndarray]] = {}
         self._tables: dict[str, _Table] = {}
+        # Batch-sampler captures (ISBH/ISBD), kept apart from the per-record tables.
+        self.batches: list[ImuBatch] = []
         for mtype, records in (messages or {}).items():
             self._tables[mtype] = _Table.from_records(records)
         for mtype, cols in (columns or {}).items():

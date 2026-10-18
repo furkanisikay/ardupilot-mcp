@@ -293,7 +293,7 @@ goose configure
 | `query_timeseries(path, message_type, fields, start_s?, end_s?, max_points?, instance?)` | Bir bulguya derinlemesine bakmak için seyreltilmiş sayısal seri. Çoklu sensörlü mesajlarda (IMU/GPS/pusula/batarya/EKF çekirdeği başına) tek bir `instance` döner; `available_instances` hangilerinin olduğunu söyler. |
 | `get_params(path, name_glob?)` | Logun PARM dökümünden parametre değerleri (ör. `INS_HNTCH_*`), toplam sayı, yorumlamak için sürüm-özel metadata linki, ve döküm eksikse bir uyarı. |
 | `load_param_file(path, name_glob?)` | Kullanıcının dışa aktardığı `.param`/`.params` dosyasını okur — log dökümü kesikse veya "uçtuğu config vs şimdiki"yi karşılaştırmak için tam, otoriter config. |
-| `recommend_tuning(path, area?)` | Tavsiye niteliğinde tuning (gyro FFT'sinden harmonik notch, PID, autotune). **Sadece öneri — asla uygulanmaz.** |
+| `recommend_tuning(path, area?)` | Tavsiye niteliğinde tuning (batch sampler, hızlı IMU, uçuş içi FFT ya da ESC RPM verisinden harmonik notch; PID; autotune). **Sadece öneri — asla uygulanmaz.** |
 | `list_checks()` | Kayıtlı teşhis kontrolleri (genişletilebilir katalog). |
 
 ## Örnek kullanım senaryoları

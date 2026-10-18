@@ -293,7 +293,7 @@ The **Add to LM Studio** button above; or `~/.lmstudio/mcp.json` (Windows: `%USE
 | `query_timeseries(path, message_type, fields, start_s?, end_s?, max_points?, instance?)` | Decimated numeric series for drilling into a finding. Multi-instance messages (per IMU/GPS/compass/battery/EKF core) return one `instance` at a time; `available_instances` lists them. |
 | `get_params(path, name_glob?)` | Parameter values from the log's PARM dump (e.g. `INS_HNTCH_*`), plus the total count, a version-specific metadata link to interpret them, and a note if the snapshot looks incomplete. |
 | `load_param_file(path, name_glob?)` | Read a user-exported `.param`/`.params` file — the authoritative complete config, for when the log's snapshot is truncated or to compare flown-vs-current. |
-| `recommend_tuning(path, area?)` | Advisory tuning (harmonic notch from gyro FFT, PID, autotune). **Recommendation only — never applied.** |
+| `recommend_tuning(path, area?)` | Advisory tuning (harmonic notch from the batch sampler, a fast IMU stream, the in-flight FFT or ESC RPM; PID; autotune). **Recommendation only — never applied.** |
 | `list_checks()` | The registered diagnostic checks (extensible catalogue). |
 
 ## Example scenarios

@@ -42,7 +42,7 @@ _COPTER_RULES: tuple[_Rule, ...] = (
     _Rule("MOTB", (17,), "MOTBATT (bit 17)", "motor/battery limits (thrust boost, lift max)"),
 )
 _COPTER_KINDS = {"copter", "heli"}
-# Below this IMU rate the gyro spectrum cannot show motor noise (tuning.NOTCH_MIN_FS_HZ).
+# Below this IMU rate the gyro spectrum cannot show motor noise (notch.NOTCH_MIN_FS_HZ).
 _FFT_MIN_HZ = 100.0
 
 
