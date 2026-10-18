@@ -73,6 +73,7 @@ def parse_bin(path: str) -> FlightLog:
     log.meta.firmware_version = fw
     log.meta.flight_modes = _extract_modes(log, kind)
     log.meta.max_altitude_m = _extract_max_alt(log)
+    _close(reader)
     if columns is not None:
         # Decoded on first use: re-reading the file then costs one index pass, which only
         # the notch advice pays, instead of every tool holding the raw batches in memory.
@@ -85,7 +86,25 @@ def _load_batches(path: str, log: FlightLog) -> list[ImuBatch]:
     from pymavlink import DFReader
 
     with contextlib.redirect_stderr(io.StringIO()):
-        return _decode_batches(_open_reader(DFReader, path), log)
+        reader = _open_reader(DFReader, path)
+        try:
+            return _decode_batches(reader, log)
+        finally:
+            _close(reader)
+
+
+def _close(reader) -> None:
+    """Release the log's file handle and memory map now.
+
+    pymavlink's reader sits in reference cycles, so without this the map stays open until
+    a garbage collection, and on Windows the user cannot replace or delete the log while
+    the server holds it. Every decoded column is a copy, so nothing still views the map;
+    if something did, mmap refuses to close (BufferError) and the collector frees it later.
+    """
+    try:
+        reader.close()
+    except (BufferError, OSError, AttributeError):
+        pass
 
 
 def _open_reader(DFReader, path: str):

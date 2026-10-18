@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- The parser left pymavlink's memory map of the log open until a garbage collection, so on
+  Windows a log the server had read could not be replaced or deleted. The reader is now closed
+  once the log is decoded.
 - Notch advice: the spectrum was taken over every IMU interleaved into one stream (4.x logs
   all IMUs as one message), which mixes sensors and multiplies the apparent sample rate by the
   IMU count. It also recommended a throttle notch with `INS_HNTCH_REF` 1.0, the value the

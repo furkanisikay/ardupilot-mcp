@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from ardupilot_mcp.model import LogIntegrity
@@ -165,3 +167,17 @@ def test_partial_final_record_is_dropped_not_flagged(tmp_path):
     path.write_bytes(data[:-7])
     log = parse_bin(str(path))
     assert log.meta.integrity == LogIntegrity.OK
+
+
+@pytest.mark.skipif(not os.path.exists("/proc/self/maps"), reason="needs /proc to list memory maps")
+def test_parse_releases_the_log_file(tmp_path):
+    # An open map would keep the log locked on Windows until a garbage collection.
+    path = build_bin(str(tmp_path / "released.bin"), _basic_messages())
+    log = parse_bin(path)
+    _ = log.batches
+
+    def mapped() -> bool:
+        with open("/proc/self/maps") as fh:
+            return any("released.bin" in line for line in fh)
+
+    assert not mapped()
