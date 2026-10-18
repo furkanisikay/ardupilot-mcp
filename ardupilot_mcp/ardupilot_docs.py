@@ -144,6 +144,7 @@ CHECK_TOPICS: dict[str, list[str]] = {
     "attitude": ["tuning"],
     "rcin": ["radio_failsafe"],
     "motors": ["thrust_loss", "motor_order", "esc_calibration"],
+    "thrust_loss": ["thrust_loss", "motor_order", "esc_calibration"],
     "events": ["log_diagnosis_general"],
     "timing": ["log_diagnosis_general"],
     "integrity": ["log_diagnosis_general"],

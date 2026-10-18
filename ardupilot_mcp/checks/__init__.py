@@ -21,6 +21,7 @@ _CHECK_MODULES = [
     "compass",
     "attitude",
     "motors",
+    "thrust_loss",
     "rcin",
     "timing",
     # configuration / setup checks (params, calibration, sensors, startup messages)

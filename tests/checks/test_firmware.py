@@ -20,22 +20,9 @@ def test_routine_messages_are_ignored():
     assert FirmwareVerdictsCheck().run(log) == []
 
 
-def test_thrust_loss_names_the_motor_and_is_critical():
-    log = make_flight_log(
-        {
-            "MSG": _msgs(
-                (0, "ArduCopter V4.6.3"),
-                (12.5, "Potential Thrust Loss (4)"),
-                (13, "Potential Thrust Loss (4)"),
-            )
-        }
-    )
-    [f] = FirmwareVerdictsCheck().run(log)
-    assert f.severity == Severity.CRITICAL
-    assert f.title == "Firmware detected thrust loss"
-    assert f.evidence.samples["motor"] == 4
-    assert f.evidence.samples["occurrences"] == 2
-    assert f.evidence.time_start_s == 12.5
+def test_thrust_loss_is_left_to_the_thrust_loss_check():
+    log = make_flight_log({"MSG": _msgs((0, "ArduCopter V4.6.3"), (12.5, "Potential Thrust Loss (4)"))})
+    assert FirmwareVerdictsCheck().run(log) == []
 
 
 def test_yaw_imbalance_is_warn_with_percentage():

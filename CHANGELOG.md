@@ -69,8 +69,18 @@ All notable changes to this project are documented here. The format is based on
 - Logging advice (`DiagnosisReport.logging_advice`, Copter/Heli): for data a check needed but the
   log lacks, the `LOG_BITMASK` bit that logs it — only when that bit is actually off — and
   `IMU_FAST`/`INS_LOG_BAT_MASK` when the IMU rate is too low for a notch spectrum.
-- `firmware` check: the autopilot's own in-flight verdicts — "Potential Thrust Loss (motor N)",
-  "Crash: Disarming", "EKF Failsafe", "Yaw Imbalance", "Vibration compensation ON", "EKF
+- `thrust_loss` check (Copter, incl. Heli): the firmware's thrust-loss detection from any of its three traces
+  ("Potential Thrust Loss (n)", ERR THRUST_LOSS_CHECK, `MOTB.FailFlags` thrust boost) is CRITICAL
+  and names the motor and the output it is wired to. Without a detection, the same pattern in the
+  motor outputs is WARN: one motor (or coaxial pair) at maximum, the motor opposite it in the
+  frame's geometry the lowest of the rest, sinking at high throttle, near level and under control,
+  for at least 1 s. Frame geometry for every quad/hexa/octa/octaquad/Y6/deca/dodecahexa type is
+  generated from `AP_MotorsMatrix.cpp` (`scripts/gen_motor_geometry.py`); the output pattern is
+  not judged on Y6, V-tail and A-tail quads, where no motor sits directly opposite another. On ArduCopter 4.6.3 SITL
+  with a weakened motor the pattern names the same motor 0.9 s before the firmware does. The
+  finding starts when the loss began (the firmware fires after 1 s of the pattern), so it ranks
+  above the attitude error the loss causes. Real-crash benchmark: top-1 9 -> 10.
+- `firmware` check: the autopilot's own in-flight verdicts — "Crash: Disarming", "EKF Failsafe", "Yaw Imbalance", "Vibration compensation ON", "EKF
   variance", GPS glitch, dead reckoning — and failsafe-driven mode changes decoded from
   `MODE.Rsn` (radio, battery, GCS, EKF, fence, crash, ...).
 - `power`: flight-controller board voltage (`POWR.Vcc`) — CRITICAL below 4.6 V while armed,
