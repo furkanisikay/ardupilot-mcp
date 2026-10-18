@@ -55,7 +55,6 @@ _GRAVITY_MSS = 9.80665
 # vehicle as lagging its demand by up to one sample period.
 DEMAND_MAX_GAP_S = 1.0
 
-# ArduPilot sends instance 0 as RAW_IMU, already scaled (GCS_Common.cpp send_raw_imu).
 # Axes of NAV_CONTROLLER_OUTPUT that are an attitude demand, by vehicle kind (see above).
 _DEMANDED_AXES = {
     "copter": ("DesRoll", "DesPitch", "DesYaw"),
@@ -69,8 +68,15 @@ _HEARTBEAT_KIND = {
     13: "copter", 14: "copter", 15: "copter", 19: "plane", 20: "plane", 21: "plane",
     22: "plane", 23: "plane", 24: "plane", 25: "plane", 29: "copter", 35: "copter",
 }  # fmt: skip
+# ArduPilot sends instance 0 as RAW_IMU, already scaled (GCS_Common.cpp send_raw_imu).
 _IMU_SOURCES = {"RAW_IMU": 0, "SCALED_IMU2": 1, "SCALED_IMU3": 2}
 _GPS_SOURCES = {"GPS_RAW_INT": 0, "GPS2_RAW": 1}
+# Every message type parse_tlog maps (the rest are not decoded).
+_MAPPED_TYPES = [
+    "HEARTBEAT", "NAV_CONTROLLER_OUTPUT", "ATTITUDE", "VIBRATION", "EKF_STATUS_REPORT",
+    "SYS_STATUS", "RC_CHANNELS", "SERVO_OUTPUT_RAW", "VFR_HUD", "GLOBAL_POSITION_INT",
+    "STATUSTEXT", "PARAM_VALUE", *_IMU_SOURCES, *_GPS_SOURCES,
+]  # fmt: skip
 
 
 def is_tlog(path: str) -> bool:
@@ -115,8 +121,9 @@ def _add_demand(
         "DesYaw": np.degrees(np.unwrap(np.radians([d[3] for d in demands]))),
     }
     t = np.array([r["TimeUS"] / 1e6 for r in att])
-    after = np.searchsorted(dt, t, side="left")
-    inside = (after > 0) & (after < dt.size)
+    # The bracketing demand pair; a sample exactly on the first or last demand is inside.
+    after = np.clip(np.searchsorted(dt, t, side="left"), 1, dt.size - 1)
+    inside = (t >= dt[0]) & (t <= dt[-1])
     gap = np.full(t.size, np.inf)
     gap[inside] = dt[after[inside]] - dt[after[inside] - 1]
     ok = inside & (gap <= DEMAND_MAX_GAP_S)
@@ -133,15 +140,19 @@ def parse_tlog(path: str) -> FlightLog:
     """Read a MAVLink telemetry log into a FlightLog (see the module docstring)."""
     from pymavlink import mavutil  # local import keeps the dependency at the edge
 
+    # The log reader is built directly: mavlink_connection() picks its transport from the
+    # path string, so a path containing "/bin/" is executed as a program, one with a ":"
+    # becomes a UDP socket, and a tlog named *.bin is read as DataFlash.
+    mavutil.set_dialect("ardupilotmega")
     try:
-        conn = mavutil.mavlink_connection(path, dialect="ardupilotmega", robust_parsing=True)
+        conn = mavutil.mavmmaplog(path)
     except Exception as exc:  # noqa: BLE001
         raise ValueError(f"could not open telemetry log {path!r}: {exc}") from exc
     raw = []
     try:
-        while (m := conn.recv_match()) is not None:
-            if m.get_type() != "BAD_DATA":
-                raw.append(m)
+        # Only the mapped types are decoded (the mmap reader skips the rest undecoded).
+        while (m := conn.recv_match(type=_MAPPED_TYPES)) is not None:
+            raw.append(m)
     finally:
         conn.close()
     source = _vehicle_source(raw)
@@ -265,7 +276,7 @@ def parse_tlog(path: str) -> FlightLog:
     log = FlightLog(
         messages=out,
         params=params,
-        meta=LogMeta(integrity=LogIntegrity.OK, source="tlog"),
+        meta=LogMeta(integrity=LogIntegrity.OK, source="tlog", arming_recorded=True),
         path=path,
         instance_fields={"GPS": "I", "IMU": "I", "MAG": "I"},
     )

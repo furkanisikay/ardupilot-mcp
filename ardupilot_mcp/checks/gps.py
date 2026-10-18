@@ -67,6 +67,8 @@ class GpsCheck(Check):
         # Evaluate GPS over the armed-flight window so the pre-arm acquisition
         # phase (sats climbing from 0, no fix yet) and post-land idling don't
         # look like in-flight GPS failures.
+        if log.never_armed:
+            return []  # fix and satellite quality are judged in flight; this log never armed
         window = log.armed_window()
         insts = log.instances("GPS")
         receivers = [i for i in insts if i < BLENDED_INSTANCE] or insts

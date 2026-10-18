@@ -40,6 +40,14 @@ def test_failsafe_echoes_join_the_measured_finding_and_raise_its_severity():
     assert "EVENTS" in rc.evidence.message_types
 
 
+def test_gcs_failsafe_echoes_collapse_into_one_finding():
+    verdict = _f("firmware", Severity.WARN, "Firmware triggered a GCS failsafe", 30.0)
+    err = _f("events", Severity.CRITICAL, "Error: FAILSAFE_GCS (ECode 1)", 30.1)
+    mode = _f("firmware", Severity.WARN, "Mode changed by GCS failsafe", 30.2)
+    out = merge_duplicates([verdict, err, mode])
+    assert out == [verdict] and verdict.severity == Severity.CRITICAL
+
+
 def test_echo_far_from_the_event_stays_separate():
     rc = _f("rcin", Severity.WARN, "RC signal loss", 10.0, 14.0)
     late = _f("events", Severity.CRITICAL, "Error: FAILSAFE_RADIO (ECode 1)", 14.0 + MERGE_SLACK_S + 1)

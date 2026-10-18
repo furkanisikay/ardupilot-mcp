@@ -155,3 +155,59 @@ def test_telemetry_that_stops_while_armed_is_not_an_impact(tmp_path):
     tl = incident_timeline(build_tlog(str(tmp_path / "cut.tlog"), msgs))
     assert tl.impact_s is None
     assert any("telemetry stopped" in c for c in tl.caveats)
+
+
+def test_the_path_never_picks_a_transport(tmp_path):
+    # pymavlink's mavlink_connection() executes a file whose path contains "/bin/" and reads
+    # a *.bin name as DataFlash; the tlog is read as a file whatever its path or name.
+    (tmp_path / "bin").mkdir()
+    in_bin = _flight(tmp_path / "bin")
+    named_bin = _flight(tmp_path, name="renamed.bin")
+    assert is_tlog(named_bin)
+    for path in (in_bin, named_bin):
+        assert parse_tlog(path).count("ATT") == 40
+
+
+def test_an_attitude_sample_on_the_first_demand_gets_it(tmp_path):
+    msgs = [
+        (0.0, mav.MAVLink_statustext_message(6, b"ArduCopter V4.6.3 (92b0cd78)")),
+        (0.0, heartbeat(0, True)),
+        (1.0, mav.MAVLink_nav_controller_output_message(4.0, 0.0, 0, 0, 0, 0, 0, 0)),
+        (1.0, mav.MAVLink_attitude_message(1000, 0, 0, 0, 0, 0, 0)),
+        (1.5, mav.MAVLink_nav_controller_output_message(6.0, 0.0, 0, 0, 0, 0, 0, 0)),
+    ]
+    rec = parse_tlog(build_tlog(str(tmp_path / "edge.tlog"), msgs)).get("ATT")[0]
+    assert abs(rec["DesRoll"] - 4.0) < 1e-6
+
+
+def test_a_never_armed_bench_tlog_is_not_judged_as_flight(tmp_path):
+    # LOG_DISARMED=0 says nothing about a telemetry log; its heartbeats say it never armed.
+    msgs = [
+        (0.0, mav.MAVLink_statustext_message(6, b"ArduCopter V4.6.3 (92b0cd78)")),
+        (0.0, mav.MAVLink_param_value_message(b"LOG_DISARMED", 0, 1, 1, 0)),
+    ]
+    for i in range(30):
+        t = i * 0.5
+        msgs.append((t, heartbeat(0, False)))
+        msgs.append((t, mav.MAVLink_gps_raw_int_message(int(t * 1e6), 0, 0, 0, 0, 9999, 65535, 0, 0, 0)))
+        msgs.append((t, mav.MAVLink_attitude_message(int(t * 1000), 0, 0, 0, 0, 0, 0)))
+    path = build_tlog(str(tmp_path / "bench.tlog"), msgs)
+    log = parse_tlog(path)
+    assert log.armed_intervals() == [] and log.never_armed
+    assert not [f for f in analyze_log(path).findings if f.check_id == "gps"]
+
+
+def test_a_failsafe_announced_while_disarmed_is_not_a_verdict(tmp_path):
+    from ardupilot_mcp.checks.firmware import FirmwareVerdictsCheck
+
+    def run(armed: bool):
+        msgs = [(0.0, mav.MAVLink_statustext_message(6, b"ArduCopter V4.6.3 (92b0cd78)"))]
+        for i in range(20):
+            msgs.append((i * 0.5, heartbeat(0, armed)))
+            msgs.append((i * 0.5, mav.MAVLink_attitude_message(i * 500, 0, 0, 0, 0, 0, 0)))
+        msgs.append((5.0, mav.MAVLink_statustext_message(4, b"Radio Failsafe - Disarming")))
+        log = parse_tlog(build_tlog(str(tmp_path / f"fs{armed}.tlog"), msgs))
+        return [f.title for f in FirmwareVerdictsCheck().run(log)]
+
+    assert run(False) == []  # on the bench: changes nothing
+    assert run(True) == ["Firmware triggered a radio failsafe"]

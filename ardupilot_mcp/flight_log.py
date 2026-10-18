@@ -82,6 +82,9 @@ class LogMeta:
     integrity_detail: str | None = None
     #: "dataflash" (the onboard .bin log) or "tlog" (a ground station's MAVLink telemetry log).
     source: str = "dataflash"
+    #: True when the log records the arm state throughout (a telemetry log's heartbeats), so
+    #: its arm/disarm records are complete and no arming is inferred from LOG_DISARMED.
+    arming_recorded: bool = False
     flight_modes: list[str] = field(default_factory=list)
     max_altitude_m: float | None = None
 
@@ -495,6 +498,18 @@ class FlightLog:
             out[n] = self._numeric(col[idx])[keep] if col is not None else np.full(int(keep.sum()), np.nan)
         return t[keep], out
 
+    @property
+    def never_armed(self) -> bool:
+        """True when the log records the arm state throughout and the vehicle never armed."""
+        return self.meta.arming_recorded and not self.armed_intervals()
+
+    def was_armed_at(self, t: float) -> bool:
+        """Whether the vehicle was armed at ``t`` (True when arming is unknown)."""
+        ivs = self.armed_intervals()
+        if not ivs:
+            return not self.meta.arming_recorded
+        return any(a <= t <= b for a, b in ivs)
+
     def armed_window(self) -> tuple[float | None, float | None]:
         """(first-armed, last-disarmed) times, or (None, None) when arming is unknown.
 
@@ -531,12 +546,15 @@ class FlightLog:
                 edges.append((float(r["timestamp"]), bool(r["ArmState"])))
         edges.sort()
         end = float(self.meta.duration_s) if self.meta.duration_s is not None else None
+        complete = self.meta.arming_recorded  # every arm and disarm is recorded
         if not edges:
-            if self.params.get("LOG_DISARMED") == 0 and end is not None:
+            if not complete and self.params.get("LOG_DISARMED") == 0 and end is not None:
                 return [(0.0, end)]
-            return []
+            return []  # with complete records: never armed
         out: list[tuple[float, float]] = []
-        start: float | None = 0.0 if not edges[0][1] else None
+        # An onboard log whose first record is a disarm was armed from its start; complete
+        # records have no such gap.
+        start: float | None = 0.0 if not edges[0][1] and not complete else None
         for t, armed in edges:
             if armed and start is None:
                 start = t
@@ -552,7 +570,8 @@ class FlightLog:
         """Boolean mask of ``times`` that fall inside any armed interval (None if never armed)."""
         ivs = self.armed_intervals()
         if not ivs:
-            return None
+            # Known never armed: no sample is armed. Otherwise arming is unknown.
+            return np.zeros(times.shape, dtype=bool) if self.meta.arming_recorded else None
         mask = np.zeros(times.shape, dtype=bool)
         for t0, t1 in ivs:
             mask |= (times >= t0) & (times <= t1)

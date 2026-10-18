@@ -8,8 +8,8 @@ three times and pushes the next, different problem down.
 
 This pass merges echoes into the finding that measured the event:
 
-* Each finding gets a *topic* (radio, battery, GPS, EKF, EKF lane switch, vibration, thrust
-  loss, crash). For the specific checks the topic follows from the check; for the events and
+* Each finding gets a *topic* (radio, battery, GCS link, GPS, EKF, EKF lane switch, vibration,
+  thrust loss, crash). For the specific checks the topic follows from the check; for the events and
   firmware checks from the ERR subsystem, ModeReason or verdict the finding carries; for
   in-flight status lines (prearm check) from their text.
 * An echo (events/firmware/status line) that starts within ``MERGE_SLACK_S`` of a specific
@@ -57,6 +57,7 @@ _ERR_TOPICS: dict[int, str] = {
     5: "radio",  # FAILSAFE_RADIO
     6: "battery",  # FAILSAFE_BATT
     7: "gps",  # FAILSAFE_GPS
+    8: "gcs",  # FAILSAFE_GCS
     11: "gps",  # GPS
     12: "crash",  # CRASH_CHECK
     16: "ekf",  # EKFCHECK
@@ -66,7 +67,15 @@ _ERR_TOPICS: dict[int, str] = {
     29: "vibration",  # FAILSAFE_VIBE
 }
 # ModeReason -> topic (checks/firmware.FAILSAFE_REASONS, AP_Vehicle/ModeReason.h).
-_MODE_REASON_TOPICS: dict[int, str] = {3: "radio", 4: "battery", 6: "ekf", 7: "gps", 19: "crash", 50: "ekf"}
+_MODE_REASON_TOPICS: dict[int, str] = {
+    3: "radio",
+    4: "battery",
+    5: "gcs",
+    6: "ekf",
+    7: "gps",
+    19: "crash",
+    50: "ekf",
+}
 # Firmware verdict title (checks/firmware.VERDICTS) -> topic. A test keeps these in step
 # with VERDICTS, so a reworded title cannot silently turn merging off.
 VERDICT_TOPICS: dict[str, str] = {
@@ -78,11 +87,13 @@ VERDICT_TOPICS: dict[str, str] = {
     "Firmware fell back to dead reckoning": "ekf",
     "Firmware triggered a radio failsafe": "radio",
     "Firmware triggered a battery failsafe": "battery",
+    "Firmware triggered a GCS failsafe": "gcs",
 }
 # The prearm check also surfaces in-flight status lines; their text is free-form.
 _STATUS_TEXT_TOPICS: tuple[tuple[str, str], ...] = (
     ("radio failsafe", "radio"),
     ("battery failsafe", "battery"),
+    ("gcs failsafe", "gcs"),
     ("gps glitch", "gps"),
     ("ekf failsafe", "ekf"),
     ("ekf variance", "ekf"),
