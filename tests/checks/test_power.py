@@ -285,3 +285,40 @@ def test_a_pack_that_collapses_at_the_end_is_critical_before_the_timer_expires()
     findings = PowerCheck().run(_log(build_series(0.0, 10.0, Volt=volts, Curr=[40.0] * 330), params=params))
     crit = [f for f in findings if f.title == "Battery reached critical voltage"]
     assert len(crit) == 1 and crit[0].evidence.time_start_s == 30.0
+
+
+def test_a_low_run_does_not_span_a_disarmed_gap():
+    # Each flight ends 3 s below BATT_LOW_VOLT; the 3 minutes between them are disarmed.
+    volts = [16.0] * 270 + [13.8] * 30 + [13.8] * 1800 + [13.8] * 30 + [16.0] * 270
+    log = make_flight_log(
+        {
+            "BAT": build_series(0.0, 10.0, Volt=volts, Curr=[20.0] * len(volts)),
+            "EV": [
+                {"TimeUS": 0, "Id": 10},
+                {"TimeUS": 30_000_000, "Id": 11},
+                {"TimeUS": 210_000_000, "Id": 10},
+                {"TimeUS": 240_000_000, "Id": 11},
+            ],
+        },
+        params={"BATT_LOW_VOLT": 14.0, "BATT_CRT_VOLT": 12.0, "BATT_LOW_TIMER": 10.0},
+    )
+    findings = PowerCheck().run(log)
+    # The first flight's run reaches the end of its armed period and counts; the
+    # second flight's ends above the threshold and must not join the first one.
+    low = [f for f in findings if f.title == "Battery reached low-voltage threshold"]
+    assert len(low) == 1 and low[0].evidence.time_start_s == 27.0
+
+
+def test_the_last_sample_of_a_crash_spike_is_not_a_critical_battery():
+    volts = [16.0] * 300 + [12.0]  # one sample below critical as the log ends
+    params = {"BATT_LOW_VOLT": 14.0, "BATT_CRT_VOLT": 13.0, "BATT_LOW_TIMER": 10.0}
+    findings = PowerCheck().run(_log(build_series(0.0, 10.0, Volt=volts, Curr=[40.0] * 301), params=params))
+    assert not [f for f in findings if f.title == "Battery reached critical voltage"]
+
+
+def test_a_zero_low_timer_still_requires_the_default_hold():
+    volts = [16.0] * 300
+    volts[100:120] = [12.5] * 20  # 2 s below critical
+    params = {"BATT_LOW_VOLT": 14.0, "BATT_CRT_VOLT": 13.0, "BATT_LOW_TIMER": 0.0}
+    findings = PowerCheck().run(_log(build_series(0.0, 10.0, Volt=volts, Curr=[40.0] * 300), params=params))
+    assert not [f for f in findings if f.title == "Battery reached critical voltage"]

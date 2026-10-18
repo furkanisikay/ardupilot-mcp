@@ -162,9 +162,21 @@ def test_series_many_keeps_fields_of_one_record_together():
 
 
 def test_an_event_before_the_first_imu_sample_sets_the_time_origin():
+    # Logging that starts at arming writes EV ARM just before the first IMU sample.
     log = make_flight_log(
-        {"IMU": build_series(100.0, 50.0, AccX=[0.0] * 500), "EV": [{"TimeUS": 50_000_000, "Id": 10}]}
+        {"IMU": build_series(100.0, 50.0, AccX=[0.0] * 500), "EV": [{"TimeUS": 99_700_000, "Id": 10}]}
     )
     assert log.times("EV").tolist() == [0.0]
-    assert log.times("IMU")[0] == pytest.approx(50.0)
+    assert log.times("IMU")[0] == pytest.approx(0.3)
     assert log.armed_window()[0] == 0.0
+
+
+def test_a_corrupt_zero_timestamp_does_not_move_the_time_origin():
+    log = make_flight_log(
+        {
+            "IMU": build_series(200.0, 50.0, AccX=[0.0] * 500),
+            "MSG": [{"TimeUS": 0, "Message": "corrupt"}, {"TimeUS": 201_000_000, "Message": "ok"}],
+        }
+    )
+    assert log.times("IMU")[0] == 0.0
+    assert log.meta.duration_s == pytest.approx(9.98)

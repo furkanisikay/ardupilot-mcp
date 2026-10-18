@@ -153,3 +153,9 @@ def test_a_flight_mode_error_names_the_mode_it_could_not_enter():
 def test_a_corrupt_err_record_is_skipped():
     log = make_flight_log({"ERR": [{"TimeUS": 1_000_000, "Subsys": float("nan"), "ECode": float("nan")}]})
     assert EventsCheck().run(log) == []
+
+
+def test_a_failed_switch_to_mode_zero_is_reported():
+    log = make_flight_log({"ERR": [{"TimeUS": 1_000_000, "Subsys": 10, "ECode": 0}]})
+    (finding,) = EventsCheck().run(log)
+    assert "could not switch to STABILIZE" in finding.explanation

@@ -40,6 +40,11 @@ _BATTERY_SOURCES = ("BAT", "CURR")
 DROP_WARN_V = 2.0  # volts lost in one fast step -> WARN ("sudden voltage drop")
 DROP_CRIT_V = 4.0  # an even larger fast collapse -> CRITICAL
 DROP_MAX_DT_S = 0.5  # only consider deltas across gaps shorter than this (s)
+# BATT_LOW_TIMER default (AP_BattMonitor_Params.cpp), used when the log sets 0 or none.
+BATT_LOW_TIMER_DEFAULT_S = 10.0
+# Design choice: a run below a threshold at the end of an armed period counts only when it
+# lasts at least this long, so the last sample or two of a crash's current spike does not.
+END_RUN_MIN_S = 1.0
 
 # Current (A) at or above which we treat the voltage span as sag "under load".
 HIGH_CURRENT_A = 20.0
@@ -173,31 +178,41 @@ class PowerCheck(Check):
     def _min_voltage_findings(self, log: FlightLog, src: str, inst: int = 0) -> list[Finding]:
         times, volts = log.series(src, "Volt", inst)
         all_volts = volts  # the resting peak, for the cell-count estimate
-        # While armed only: a monitor reads 0 V before the pack is connected, and the
-        # battery failsafe acts on flight, not on the bench.
-        armed = log.armed_mask(times)
-        if armed is not None:
-            times, volts = times[armed], volts[armed]
         if volts.size == 0:
             return []
-
         crt, low, source = self._thresholds(log, all_volts, inst)
-        timer = float(log.params.get("BATT_LOW_TIMER" if inst == 0 else f"BATT{inst + 1}_LOW_TIMER", 10.0))
-        t_end = float(times[-1])
+        timer = float(log.params.get("BATT_LOW_TIMER" if inst == 0 else f"BATT{inst + 1}_LOW_TIMER", 0.0))
+        if timer <= 0.0:
+            # 0 turns the firmware's voltage failsafe off; still require the default hold.
+            timer = BATT_LOW_TIMER_DEFAULT_S
+
+        # Each armed period on its own: a monitor reads 0 V before the pack is connected,
+        # the failsafe acts on flight, and a run must not span a disarmed gap.
+        if log.never_armed:
+            return []
+        segments = log.armed_intervals() or [(-np.inf, np.inf)]
 
         def held_run(level: float) -> tuple[float, float, float] | None:
             """(start, time of the minimum, minimum) of the first run the failsafe would act on.
 
             AP_BattMonitor triggers when the voltage stays at or below a threshold for
             BATT_LOW_TIMER seconds (AP_BattMonitor_Backend::update_failsafes), so a sag under
-            load that recovers sooner does not count. A run still below the threshold when
-            the armed data ends counts too: the pack gave out before the timer could expire.
+            load that recovers sooner does not count. A run of at least END_RUN_MIN_S that is
+            still below the threshold when the armed period ends counts too: the pack gave
+            out before the timer could expire.
             """
-            for run in intervals_above(times, -volts, -level - 1e-9):
-                if run.duration_s >= timer or t_end - run.end_s < 1.0:
-                    inside = (times >= run.start_s) & (times <= run.end_s)
-                    i = int(np.argmin(np.where(inside, volts, np.inf)))
-                    return run.start_s, float(times[i]), float(volts[i])
+            for a, b in segments:
+                inside = (times >= a) & (times <= b)
+                t, v = times[inside], volts[inside]
+                if t.size == 0:
+                    continue
+                for run in intervals_above(t, -v, -level - 1e-9):
+                    held = run.duration_s >= timer
+                    at_end = float(t[-1]) - run.end_s < 1.0 and run.duration_s >= END_RUN_MIN_S
+                    if held or at_end:
+                        in_run = (t >= run.start_s) & (t <= run.end_s)
+                        i = int(np.argmin(np.where(in_run, v, np.inf)))
+                        return run.start_s, float(t[i]), float(v[i])
             return None
 
         crt_run = held_run(float(crt)) if crt is not None else None
@@ -288,13 +303,13 @@ class PowerCheck(Check):
         # single-sample sensor glitch snaps back. If voltage recovers to near the
         # pre-drop level within ~1 s, it is noise. The largest step that persists is
         # reported, so a bigger glitch elsewhere does not hide a real drop.
+        # The second after each step: times are sorted, so one searchsorted per edge.
+        post_lo = np.searchsorted(times, times, side="right")
+        post_hi = np.searchsorted(times, times + 1.0, side="right")
         worst_i = -1
         for i in sorted(steps, key=lambda j: float(drops[j - 1]), reverse=True):
-            post_mask = (times > times[i]) & (times <= times[i] + 1.0)
-            if (
-                np.any(post_mask)
-                and float(np.max(volts[post_mask])) >= float(volts[i - 1]) - drops[i - 1] / 2.0
-            ):
+            lo, hi = int(post_lo[i]), int(post_hi[i])
+            if hi > lo and float(np.max(volts[lo:hi])) >= float(volts[i - 1]) - drops[i - 1] / 2.0:
                 continue
             worst_i = int(i)
             break
@@ -303,10 +318,10 @@ class PowerCheck(Check):
         worst_drop = float(drops[worst_i - 1])
         worst_t0 = float(times[worst_i - 1])
         worst_t1 = float(times[worst_i])
-        worst_dt: float | None = float(dts[worst_i - 1])
+        worst_dt = float(dts[worst_i - 1])
 
         sev = Severity.CRITICAL if worst_drop > DROP_CRIT_V else Severity.WARN
-        dt_txt = f"{worst_dt * 1000:.0f} ms" if worst_dt is not None else "one sample"
+        dt_txt = f"{worst_dt * 1000:.0f} ms"
         return [
             make_finding(
                 self.id,
@@ -322,7 +337,7 @@ class PowerCheck(Check):
                 message_types=[src],
                 samples={
                     "drop_volt": round(worst_drop, 2),
-                    "drop_dt_s": round(float(worst_dt), 4) if worst_dt is not None else 0.0,
+                    "drop_dt_s": round(worst_dt, 4),
                     "drop_threshold_volt": DROP_WARN_V,
                 },
             )

@@ -34,8 +34,12 @@ CRIT_DEG = 25.0
 WARN_DEG = 15.0
 # A brief error above this still warrants a warning even if it self-corrects.
 BRIEF_WARN_DEG = 30.0
-# RCOU PWM (us) above which a motor output is treated as saturated/maxed-out.
+# RCOU PWM (us) at or above which a motor output is treated as saturated/maxed-out,
+# the same level as the motors check.
 MOTOR_SATURATION_US = 1950.0
+# Design choice: the saturation window extends this far either side of the worst
+# divergence, so a brief one still holds RCOU samples (RCOU logs at ~10 Hz and up).
+SATURATION_PAD_S = 0.5
 
 # (desired field, actual field, axis label, is-yaw-circular).
 _AXES = (
@@ -186,7 +190,7 @@ class AttitudeTrackingCheck(Check):
             return False
         for chan in ("C1", "C2", "C3", "C4"):
             times, vals = log.series("RCOU", chan)
-            vals = vals[(times >= t0) & (times <= t1)]
-            if vals.size and float(np.mean(vals)) > MOTOR_SATURATION_US:
+            vals = vals[(times >= t0 - SATURATION_PAD_S) & (times <= t1 + SATURATION_PAD_S)]
+            if vals.size and float(np.mean(vals)) >= MOTOR_SATURATION_US:
                 return True
         return False

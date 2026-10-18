@@ -268,7 +268,8 @@ class FlightLog:
     _CLOCK_REFERENCE_MSGS = ("IMU", "IMU2", "ATT", "CTUN", "RATE", "NKF1", "XKF1", "BARO", "RCOU")
     # Records that carry the same boot clock and may precede the reference stream.
     _EVENT_CLOCK_MSGS = ("EV", "ARM", "MODE", "MSG", "ERR")
-    _MAX_EVENT_LEAD_S = 3600.0
+    # Design choice: arming writes its records milliseconds before the first IMU sample.
+    _MAX_EVENT_LEAD_S = 10.0
 
     def _rebase_times(self) -> None:
         """Shift timestamps to be flight-relative (start at 0).
@@ -294,8 +295,8 @@ class FlightLog:
             # Event records share the flight controller's clock and can come before the
             # first reference sample (logging that starts at arming writes EV ARM first),
             # so the origin moves back to them. GPS-family records stay out: some old
-            # logs time them by GPS time of week. A value more than an hour before the
-            # stream is a corrupt timestamp, not an earlier event.
+            # logs time them by GPS time of week. A value further back than
+            # _MAX_EVENT_LEAD_S is a corrupt timestamp (TimeUS 0), not an earlier event.
             for name in self._EVENT_CLOCK_MSGS:
                 tb = self._tables.get(name)
                 if tb is None or not tb.n:

@@ -77,8 +77,9 @@ class EventsCheck(Check):
             if subsys == ERR_EKF_PRIMARY:
                 out.append(self._lane_switch(rec, ecode))
                 continue
-            if ecode == 0:
-                # ECode 0 clears a previously raised error -- not a finding.
+            if ecode == 0 and subsys != ERR_FLIGHT_MODE:
+                # ECode 0 clears a previously raised error -- not a finding. FLIGHT_MODE is
+                # the exception: its ECode is the mode, and mode 0 is STABILIZE / MANUAL.
                 continue
             name = err_subsystem_name(subsys)
             critical = subsys in CRITICAL_ERR_SUBSYSTEMS
