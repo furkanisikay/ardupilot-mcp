@@ -8,8 +8,8 @@ throttle — the classic "compass interference" failure that corrupts the EKF's
 yaw estimate and causes toilet-bowling / fly-aways.
 
 We quantify that swing with the magnitude of ``mag = sqrt(MagX^2+MagY^2+MagZ^2)``:
-its coefficient of variation (std/mean) and its peak-to-peak spread relative to
-the mean. Large variation -> interference. We also flag implausibly large
+its coefficient of variation (std/mean) grades the field; the peak-to-peak spread
+relative to the mean is reported as evidence only (one glitched sample sets it). We also flag implausibly large
 hard-iron offsets from COMPASS_OFS_X/Y/Z when those params are present.
 """
 
@@ -26,9 +26,10 @@ from .util import make_finding, safe_max, safe_min
 # well under 0.1; sustained interference pushes it up.
 WARN_CV = 0.30
 CRIT_CV = 0.60
-# Peak-to-peak spread (max-min)/mean. A second, independent way to catch a
-# field that swings hard even if the std is dragged down by quiet stretches.
-WARN_RANGE_RATIO = 0.60
+# Peak-to-peak spread (max-min)/mean is reported as evidence only. It is not a trigger:
+# one glitched sample sets it, and on 154 compass instances from 100 forum logs it
+# exceeded 0.60 on 55 (36 %) while CV > 0.30 did so on 10 (6 %); none of the labelled
+# flights among the 55 was a compass fault (bench/real_crashes.json).
 # Need a meaningful number of samples before the statistics mean anything.
 MIN_SAMPLES = 10
 # CompassMot interference bands (% field change at full throttle): <30 acceptable,
@@ -159,7 +160,7 @@ class CompassCheck(Check):
         cv = std / mean
         range_ratio = (vmax - vmin) / mean
 
-        if cv <= WARN_CV and range_ratio <= WARN_RANGE_RATIO:
+        if cv <= WARN_CV:
             return []
 
         if cv > CRIT_CV:

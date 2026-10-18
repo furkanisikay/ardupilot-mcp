@@ -359,6 +359,10 @@ pytest
 
 Checks are tested against synthetic in-memory logs (`tests/helpers.py`) and a synthetic DataFlash writer (`tests/synth_bin.py`) gives the parser a real, hermetic `.bin` to round-trip — no large binary fixtures committed.
 
+### Real-crash benchmark
+
+[`bench/real_crashes.json`](bench/real_crashes.json) lists 49 real flight logs from discuss.ardupilot.org whose cause was stated by a developer or an experienced helper who analysed the log. The logs are not in the repository: each entry has its source link, sha256 and label. Download them yourself and run `python -m bench.run --logs DIR`. It scores whether the report's first warning names the right cause (top-1), whether it is in the first three (top-3), and how many CRITICAL findings point at some other cause. Measured on this release: 9 top-1 and 21 top-3 hits out of 41 scorable logs; 35 of the 49 logs carry at least one misleading CRITICAL finding. Details: [`bench/README.md`](bench/README.md).
+
 ## Known limitations
 
 - **Toilet-bowl / compass-heading faults** aren't detected yet — they need circular-position-drift analysis (planned), not just field-magnitude stability.

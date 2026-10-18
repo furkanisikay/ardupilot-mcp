@@ -52,6 +52,10 @@ All notable changes to this project are documented here. The format is based on
   we never use. The reader now skips that scan (15 MB forum log: 6.9 s -> 0.15 s).
 
 ### Added
+- Real-crash benchmark (`bench/`): 49 forum flight logs whose cause a developer or experienced
+  helper stated after analysing the log, stored as source URL + sha256 + label (logs are not
+  redistributed), and an offline scorer (`python -m bench.run --logs DIR`) for top-1/top-3 cause
+  hits and misleading CRITICAL findings.
 - `incident_timeline` tool and `DiagnosisReport.incident`: the onset (first anomaly while armed)
   and the impact (ERR CRASH_CHECK, "Crash: Disarming", or the log ending while armed). Findings
   that start at or after the impact are flagged `after_impact` and listed last, so a crash's
@@ -84,6 +88,10 @@ All notable changes to this project are documented here. The format is based on
   pipeline; a clean flight that raises a single warning fails CI.
 
 ### Changed
+- `compass`: field-strength peak-to-peak spread no longer raises a warning on its own (it is
+  kept as evidence). One glitched sample sets it; on 100 forum logs it fired on 36 % of compass
+  instances, none of them a compass fault among the labelled flights. The coefficient of
+  variation still grades the field. Real-crash benchmark: top-1 8 -> 9, top-3 20 -> 21.
 - **Parsing is ~20x faster and uses ~4x less memory.** Messages are decoded into numpy
   columns straight from pymavlink's own index instead of one Python object per record (a
   20-minute log with 400 Hz IMU: 26 s / 1.6 GB -> 1.2 s / 0.4 GB). The decoder is checked
