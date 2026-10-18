@@ -56,6 +56,10 @@ FORMATS: dict[str, tuple[int, str, list[str]]] = {
     "IMU": (75, "Qffffff", ["TimeUS", "GyrX", "GyrY", "GyrZ", "AccX", "AccY", "AccZ"]),
     "POS": (76, "Qfff", ["TimeUS", "Lat", "Lng", "Alt"]),
     "XKF4": (77, "Qfffff", ["TimeUS", "SV", "SP", "SH", "SM", "SVT"]),
+    # Pre-4.1 per-instance names: same fields as the base, no instance field.
+    "IMU2": (80, "Qffffff", ["TimeUS", "GyrX", "GyrY", "GyrZ", "AccX", "AccY", "AccZ"]),
+    "MAG2": (81, "Qfff", ["TimeUS", "MagX", "MagY", "MagZ"]),
+    "XKF9": (82, "Qfffff", ["TimeUS", "SV", "SP", "SH", "SM", "SVT"]),
     # Batch sampler (LogStructure.h log_ISBH / log_ISBD).
     "ISBH": (78, "QHBBHHQf", ["TimeUS", "N", "type", "instance", "mul", "smp_cnt", "SampleUS", "smp_rate"]),
     "ISBD": (79, "QHHaaa", ["TimeUS", "N", "seqno", "x", "y", "z"]),

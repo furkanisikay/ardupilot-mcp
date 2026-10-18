@@ -47,6 +47,28 @@ DEFAULT_INSTANCE_FIELDS: dict[str, str] = {
     "RFND": "Instance",
 }
 
+#: Before 4.1 a second (third, ...) sensor or EKF core was logged under its own message
+#: name with the same fields: base name -> (instance field, member names, member i is
+#: instance i). Folded into the base name with the modern instance field, so every check
+#: sees them as it does on 4.1+ logs. Source: Copter-3.5.7 / 3.6.12 / 4.0.7
+#: LogStructure.h (IMU2/3, GPS2, GPA2, MAG2/3, BAR2/3, BAT2-9, CUR2). The EKF loggers write
+#: core 0 as NKF1-4 / XKF1-4, core 1 as NKF6-9 / XKF6-9 and, from 4.0, core 2 as NK11-14 /
+#: XK11-14 (NKF5 / XKF5 is written for one core only).
+LEGACY_INSTANCES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "IMU": ("I", ("IMU", "IMU2", "IMU3")),
+    "GPS": ("I", ("GPS", "GPS2")),
+    "GPA": ("I", ("GPA", "GPA2")),
+    "MAG": ("I", ("MAG", "MAG2", "MAG3")),
+    "BARO": ("I", ("BARO", "BAR2", "BAR3")),
+    "BAT": ("Inst", ("BAT",) + tuple(f"BAT{k}" for k in range(2, 10))),
+    "CURR": ("Inst", ("CURR", "CUR2")),
+    **{
+        f"{ekf}F{k}": ("C", (f"{ekf}F{k}", f"{ekf}F{k + 5}", f"{ekf}1{k}"))
+        for ekf in ("NK", "XK")
+        for k in range(1, 5)
+    },
+}
+
 
 @dataclass
 class LogMeta:
@@ -193,9 +215,45 @@ class FlightLog:
         for mtype, cols in (columns or {}).items():
             n = len(next(iter(cols.values()))) if cols else 0
             self._tables[mtype] = _Table(cols, n)
+        #: Base names whose instances were folded in from pre-4.1 per-instance messages.
+        self.merged_legacy: dict[str, list[str]] = self._merge_legacy_instances()
         self._rebase_times()
 
     # -- construction helpers ------------------------------------------------
+
+    def _merge_legacy_instances(self) -> dict[str, list[str]]:
+        """Fold pre-4.1 per-instance messages (IMU2, NKF6, ...) into their base name.
+
+        Only when the base has no instance field of its own and every member has exactly
+        the base's fields, so a modern log, or an unrelated message that happens to share a
+        name, is never touched. The member tables stay available under their own names.
+        """
+        merged: dict[str, list[str]] = {}
+        for base, (field_name, members) in LEGACY_INSTANCES.items():
+            present = [(i, m) for i, m in enumerate(members) if m in self._tables and self._tables[m].n > 0]
+            if len(present) < 2 or present[0][1] != base:
+                continue
+            names = set(self._tables[base].cols)
+            declared = self._instance_fields.get(base)
+            if field_name in names or (declared is not None and declared in names):
+                continue
+            if any(set(self._tables[m].cols) != names for _, m in present):
+                continue
+            tables = [self._tables[m] for _, m in present]
+            inst = np.concatenate(
+                [np.full(t.n, i, dtype=np.int64) for (i, _), t in zip(present, tables, strict=True)]
+            )
+            # Interleave by time, as 4.1+ logs them (stable: equal stamps keep member order).
+            # Reordered column by column so only one concatenated temporary is alive at a time.
+            order = np.argsort(np.concatenate([t.t for t in tables]), kind="stable")
+            cols = {k: np.concatenate([t.cols[k] for t in tables])[order] for k in self._tables[base].cols}
+            cols[field_name] = inst[order]
+            # A field is integer only if it is integer in every member (else int() truncates).
+            int_cols = set.intersection(*(t.int_cols for t in tables)) | {field_name}
+            self._tables[base] = _Table(cols, int(inst.size), int_cols)
+            self._instance_fields[base] = field_name
+            merged[base] = [m for _, m in present]
+        return merged
 
     #: High-rate flight-controller messages that reliably carry the boot clock.
     #: Used to anchor the flight duration so a message family on a *different*
@@ -327,7 +385,9 @@ class FlightLog:
         return tb.n if tb is not None else 0
 
     def message_counts(self) -> dict[str, int]:
-        return {m: tb.n for m, tb in sorted(self._tables.items())}
+        """Records per message type; a folded pre-4.1 member (IMU2) counts only under its base."""
+        folded = {m for base, members in self.merged_legacy.items() for m in members if m != base}
+        return {m: tb.n for m, tb in sorted(self._tables.items()) if m not in folded}
 
     def instance_field(self, mtype: str) -> str | None:
         """Name of the field that carries the instance for ``mtype``, if it has one in this log."""
