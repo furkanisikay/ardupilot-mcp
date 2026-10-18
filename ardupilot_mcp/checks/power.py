@@ -23,7 +23,7 @@ from .. import ardupilot_meta as meta
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
-from .util import make_finding, safe_max, safe_min
+from .util import intervals_above, make_finding, safe_max, safe_min
 
 # Per-cell voltage thresholds used to derive failsafe levels when the vehicle's
 # BATT_*_VOLT parameters aren't set (LiPo: ~3.5 V/cell low, ~3.3 V/cell critical).
@@ -182,6 +182,25 @@ class PowerCheck(Check):
 
         crt, low, source = self._thresholds(log, volts, inst)
 
+        timer = float(log.params.get("BATT_LOW_TIMER" if inst == 0 else f"BATT{inst + 1}_LOW_TIMER", 10.0))
+
+        def first_at_or_below(level: float) -> float | None:
+            """Start of the run below ``level`` that the failsafe timer counts.
+
+            AP_BattMonitor fires only when the voltage stays below the threshold continuously
+            for BATT_LOW_TIMER seconds, so a momentary sag under load does not start it: the
+            first run that lasts that long, else the run holding the minimum.
+            """
+            runs = intervals_above(times, -volts, -level - 1e-9)
+            if not runs:
+                return t_at_min
+            held = next((r for r in runs if r.duration_s >= timer), None)
+            if held is None:
+                held = next(
+                    (r for r in runs if t_at_min is not None and r.start_s <= t_at_min <= r.end_s), runs[-1]
+                )
+            return held.start_s
+
         # Critical takes precedence over low.
         if crt is not None and vmin <= crt:
             return [
@@ -193,7 +212,9 @@ class PowerCheck(Check):
                     f"({crt:.2f} V, {source}). At this point ArduPilot's critical battery action "
                     "(typically land/RTL) is warranted; flying below it risks an in-air power loss.",
                     recommendation="Land/recover immediately on this threshold; recharge and inspect the pack before flying again.",
-                    time_start_s=t_at_min,
+                    # From the first sample at the threshold (what the failsafe timer counts
+                    # from) to the lowest voltage.
+                    time_start_s=first_at_or_below(float(crt)),
                     time_end_s=t_at_min,
                     message_types=[src],
                     samples={"min_volt": round(vmin, 2), "crit_volt": round(float(crt), 2)},
@@ -209,7 +230,7 @@ class PowerCheck(Check):
                     f"({low:.2f} V, {source}). This is the low-battery warning point; the pack was "
                     "nearing depletion.",
                     recommendation="Shorten flights or land sooner; verify pack capacity/health and the BATT_LOW_VOLT setting.",
-                    time_start_s=t_at_min,
+                    time_start_s=first_at_or_below(float(low)),
                     time_end_s=t_at_min,
                     message_types=[src],
                     samples={"min_volt": round(vmin, 2), "low_volt": round(float(low), 2)},

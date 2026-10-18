@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import re
+
+from ardupilot_mcp.ardupilot_meta import ERR_SUBSYSTEMS
+from ardupilot_mcp.checks.firmware import FAILSAFE_REASONS, VERDICTS
 from ardupilot_mcp.checks.util import make_finding
-from ardupilot_mcp.dedupe import MERGE_SLACK_S, merge_duplicates, topic
+from ardupilot_mcp.dedupe import MERGE_SLACK_S, VERDICT_TOPICS, merge_duplicates, topic
 from ardupilot_mcp.model import Severity
+
+_SUBSYS = {name: n for n, name in ERR_SUBSYSTEMS.items()}
+_REASON = {label: n for n, label in FAILSAFE_REASONS.items()}
 
 
 def _f(check: str, sev: Severity, title: str, t0: float | None, t1: float | None = None):
-    return make_finding(check, sev, title, "x", time_start_s=t0, time_end_s=t1, message_types=[check.upper()])
+    """A finding as its check produces it, structured samples included."""
+    samples: dict[str, float] = {}
+    if check == "events" and (m := re.match(r"Error: (\w+) \(ECode (\d+)\)", title)):
+        samples = {"Subsys": _SUBSYS[m.group(1)], "ECode": int(m.group(2))}
+    if check == "firmware" and title.startswith("Mode changed by "):
+        samples = {"mode_reason": _REASON[title.removeprefix("Mode changed by ")]}
+    return make_finding(
+        check, sev, title, "x", time_start_s=t0, time_end_s=t1, message_types=[check.upper()], samples=samples
+    )
 
 
 def test_failsafe_echoes_join_the_measured_finding_and_raise_its_severity():
@@ -84,3 +99,55 @@ def test_battery_failsafe_trails_the_threshold_by_batt_low_timer():
     batt2 = _f("power", Severity.WARN, "Battery reached low-voltage threshold", 342.4)
     err2 = _f("events", Severity.CRITICAL, "Error: FAILSAFE_BATT (ECode 1)", 352.5)
     assert merge_duplicates([batt2, err2], {"BATT_LOW_TIMER": 2}) == [batt2, err2]
+
+
+def test_an_aggregated_echo_does_not_stretch_the_host_window():
+    # A mode change repeated through the flight spans first..last occurrence; the host keeps
+    # its own measured window (a stretched one reads as a flight-long condition).
+    rc = _f("rcin", Severity.WARN, "RC signal loss", 10.0, 14.0)
+    mode = _f("firmware", Severity.WARN, "Mode changed by radio failsafe", 10.6, 300.0)
+    assert merge_duplicates([rc, mode]) == [rc]
+    assert rc.evidence.time_end_s == 14.0
+
+
+def test_separate_events_do_not_chain_into_one():
+    errs = [_f("events", Severity.CRITICAL, "Error: FAILSAFE_RADIO (ECode 1)", t) for t in (10, 14, 18, 22)]
+    out = merge_duplicates(errs)
+    assert out == [errs[0], errs[2]]
+
+
+def test_verdict_topics_name_real_firmware_verdicts():
+    assert set(VERDICT_TOPICS) <= {v.title for v in VERDICTS}
+
+
+def test_an_echo_that_came_first_moves_the_start_earlier():
+    gps = _f("gps", Severity.CRITICAL, "GPS lost 3D fix during the flight", 50.5, 60.0)
+    fs = _f("events", Severity.CRITICAL, "Error: FAILSAFE_GPS (ECode 1)", 46.0)
+    merge_duplicates([gps, fs])
+    assert gps.evidence.time_start_s == 46.0 and gps.evidence.time_end_s == 60.0
+
+
+def test_lane_switch_records_join_the_ekf_lane_switch_finding():
+    lane = _f("ekf", Severity.INFO, "EKF primary core changed (lane switch)", 100.0, 120.0)
+    err = make_finding(
+        "events",
+        Severity.INFO,
+        "EKF primary core changed to 1",
+        "x",
+        time_start_s=101.0,
+        samples={"Subsys": 24, "core": 1},
+    )
+    assert merge_duplicates([lane, err]) == [lane] and lane.related
+
+
+def test_in_flight_status_line_joins_the_event():
+    rc = _f("rcin", Severity.WARN, "RC signal loss", 10.0, 14.0)
+    note = _f("prearm", Severity.INFO, "Startup note: Radio Failsafe", 10.2)
+    assert merge_duplicates([rc, note]) == [rc]
+
+
+def test_reworded_title_does_not_change_the_topic():
+    err = make_finding(
+        "events", Severity.CRITICAL, "Radio failsafe ERR", "x", time_start_s=1.0, samples={"Subsys": 5}
+    )
+    assert topic(err) == "radio"

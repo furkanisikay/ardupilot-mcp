@@ -171,3 +171,8 @@ def test_a_message_that_only_mentions_prearm_is_not_a_prearm_failure():
     titles = [f.title for f in StartupMessagesCheck().run(log)]
     assert any("PreArm: Compass not calibrated" in t for t in titles)
     assert not any("Meteor" in t for t in titles)
+
+
+def test_prearm_mid_line_is_not_a_prearm_failure():
+    log = make_flight_log({"MSG": [{"TimeUS": 1_000_000, "Message": "Lua: prearm: ok"}]})
+    assert all(f.severity != Severity.WARN for f in StartupMessagesCheck().run(log))

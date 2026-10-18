@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from ..ardupilot_meta import (
     CRITICAL_ERR_SUBSYSTEMS,
+    ERR_EKF_PRIMARY,
     err_subsystem_name,
     ev_name,
     mode_name,
@@ -30,10 +31,6 @@ from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
 from .util import make_finding
-
-# ArduCopter/ekf_check.cpp: LOGGER_WRITE_ERROR(LogErrorSubsystem::EKF_PRIMARY,
-# LogErrorCode(ekf_primary_core)) -- the ECode is the new primary core, not an error code.
-ERR_EKF_PRIMARY = 24
 
 # EV names that mark the key lifecycle of a flight (decoded via ev_name).
 # Verified against ArduPilot's LogEvent enum (AP_Logger.h, Copter-4.5.7): there is

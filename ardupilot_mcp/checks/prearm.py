@@ -27,8 +27,7 @@ from .util import make_finding
 # Substrings (case-insensitive) that mark a line as worth surfacing. Order does
 # not matter for detection; severity is decided separately below.
 NOTABLE_TOKENS: tuple[str, ...] = (
-    "prearm:",
-    "arm:",
+    "arm:",  # also covers the firmware's "PreArm:" tag
     "not calibrated",
     "inconsistent",
     "unhealthy",
@@ -46,7 +45,6 @@ NOTABLE_TOKENS: tuple[str, ...] = (
 # problem the firmware refused to ignore). Everything else notable is INFO
 # (anomaly auto-corrected, re-alignment, reset, informational failsafe).
 WARN_TOKENS: tuple[str, ...] = (
-    "prearm:",
     "error",
     "failed",
     "bad ",
@@ -102,7 +100,14 @@ def _is_notable(low: str) -> bool:
     return any(tok in low for tok in NOTABLE_TOKENS)
 
 
+# Arming-check failures are sent as "PreArm: <reason>" (AP_Arming.cpp); only that prefix,
+# not the word anywhere in a line, marks one.
+PREARM_PREFIX = "prearm:"
+
+
 def _severity(low: str) -> Severity:
+    if low.startswith(PREARM_PREFIX):
+        return Severity.WARN
     return Severity.WARN if any(tok in low for tok in WARN_TOKENS) else Severity.INFO
 
 

@@ -55,6 +55,6 @@ Current `main`; the changelog notes how each change moved these numbers.
 |---|---|---|---|---|
 | 41 | 11 | 22 | 35 / 49 | 101 |
 
-False criticals by check: vibration 29, attitude 25, EKF 25, events 6, GPS 6, power 5,
+False criticals by check: vibration 29, attitude 25, EKF 25, power 6, GPS 6, events 5,
 RC input 4, compass 1. 99 of the 101 start before the impact, so they reach the top of the
 report rather than the after-impact tail.
