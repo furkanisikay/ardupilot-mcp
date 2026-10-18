@@ -76,6 +76,8 @@ VERDICT_TOPICS: dict[str, str] = {
     "Firmware switched on vibration compensation": "vibration",
     "Firmware reported a GPS glitch or compass error": "gps",
     "Firmware fell back to dead reckoning": "ekf",
+    "Firmware triggered a radio failsafe": "radio",
+    "Firmware triggered a battery failsafe": "battery",
 }
 # The prearm check also surfaces in-flight status lines; their text is free-form.
 _STATUS_TEXT_TOPICS: tuple[tuple[str, str], ...] = (

@@ -66,6 +66,30 @@ VERDICTS: tuple[Verdict, ...] = (
         "EKF failsafe changed the flight mode",
         "the EKF check judged the position estimate unusable and forced a non-GPS mode",
     ),
+    # Copter::announce_failsafe (ArduCopter/events.cpp): "<type> Failsafe[ - <action>]". The
+    # ERR and mode-change records say the same in an onboard log (and are merged with it);
+    # in a telemetry log this line is the only record of the failsafe.
+    Verdict(
+        re.compile(r"Radio(?: \+ Battery)? Failsafe(?! Cleared)"),
+        Severity.CRITICAL,
+        "Firmware triggered a radio failsafe",
+        "the autopilot lost valid RC input for longer than the failsafe timeout and took the action "
+        "after the dash (FS_THR_ACTION)",
+    ),
+    Verdict(
+        re.compile(r"Battery Failsafe"),
+        Severity.CRITICAL,
+        "Firmware triggered a battery failsafe",
+        "a battery stayed below its low or critical threshold for BATT_LOW_TIMER and the autopilot "
+        "took the action after the dash (BATT_FS_LOW_ACT / BATT_FS_CRT_ACT)",
+    ),
+    Verdict(
+        re.compile(r"GCS(?: \+ Battery)? Failsafe(?! Cleared)"),
+        Severity.WARN,
+        "Firmware triggered a GCS failsafe",
+        "the autopilot stopped hearing the ground station's heartbeat for FS_GCS_TIMEOUT and took the "
+        "action after the dash (FS_GCS_ENABLE)",
+    ),
     Verdict(
         re.compile(r"Yaw Imbalance (\d+)%"),
         Severity.WARN,
