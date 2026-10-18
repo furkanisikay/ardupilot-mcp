@@ -151,9 +151,9 @@ def forum_report(path: str) -> ForumReport:
     written to disk). Review it with the user and add what they saw before they post it.
     """
     entry = _entry(path)
-    if entry.timeline is None:
-        entry.timeline = build_timeline(entry.log, _report(entry).findings)
-    return ForumReport(path=path, markdown=build_forum_report(entry.log, _report(entry), entry.timeline))
+    # The report's own incident summary (onset, impact, conditions) is all the reply needs.
+    report = _report(entry)
+    return ForumReport(path=path, markdown=build_forum_report(entry.log, report, report.incident))
 
 
 @mcp.tool(annotations=_READONLY)
