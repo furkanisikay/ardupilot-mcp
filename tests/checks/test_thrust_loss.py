@@ -195,3 +195,39 @@ def test_onset_is_before_the_detection():
     # With a corroborating output pattern, the pattern's own start is the onset.
     [g] = ThrustLossCheck().run(_flight(msgs=[(11.5, "Potential Thrust Loss (2)")]))
     assert abs(g.evidence.time_start_s - 10.0) < 0.1
+
+
+def test_heli_firmware_detection_is_still_reported():
+    # Copter runs thrust_loss_check on heli frames too; the firmware check leaves it to this one.
+    log = make_flight_log(
+        {"MSG": [{"TimeUS": 11_000_000, "Message": "Potential Thrust Loss (1)"}]},
+        params={"FRAME_CLASS": 6},
+        vehicle_kind="heli",
+    )
+    assert ThrustLossCheck().applicable(log)[0]
+    [f] = ThrustLossCheck().run(log)
+    assert f.severity == Severity.CRITICAL
+
+
+def test_default_output_is_not_claimed_as_configured():
+    [f] = ThrustLossCheck().run(_flight(HOVER, msgs=[(11.0, "Potential Thrust Loss (2)")]))
+    assert "Wiring from SERVOn_FUNCTION" not in f.explanation
+    assert "default output is assumed: motor 2 = output C2" in f.explanation
+
+
+def test_pwm_range_zero_falls_back_to_the_throttle_channel():
+    from ardupilot_mcp.checks.thrust_loss import pwm_range
+
+    log = make_flight_log({}, params={"MOT_PWM_MIN": 0, "MOT_PWM_MAX": 0, "RC3_MIN": 1100, "RC3_MAX": 1900})
+    assert pwm_range(log) == (1100.0, 1900.0)
+    assert pwm_range(make_flight_log({}, params={"MOT_PWM_MIN": 0, "MOT_PWM_MAX": 0})) == (1000.0, 2000.0)
+    assert pwm_range(make_flight_log({}, params={"MOT_PWM_MIN": 1050, "MOT_PWM_MAX": 1950})) == (
+        1050.0,
+        1950.0,
+    )
+
+
+def test_motor_output_not_logged_skips_the_pattern():
+    # Motor 2 wired to output 15, which RCOU (C1..C14) does not log.
+    log = _flight(params={"SERVO2_FUNCTION": 0, "SERVO15_FUNCTION": 34})
+    assert ThrustLossCheck().run(log) == []

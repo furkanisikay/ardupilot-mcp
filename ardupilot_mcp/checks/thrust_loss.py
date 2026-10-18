@@ -34,14 +34,13 @@ Motor9-12 = 82-85).
 
 from __future__ import annotations
 
-import re
-
 import numpy as np
 
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from ..motor_geometry import FRAME_DEFAULT, FRAME_GEOMETRY
 from .base import Check, register_check
+from .firmware import VERDICTS
 from .util import intervals_above, make_finding
 
 # ArduCopter/crash_check.cpp
@@ -52,7 +51,8 @@ THRUST_LOSS_CHECK_LOW_THROTTLE = 0.25  # "prevent checks triggering ... low comm
 CRASH_CHECK_ANGLE_DEVIATION_DEG = 30.0
 ERR_THRUST_LOSS_CHECK = 25  # LogErrorSubsystem::THRUST_LOSS_CHECK
 MOTB_THRUST_BOOST = 0x1  # FailFlags bit 0
-THRUST_LOSS_MSG = re.compile(r"Potential Thrust Loss \((\d+)\)")
+# The firmware-verdicts entry this check reports (one pattern, so its dedupe and this match agree).
+THRUST_LOSS_MSG = next(v.pattern for v in VERDICTS if v.reported_by == "thrust_loss")
 
 # AP_MotorsMulticopter.cpp parameter defaults.
 PWM_MIN_DEFAULT, PWM_MAX_DEFAULT = 1000.0, 2000.0
@@ -71,6 +71,9 @@ OPPOSITE_MAX_COS = -0.7
 # overlaps the detection time within this slack (the firmware fires after 1 s of the pattern).
 DETECTION_SLACK_S = 2.0
 
+# SERVOn_FUNCTION exists for up to 32 outputs (SRV_Channel.h: NUM_SERVO_CHANNELS <= 32).
+# A motor on an output RCOU does not log (C15 and up) cannot be judged.
+SERVO_OUTPUTS = 32
 _MOTOR_FUNCTION = {k: 32 + k for k in range(1, 9)} | {k: 73 + k for k in range(9, 13)}
 
 
@@ -125,13 +128,35 @@ def same_side(geo: tuple[tuple[float, float], ...], motor: int) -> list[int]:
     return [j for j, w in enumerate(geo) if np.allclose(w, v, atol=1e-3)]
 
 
-def motor_channel(log: FlightLog, motor: int) -> str:
-    """RCOU channel driving 1-based ``motor`` (SERVOn_FUNCTION; channel n by default)."""
+def pwm_range(log: FlightLog) -> tuple[float, float]:
+    """PWM the motors output at actuator 0 and 1.
+
+    Copter 4.6 refuses to arm unless 1 <= MOT_PWM_MIN < MOT_PWM_MAX ("Check MOT_PWM_MIN and
+    MOT_PWM_MAX"), so an armed flight with 0 here comes from older firmware, where 0 meant
+    "use the throttle channel's RC3_MIN/RC3_MAX".
+    """
+    pmin = float(log.params.get("MOT_PWM_MIN", PWM_MIN_DEFAULT))
+    pmax = float(log.params.get("MOT_PWM_MAX", PWM_MAX_DEFAULT))
+    if 1 <= pmin < pmax:
+        return pmin, pmax
+    rmin, rmax = log.params.get("RC3_MIN"), log.params.get("RC3_MAX")
+    if rmin is not None and rmax is not None and 1 <= float(rmin) < float(rmax):
+        return float(rmin), float(rmax)
+    return PWM_MIN_DEFAULT, PWM_MAX_DEFAULT
+
+
+def configured_channel(log: FlightLog, motor: int) -> str | None:
+    """RCOU channel SERVOn_FUNCTION assigns to 1-based ``motor``, or None if no param maps it."""
     fn = _MOTOR_FUNCTION.get(motor)
-    for n in range(1, 17):
+    for n in range(1, SERVO_OUTPUTS + 1):
         if fn is not None and int(log.params.get(f"SERVO{n}_FUNCTION", -1)) == fn:
             return f"C{n}"
-    return f"C{motor}"
+    return None
+
+
+def motor_channel(log: FlightLog, motor: int) -> str:
+    """RCOU channel driving 1-based ``motor`` (SERVOn_FUNCTION; channel n by default)."""
+    return configured_channel(log, motor) or f"C{motor}"
 
 
 @register_check
@@ -140,7 +165,10 @@ class ThrustLossCheck(Check):
     title = "Thrust loss on a motor"
     category = "motors"
     requires: set[str] = set()  # MSG / ERR / MOTB / RCOU are each optional evidence
-    vehicles = {"copter"}
+    # Heli too: Copter runs thrust_loss_check on every frame, and the firmware-verdicts check
+    # leaves this message to this check. The output signature needs a matrix frame, so on a
+    # heli only the firmware's own detection is reported.
+    vehicles = {"copter", "heli"}
     description = (
         "Firmware thrust-loss detection (message, ERR, MOTB thrust boost) and the same signature in the "
         "motor outputs: one motor at maximum, its geometric opposite lowest, sinking at high throttle."
@@ -212,7 +240,9 @@ class ThrustLossCheck(Check):
     def _firmware_finding(self, log: FlightLog, fw: dict, sig: dict | None) -> Finding:
         named = fw["motors"]
         motor_txt = f" on motor {', '.join(str(m) for m in named)}" if named else ""
-        outputs = ", ".join(f"motor {m} = output {motor_channel(log, m)}" for m in named)
+        wired = {m: configured_channel(log, m) for m in named}
+        outputs = ", ".join(f"motor {m} = output {c}" for m, c in wired.items() if c)
+        assumed = ", ".join(f"motor {m} = output C{m}" for m, c in wired.items() if not c)
         parts = []
         if fw["text"]:
             parts.append(
@@ -229,6 +259,11 @@ class ThrustLossCheck(Check):
             f"{THRUST_LOSS_CHECK_MINIMUM_THROTTLE:.0%} or more, near level and still under control: one motor "
             "is no longer producing its share of thrust."
             + (f" Wiring from SERVOn_FUNCTION: {outputs}." if outputs else "")
+            + (
+                f" No SERVOn_FUNCTION maps it, so the default output is assumed: {assumed}."
+                if assumed
+                else ""
+            )
         )
         samples: dict[str, float] = {
             "messages": fw["messages"],
@@ -270,13 +305,12 @@ class ThrustLossCheck(Check):
             return []
         n = len(geo)
         chans = [motor_channel(log, k + 1) for k in range(n)]
+        if not set(chans) <= set(log.fields("RCOU")):
+            return []  # a motor's output is not logged: no motor can be judged against the rest
         t, cols = log.aligned("RCOU", chans)
         if t.size < 2:
             return []
-        pmin = float(log.params.get("MOT_PWM_MIN", PWM_MIN_DEFAULT))
-        pmax = float(log.params.get("MOT_PWM_MAX", PWM_MAX_DEFAULT))
-        if pmin < 1 or pmin >= pmax:  # AP_MotorsMulticopter: invalid -> 1000/2000
-            pmin, pmax = PWM_MIN_DEFAULT, PWM_MAX_DEFAULT
+        pmin, pmax = pwm_range(log)
         spin_max = float(log.params.get("MOT_SPIN_MAX", SPIN_MAX_DEFAULT))
         act = np.vstack([(cols[c] - pmin) / (pmax - pmin) for c in chans])  # motors x samples
 

@@ -6,7 +6,9 @@ imbalance, or a crash disarm; the EKF check announces variance, a failsafe or
 vibration compensation; and every mode change records *why* it happened
 (``MODE.Rsn``, a ModeReason). These are the most precise signals a log carries,
 computed on board at full rate with the firmware's own thresholds, so this check
-reports them as they are instead of re-deriving them.
+reports them as they are instead of re-deriving them. The thrust-loss message is
+matched here (timeline, prearm dedupe) but reported by the ``thrust_loss`` check,
+which adds the motor's output channel and the motor-output evidence.
 
 Sources (Copter-4.6.3):
 - ArduCopter/crash_check.cpp: "Potential Thrust Loss (%d)" (motor index + 1),
@@ -130,7 +132,7 @@ class FirmwareVerdictsCheck(Check):
     category = "events"
     requires: set[str] = set()  # MSG and MODE are guarded inside run()
     description = (
-        "In-flight conclusions the autopilot logged itself: thrust loss (with motor), crash disarm, EKF "
+        "In-flight conclusions the autopilot logged itself: crash disarm, EKF "
         "failsafe, yaw imbalance, vibration compensation, and failsafe-driven mode changes (MODE.Rsn)."
     )
 
@@ -158,15 +160,8 @@ class FirmwareVerdictsCheck(Check):
             first_text = seen[0][1]
             samples: dict[str, float] = {"occurrences": len(seen)}
             m = v.pattern.match(first_text)
-            extra = ""
             if m and m.groups() and m.group(1).isdigit():
-                n = int(m.group(1))
-                if "thrust" in v.title.lower():
-                    samples["motor"] = n
-                    motors = sorted({int(mm.group(1)) for _, s in seen if (mm := v.pattern.match(s))})
-                    extra = f" Motor(s) named: {', '.join(str(x) for x in motors)}."
-                else:
-                    samples["value_pct"] = n
+                samples["value_pct"] = int(m.group(1))
             when = f" first at t={min(times):.1f}s" if times else ""
             out.append(
                 make_finding(
@@ -175,7 +170,7 @@ class FirmwareVerdictsCheck(Check):
                     v.title,
                     f'The autopilot logged "{first_text}"{when}'
                     + (f" ({len(seen)} times)" if len(seen) > 1 else "")
-                    + f": {v.meaning}.{extra} This is the firmware's own on-board conclusion, not an inference.",
+                    + f": {v.meaning}. This is the firmware's own on-board conclusion, not an inference.",
                     recommendation=_recommendation(v),
                     time_start_s=min(times) if times else None,
                     time_end_s=max(times) if times else None,
@@ -229,8 +224,6 @@ class FirmwareVerdictsCheck(Check):
 
 
 def _recommendation(v: Verdict) -> str:
-    if "thrust" in v.title.lower():
-        return "Inspect the named motor, its ESC, propeller and wiring; check the craft is not overweight."
     if "crash" in v.title.lower():
         return "Work backwards from the crash time: what failed first (see the incident timeline)."
     if "Yaw" in v.title:
