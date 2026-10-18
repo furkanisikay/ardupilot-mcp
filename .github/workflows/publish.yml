@@ -22,7 +22,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       is_new: ${{ steps.v.outputs.is_new }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # need existing tags to tell whether this version is already released
       - id: v
@@ -43,8 +43,8 @@ jobs:
     if: needs.check.outputs.is_new == 'true'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install build
@@ -79,7 +79,7 @@ jobs:
     permissions:
       contents: write  # create the tag and the GitHub release
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Create and push tag
         env:
           V: v${{ needs.check.outputs.version }}
