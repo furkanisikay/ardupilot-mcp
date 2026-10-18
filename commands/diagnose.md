@@ -12,14 +12,18 @@ Use the `ardupilot-mcp` MCP tools and ground every claim in their output:
 2. **`vehicle_profile(path)`** — frame, motor count, battery cells, hover throttle, power
    margin and thrust-to-weight. Use it to judge whether the airframe was physically capable
    (e.g. underpowered, marginal headroom) rather than guessing.
-3. **Drill into any finding worth the detail:**
+3. **If it crashed,** `incident_timeline(path)` says what went wrong first and which findings
+   came after the impact (likely consequences, not causes).
+4. **Drill into any finding worth the detail:**
    - `list_events(path, ...)` for the `ERR`/`MODE`/`EV`/`MSG` timeline around the incident.
    - `query_timeseries(path, message_type, fields, start_s, end_s)` for the raw numeric
      series behind a finding (e.g. `VIBE`, `ATT` DesRoll vs Roll, `BAT` Volt).
    - `get_params(path, name_glob)` / `load_param_file(path)` to check the configuration the
      vehicle actually flew.
-4. **If asked about tuning,** call `recommend_tuning(path, area)` and present it as advice
+5. **If asked about tuning,** call `recommend_tuning(path, area)` and present it as advice
    only — it is never applied to a vehicle.
+6. **If the user wants help on the forum,** `forum_report(path)` returns a paste-ready
+   Markdown reply (no GPS positions). Show it to them to review and complete; they post it.
 
 Then explain, in plain language, what happened and why — citing the doc links the report
 gave you and the concrete numbers (timestamps, values, thresholds) from the tools. Do not

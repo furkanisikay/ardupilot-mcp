@@ -170,6 +170,16 @@ class IncidentTimeline(BaseModel):
     caveats: list[str] = Field(default_factory=list)
 
 
+class ForumReport(BaseModel):
+    """A Markdown reply for a forum thread, built from the deterministic diagnosis."""
+
+    path: str
+    markdown: str = Field(
+        description="Paste-ready Markdown: vehicle, what went wrong first, findings with text plots. "
+        "Contains no GPS positions."
+    )
+
+
 class LoggingAdvice(BaseModel):
     """A logging setting that would let the next log answer more (advice only, never applied)."""
 
