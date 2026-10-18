@@ -92,6 +92,7 @@ class Score:
     top3: bool | None
     onset_check: str | None
     false_criticals: list[str] = field(default_factory=list)
+    false_criticals_before_impact: int = 0
 
 
 def score_report(entry: dict, report: DiagnosisReport) -> Score:
@@ -106,13 +107,14 @@ def score_report(entry: dict, report: DiagnosisReport) -> Score:
         else None
     )
     top3 = any(cat in finding_categories(f.check_id, f.title) for f in ranked[:3]) if scorable else None
-    false_crit = [
-        f.check_id
+    false_findings = [
+        f
         for f in report.findings
         if f.severity == Severity.CRITICAL
         and not (finding_categories(f.check_id, f.title) & accepted)
         and not is_impact_marker(f.check_id, f.title)
     ]
+    false_crit = [f.check_id for f in false_findings]
     primary = CATEGORY_CHECKS.get(cat, set())
     onset = report.incident.first_anomaly_check_id if report.incident else None
     return Score(
@@ -124,6 +126,7 @@ def score_report(entry: dict, report: DiagnosisReport) -> Score:
         top3=top3,
         onset_check=onset,
         false_criticals=false_crit,
+        false_criticals_before_impact=sum(1 for f in false_findings if not f.after_impact),
     )
 
 
@@ -138,4 +141,5 @@ def summarize(scores: list[Score]) -> dict:
         "logs_with_false_critical": sum(1 for s in scores if s.false_criticals),
         "false_criticals_total": sum(len(s.false_criticals) for s in scores),
         "false_criticals_by_check": dict(fc.most_common()),
+        "false_criticals_before_impact": sum(s.false_criticals_before_impact for s in scores),
     }

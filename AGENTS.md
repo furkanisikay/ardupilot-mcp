@@ -25,10 +25,13 @@ engine. Licensed AGPL-3.0-only.
    URL in a comment next to the constant. If it's a judgement call we chose, label it a
    *design choice*, not a fact.
 4. **Keep docs in sync.** Run `python scripts/gen_docs.py` after changing a tool, a check
-   or the version: it regenerates `docs/reference.md`, the version in `server.json` and
-   `.claude-plugin/*.json`, and the license in `.claude-plugin/plugin.json`.
-   `tests/test_docs_sync.py` fails when those are stale or when a tool is missing from the
-   tools table of `README.md` or `README.en.md`. A user-visible change needs a
+   or the version, or after refreshing `bench/results.json`: it regenerates
+   `docs/reference.md`, the version in `server.json` and `.claude-plugin/*.json`, the
+   license in `.claude-plugin/plugin.json`, and the `<!-- gen:NAME -->` regions of
+   `README.md`, `README.en.md` and `bench/README.md` (the example output, the check and
+   benchmark-log counts, the benchmark table). Edit text outside those markers only.
+   `tests/test_docs_sync.py` fails when any of them is stale or when a tool is missing
+   from the tools table of `README.md` or `README.en.md`. A user-visible change needs a
    `CHANGELOG.md` entry (the PR workflow fails without one) and a new threshold an entry
    in `docs/SOURCES.md` (reviewers check that).
 5. **Tests gate everything.** `ruff`, `mypy` and `pytest` must all pass. New behaviour
@@ -71,7 +74,7 @@ tests/scenarios/   labelled fault-injection flights in Copter-4.6.3's exact log 
                    (tests/test_scenarios.py: expected findings fire, clean flights stay clean)
 bench/             real-crash benchmark: labelled forum flights (URL + sha256 + label, no
                    logs) and an offline scorer, `python -m bench.run --logs DIR`
-scripts/          gen_docs.py (generated docs + manifests), gen_param_meta.py, gen_motor_geometry.py
+scripts/          gen_docs.py (generated docs, manifests, README regions), gen_param_meta.py, gen_motor_geometry.py
 docs/              SOURCES.md (every assumption, audited and cited), reference.md (generated),
                    clients.md (client setup), design/ (dated design records)
 .github/           CONTRIBUTING, SECURITY, CLA, issue/PR templates, workflows
@@ -124,7 +127,7 @@ ruff check ardupilot_mcp tests scripts bench examples    # lint
 ruff format ardupilot_mcp tests scripts bench examples   # format
 mypy ardupilot_mcp                    # types
 pytest                                # tests (includes the docs-sync gate)
-python scripts/gen_docs.py            # regenerate docs/reference.md and the manifests
+python scripts/gen_docs.py            # regenerate docs/reference.md, the manifests and README regions
 pre-commit install                    # optional: run the above on every commit
 python -m ardupilot_mcp               # run the server (stdio)
 python examples/analyze.py log.bin    # diagnose a log from the CLI

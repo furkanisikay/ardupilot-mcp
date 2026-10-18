@@ -1,0 +1,849 @@
+{
+ "summary": {
+  "logs": 49,
+  "scored": 41,
+  "top1_hits": 11,
+  "top3_hits": 22,
+  "logs_with_false_critical": 35,
+  "false_criticals_total": 97,
+  "false_criticals_by_check": {
+   "vibration": 29,
+   "attitude": 25,
+   "ekf": 25,
+   "gps": 6,
+   "events": 5,
+   "rcin": 4,
+   "power": 2,
+   "compass": 1
+  },
+  "false_criticals_before_impact": 95
+ },
+ "scores": [
+  {
+   "id": "117787_0",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "attitude",
+   "hit": false,
+   "top3": false,
+   "onset_check": "attitude",
+   "false_criticals": [
+    "attitude"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "117787_1",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "attitude",
+   "hit": false,
+   "top3": false,
+   "onset_check": "attitude",
+   "false_criticals": [
+    "attitude"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "128873_2",
+   "category": "mechanical_frame",
+   "expected": [
+    "attitude",
+    "motors"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": true,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "ekf"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "132194_0",
+   "category": "thrust_loss_motor_esc",
+   "expected": [
+    "motors",
+    "thrust_loss"
+   ],
+   "top_check": "vibration",
+   "hit": false,
+   "top3": false,
+   "onset_check": "vibration",
+   "false_criticals": [
+    "vibration",
+    "vibration",
+    "ekf"
+   ],
+   "false_criticals_before_impact": 3
+  },
+  {
+   "id": "137589_0",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": false,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "attitude",
+    "vibration",
+    "vibration",
+    "rcin",
+    "vibration"
+   ],
+   "false_criticals_before_impact": 5
+  },
+  {
+   "id": "137589_1",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": false,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "attitude",
+    "attitude",
+    "vibration"
+   ],
+   "false_criticals_before_impact": 3
+  },
+  {
+   "id": "138886_0",
+   "category": "ekf",
+   "expected": [
+    "ekf"
+   ],
+   "top_check": "events",
+   "hit": true,
+   "top3": true,
+   "onset_check": "timing",
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "139371_0",
+   "category": "ekf",
+   "expected": [
+    "ekf"
+   ],
+   "top_check": "ekf",
+   "hit": true,
+   "top3": true,
+   "onset_check": "ekf",
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "140954_0",
+   "category": "pilot_error",
+   "expected": [],
+   "top_check": "events",
+   "hit": null,
+   "top3": null,
+   "onset_check": "err",
+   "false_criticals": [
+    "attitude",
+    "attitude",
+    "attitude",
+    "vibration",
+    "vibration",
+    "vibration",
+    "ekf",
+    "ekf",
+    "ekf"
+   ],
+   "false_criticals_before_impact": 7
+  },
+  {
+   "id": "141345_0",
+   "category": "gps",
+   "expected": [
+    "gps",
+    "sensors"
+   ],
+   "top_check": "compass",
+   "hit": false,
+   "top3": false,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "compass",
+    "events"
+   ],
+   "false_criticals_before_impact": 2
+  },
+  {
+   "id": "141676_0",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "rcin",
+   "hit": false,
+   "top3": true,
+   "onset_check": "rcin",
+   "false_criticals": [
+    "rcin"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "141734_0",
+   "category": "mechanical_frame",
+   "expected": [
+    "attitude",
+    "motors"
+   ],
+   "top_check": "attitude",
+   "hit": true,
+   "top3": true,
+   "onset_check": "timing",
+   "false_criticals": [
+    "vibration",
+    "vibration",
+    "vibration",
+    "vibration",
+    "ekf",
+    "ekf"
+   ],
+   "false_criticals_before_impact": 6
+  },
+  {
+   "id": "141884_0",
+   "category": "pilot_error",
+   "expected": [],
+   "top_check": "attitude",
+   "hit": null,
+   "top3": null,
+   "onset_check": "attitude",
+   "false_criticals": [
+    "attitude",
+    "vibration",
+    "vibration",
+    "vibration"
+   ],
+   "false_criticals_before_impact": 4
+  },
+  {
+   "id": "142129_0",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "attitude",
+   "hit": false,
+   "top3": false,
+   "onset_check": "attitude",
+   "false_criticals": [
+    "attitude"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "142129_1",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "vibration",
+   "hit": false,
+   "top3": false,
+   "onset_check": "vibration",
+   "false_criticals": [
+    "vibration",
+    "attitude",
+    "vibration",
+    "vibration",
+    "attitude"
+   ],
+   "false_criticals_before_impact": 5
+  },
+  {
+   "id": "142202_0",
+   "category": "gps",
+   "expected": [
+    "gps",
+    "sensors"
+   ],
+   "top_check": "sensors",
+   "hit": true,
+   "top3": true,
+   "onset_check": null,
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "142202_1",
+   "category": "gps",
+   "expected": [
+    "gps",
+    "sensors"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": true,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "ekf"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "142491_0",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "attitude",
+   "hit": false,
+   "top3": false,
+   "onset_check": "attitude",
+   "false_criticals": [
+    "attitude",
+    "vibration",
+    "vibration",
+    "vibration",
+    "vibration",
+    "ekf",
+    "attitude",
+    "ekf",
+    "rcin"
+   ],
+   "false_criticals_before_impact": 9
+  },
+  {
+   "id": "142491_1",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "attitude",
+   "hit": false,
+   "top3": false,
+   "onset_check": "attitude",
+   "false_criticals": [
+    "attitude",
+    "attitude",
+    "vibration",
+    "ekf",
+    "ekf"
+   ],
+   "false_criticals_before_impact": 5
+  },
+  {
+   "id": "142533_0",
+   "category": "pilot_error",
+   "expected": [],
+   "top_check": "vibration",
+   "hit": null,
+   "top3": null,
+   "onset_check": "timing",
+   "false_criticals": [
+    "vibration",
+    "attitude",
+    "attitude",
+    "vibration",
+    "ekf",
+    "ekf"
+   ],
+   "false_criticals_before_impact": 6
+  },
+  {
+   "id": "143189_0",
+   "category": "not_a_fault",
+   "expected": [],
+   "top_check": "compass",
+   "hit": null,
+   "top3": null,
+   "onset_check": null,
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "143210_0",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "attitude",
+   "hit": false,
+   "top3": true,
+   "onset_check": "attitude",
+   "false_criticals": [
+    "attitude",
+    "events"
+   ],
+   "false_criticals_before_impact": 2
+  },
+  {
+   "id": "143223_0",
+   "category": "pilot_error",
+   "expected": [],
+   "top_check": "gps",
+   "hit": null,
+   "top3": null,
+   "onset_check": "gps",
+   "false_criticals": [
+    "attitude"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "143837_0",
+   "category": "thrust_loss_motor_esc",
+   "expected": [
+    "motors",
+    "thrust_loss"
+   ],
+   "top_check": "gps",
+   "hit": false,
+   "top3": false,
+   "onset_check": "timing",
+   "false_criticals": [
+    "gps",
+    "gps",
+    "power"
+   ],
+   "false_criticals_before_impact": 3
+  },
+  {
+   "id": "143955_0",
+   "category": "power_brownout",
+   "expected": [
+    "power"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": false,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "ekf"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "144128_0",
+   "category": "compass_interference",
+   "expected": [
+    "calibration",
+    "compass"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": false,
+   "onset_check": "ekf",
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "144203_1",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "prearm",
+   "hit": true,
+   "top3": true,
+   "onset_check": "err",
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "144337_0",
+   "category": "thrust_loss_motor_esc",
+   "expected": [
+    "motors",
+    "thrust_loss"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": true,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "ekf",
+    "attitude"
+   ],
+   "false_criticals_before_impact": 2
+  },
+  {
+   "id": "144420_0",
+   "category": "power_brownout",
+   "expected": [
+    "power"
+   ],
+   "top_check": "integrity",
+   "hit": true,
+   "top3": true,
+   "onset_check": "err",
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "144427_0",
+   "category": "power_brownout",
+   "expected": [
+    "power"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": true,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "ekf"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "144690_0",
+   "category": "not_a_fault",
+   "expected": [],
+   "top_check": "timing",
+   "hit": null,
+   "top3": null,
+   "onset_check": "timing",
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "144952_0",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": false,
+   "onset_check": "power",
+   "false_criticals": [
+    "ekf",
+    "attitude",
+    "attitude"
+   ],
+   "false_criticals_before_impact": 3
+  },
+  {
+   "id": "145222_0",
+   "category": "thrust_loss_motor_esc",
+   "expected": [
+    "motors",
+    "thrust_loss"
+   ],
+   "top_check": "thrust_loss",
+   "hit": true,
+   "top3": true,
+   "onset_check": "thrust_loss",
+   "false_criticals": [
+    "attitude",
+    "vibration",
+    "vibration",
+    "vibration",
+    "ekf",
+    "ekf"
+   ],
+   "false_criticals_before_impact": 6
+  },
+  {
+   "id": "145232_0",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "prearm",
+   "hit": true,
+   "top3": true,
+   "onset_check": null,
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "145352_0",
+   "category": "ekf",
+   "expected": [
+    "ekf"
+   ],
+   "top_check": "gps",
+   "hit": false,
+   "top3": true,
+   "onset_check": "power",
+   "false_criticals": [
+    "gps",
+    "power"
+   ],
+   "false_criticals_before_impact": 2
+  },
+  {
+   "id": "145382_0",
+   "category": "tuning_oscillation",
+   "expected": [
+    "attitude"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": false,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "ekf",
+    "rcin",
+    "ekf"
+   ],
+   "false_criticals_before_impact": 3
+  },
+  {
+   "id": "145422_0",
+   "category": "gps",
+   "expected": [
+    "gps",
+    "sensors"
+   ],
+   "top_check": "ekf",
+   "hit": false,
+   "top3": false,
+   "onset_check": "gps",
+   "false_criticals": [
+    "ekf"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "145429_0",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "vibration",
+   "hit": false,
+   "top3": true,
+   "onset_check": null,
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "145429_1",
+   "category": "configuration",
+   "expected": [
+    "calibration",
+    "config",
+    "param_audit",
+    "prearm",
+    "sensors"
+   ],
+   "top_check": "config",
+   "hit": true,
+   "top3": true,
+   "onset_check": null,
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "145480_0",
+   "category": "ekf",
+   "expected": [
+    "ekf"
+   ],
+   "top_check": "ekf",
+   "hit": true,
+   "top3": true,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "events"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "145480_1",
+   "category": "ekf",
+   "expected": [
+    "ekf"
+   ],
+   "top_check": "ekf",
+   "hit": true,
+   "top3": true,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "events"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "145571_0",
+   "category": "tuning_oscillation",
+   "expected": [
+    "attitude"
+   ],
+   "top_check": "vibration",
+   "hit": false,
+   "top3": false,
+   "onset_check": "vibration",
+   "false_criticals": [
+    "ekf",
+    "ekf"
+   ],
+   "false_criticals_before_impact": 2
+  },
+  {
+   "id": "145616_0",
+   "category": "ekf",
+   "expected": [
+    "ekf"
+   ],
+   "top_check": "events",
+   "hit": false,
+   "top3": true,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "events",
+    "gps"
+   ],
+   "false_criticals_before_impact": 2
+  },
+  {
+   "id": "145616_1",
+   "category": "ekf",
+   "expected": [
+    "ekf"
+   ],
+   "top_check": "gps",
+   "hit": false,
+   "top3": true,
+   "onset_check": "ekf",
+   "false_criticals": [
+    "gps"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "145616_2",
+   "category": "ekf",
+   "expected": [
+    "ekf"
+   ],
+   "top_check": "gps",
+   "hit": false,
+   "top3": true,
+   "onset_check": null,
+   "false_criticals": [
+    "gps"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "145617_0",
+   "category": "pilot_error",
+   "expected": [],
+   "top_check": "rcin",
+   "hit": null,
+   "top3": null,
+   "onset_check": "timing",
+   "false_criticals": [
+    "attitude"
+   ],
+   "false_criticals_before_impact": 1
+  },
+  {
+   "id": "145667_0",
+   "category": "mechanical_frame",
+   "expected": [
+    "attitude",
+    "motors"
+   ],
+   "top_check": "compass",
+   "hit": false,
+   "top3": false,
+   "onset_check": "events",
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "145667_1",
+   "category": "mechanical_frame",
+   "expected": [
+    "attitude",
+    "motors"
+   ],
+   "top_check": null,
+   "hit": false,
+   "top3": false,
+   "onset_check": null,
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  },
+  {
+   "id": "145754_0",
+   "category": "not_a_fault",
+   "expected": [],
+   "top_check": "prearm",
+   "hit": null,
+   "top3": null,
+   "onset_check": null,
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
+  }
+ ]
+}

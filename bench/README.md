@@ -49,12 +49,14 @@ signature).
 
 ## Results
 
-Current `main`; the changelog notes how each change moved these numbers.
+Current `main`; the changelog notes how each change moved these numbers. To refresh them, run
+`python -m bench.run --logs DIR --json bench/results.json` and then `python scripts/gen_docs.py`,
+which renders this table from `bench/results.json`.
 
+<!-- gen:results -->
 | Scorable logs | Top-1 | Top-3 | Logs with a false critical | False criticals |
 |---|---|---|---|---|
-| 41 | 11 | 22 | 35 / 49 | 101 |
+| 41 | 11 | 22 | 35 / 49 | 97 |
 
-False criticals by check: vibration 29, attitude 25, EKF 25, power 6, GPS 6, events 5,
-RC input 4, compass 1. 99 of the 101 start before the impact, so they reach the top of the
-report rather than the after-impact tail.
+False criticals by check: `vibration` 29, `attitude` 25, `ekf` 25, `gps` 6, `events` 5, `rcin` 4, `power` 2, `compass` 1. 95 of the 97 start before the impact, so they reach the top of the report rather than the after-impact tail.
+<!-- /gen:results -->

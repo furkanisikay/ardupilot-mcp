@@ -20,8 +20,8 @@ repos:
   - repo: local
     hooks:
       - id: gen-docs
-        name: regenerate docs/reference.md and the manifests
+        name: regenerate docs/reference.md, the manifests and README regions
         entry: python scripts/gen_docs.py
         language: system
         pass_filenames: false
-        files: ^(ardupilot_mcp/|scripts/gen_docs\.py$|server\.json$|\.claude-plugin/)
+        files: ^(ardupilot_mcp/|scripts/gen_docs\.py$|server\.json$|\.claude-plugin/|README(\.en)?\.md$|bench/(README\.md|results\.json|real_crashes\.json)$|examples/generate_demo_log\.py$|tests/synth_bin\.py$)

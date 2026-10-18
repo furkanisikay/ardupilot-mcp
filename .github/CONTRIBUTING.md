@@ -20,7 +20,7 @@ pytest
 - **New check:** one module in `ardupilot_mcp/checks/` and one test in `tests/checks/`. Follow [How to add a check](../AGENTS.md#how-to-add-a-check-the-main-contribution-path), or run `/add-check` in Claude Code.
 - **New threshold or fact:** a source comment next to the constant and an entry in `docs/SOURCES.md`. Label a value you chose yourself as a design choice.
 - **New or renamed tool:** a row in the tools table of both READMEs.
-- **Generated files:** run `python scripts/gen_docs.py` after you change a tool, a check or the version. It rewrites `docs/reference.md` and the plugin and registry manifests. A test fails while they are out of date.
+- **Generated files:** run `python scripts/gen_docs.py` after you change a tool, a check, the version or `bench/results.json`. It rewrites `docs/reference.md`, the plugin and registry manifests, and the parts of `README.md`, `README.en.md` and `bench/README.md` between `<!-- gen:NAME -->` markers (the example output, counts and benchmark table). Edit only the text outside the markers. A test fails while any of them is out of date.
 - **License header:** every Python file outside `tests/` starts with `# SPDX-License-Identifier: AGPL-3.0-only`.
 
 Run these before you push. CI runs the same commands:

@@ -3,6 +3,9 @@
 
     python -m bench.run --logs DIR [--json OUT]
 
+``--json bench/results.json`` refreshes the committed results; ``scripts/gen_docs.py``
+then renders the table in bench/README.md from that file.
+
 DIR holds the logs named ``<id>.bin`` (the ``id`` field of bench/real_crashes.json).
 Nothing is downloaded: fetch each entry's ``source_url`` yourself. A file whose
 sha256 differs from the manifest is reported and skipped, so results always refer
@@ -71,8 +74,9 @@ def main(argv: list[str] | None = None) -> int:
     for sid, why in skipped:
         print(f"skipped {sid}: {why}", file=sys.stderr)
     if args.json:
-        with open(args.json, "w", encoding="utf-8") as fh:
+        with open(args.json, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({"summary": summary, "scores": [asdict(s) for s in scores]}, fh, indent=1)
+            fh.write("\n")
     return 0
 
 

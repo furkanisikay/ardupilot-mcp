@@ -10,6 +10,7 @@ Run:  python examples/generate_demo_log.py [out.bin]
 
 from __future__ import annotations
 
+import argparse
 import math
 import os
 import sys
@@ -164,7 +165,19 @@ def build_crash_log(path: str) -> str:
     return path
 
 
-if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), "demo_crash.bin")
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="Write a synthetic multi-fault ArduCopter crash log.")
+    ap.add_argument(
+        "out",
+        nargs="?",
+        default=os.path.join(os.path.dirname(__file__), "demo_crash.bin"),
+        help="output .bin path (default: examples/demo_crash.bin)",
+    )
+    out = ap.parse_args(argv).out
     build_crash_log(out)
     print(f"wrote {out} ({os.path.getsize(out)} bytes)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -36,6 +36,7 @@ Claude Code takes one line: `claude mcp add ardupilot-mcp -- uvx ardupilot-mcp`.
 
 An excerpt of `python examples/analyze.py demo.bin`. A client tells you the same findings in your own words.
 
+<!-- gen:example -->
 ```text
 First anomaly while armed: Elevated VibeZ vibration @ 9s.
 6 critical, 2 warning, 3 info finding(s).
@@ -44,8 +45,9 @@ First anomaly while armed: Elevated VibeZ vibration @ 9s.
 [CRITICAL] attitude  @ 20s: Attitude tracking failure (roll)
            Roll failed to track the demand for 3.0 s, error up to 35 deg (sustained >25 deg).
 [CRITICAL] power     @ 25s: Battery reached critical voltage
-           Pack voltage fell to 13.22 V, at or below the critical-voltage level (13.50 V).
+           Pack voltage fell to 13.32 V, at or below the critical-voltage level (13.50 V, configured BATT_*_VOLT failsafe).
 ```
+<!-- /gen:example -->
 
 ## Tools
 
@@ -66,7 +68,7 @@ Every tool is read-only.
 | `recommend_tuning` | Harmonic notch, PID and autotune advice. It applies nothing. |
 | `list_checks` | The registered checks. |
 
-Tool arguments and all 18 checks are in [docs/reference.md](docs/reference.md). `scripts/gen_docs.py` generates that file from the code, and CI fails when it is out of date.
+Tool arguments and all <!-- gen:checks -->18<!-- /gen:checks --> checks are in [docs/reference.md](docs/reference.md). `scripts/gen_docs.py` generates that file from the code, and CI fails when it is out of date.
 
 ## How it works
 
@@ -78,7 +80,7 @@ The server runs on the MCP Python SDK 2. It speaks the 2026-07-28 protocol revis
 
 ## Accuracy and limits
 
-The engine is measured on 49 real crash logs from the ArduPilot forum, each labelled with the cause that a developer or an experienced helper stated after reading the log. Current scores and the method are in [bench/README.md](bench/README.md).
+The engine is measured on <!-- gen:bench-logs -->49<!-- /gen:bench-logs --> real crash logs from the ArduPilot forum, each labelled with the cause that a developer or an experienced helper stated after reading the log. Current scores and the method are in [bench/README.md](bench/README.md).
 
 - Circular drift from a compass heading error (toilet bowl) is not detected yet.
 - A log with corrupted format definitions fails with a clear error instead of a partial result.
