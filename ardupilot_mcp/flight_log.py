@@ -398,20 +398,32 @@ class FlightLog:
         """Each (arm, disarm) interval, in order. A log can hold several flights.
 
         From EV ARMED(10)/DISARMED(11), which AP_Arming writes for every vehicle in
-        4.x, falling back to ``ARM.ArmState`` (1 = armed). An arm with no matching
-        disarm (crash, truncated log) runs to the end of the log.
+        4.x, together with ``ARM.ArmState`` (1 = armed). Two real-log cases matter:
+
+        * With ``LOG_DISARMED=0`` logging starts *at* arming, so the arm record is
+          often written before the file opens. A log whose first edge is a disarm was
+          therefore armed from its start.
+        * Such a log may carry no edge at all (the disarm was not reached either). When
+          ``LOG_DISARMED`` is 0 the whole log was recorded while armed.
+
+        An arm with no matching disarm (crash, truncated log) runs to the end of the log.
+        Returns ``[]`` when arming cannot be determined.
         """
         edges: list[tuple[float, bool]] = []
         for r in self.get("EV"):
             if r.get("Id") in (10, 11) and "timestamp" in r:
                 edges.append((float(r["timestamp"]), r.get("Id") == 10))
-        if not edges:
-            for r in self.get("ARM"):
-                if _is_number(r.get("ArmState")) and "timestamp" in r:
-                    edges.append((float(r["timestamp"]), bool(r["ArmState"])))
+        for r in self.get("ARM"):
+            if _is_number(r.get("ArmState")) and "timestamp" in r:
+                edges.append((float(r["timestamp"]), bool(r["ArmState"])))
         edges.sort()
+        end = float(self.meta.duration_s) if self.meta.duration_s is not None else None
+        if not edges:
+            if self.params.get("LOG_DISARMED") == 0 and end is not None:
+                return [(0.0, end)]
+            return []
         out: list[tuple[float, float]] = []
-        start: float | None = None
+        start: float | None = 0.0 if not edges[0][1] else None
         for t, armed in edges:
             if armed and start is None:
                 start = t
@@ -419,8 +431,8 @@ class FlightLog:
                 out.append((start, t))
                 start = None
         if start is not None:
-            end = self.meta.duration_s if self.meta.duration_s is not None else start
-            out.append((start, max(start, float(end))))
+            last = end if end is not None else start
+            out.append((start, max(start, last)))
         return out
 
     def armed_mask(self, times: np.ndarray) -> np.ndarray | None:

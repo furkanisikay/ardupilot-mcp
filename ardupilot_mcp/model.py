@@ -72,6 +72,11 @@ class Finding(BaseModel):
         description="Official ArduPilot docs for this issue — the LLM should read/cite them, "
         "consulting the firmware version in log_summary for version-specific behaviour.",
     )
+    after_impact: bool = Field(
+        default=False,
+        description="True when the evidence starts at or after the crash/impact the log records: "
+        "likely a consequence of the crash, not its cause. Listed after the other findings.",
+    )
 
 
 class CheckStatus(str, Enum):
@@ -129,6 +134,41 @@ class SkippedCheck(BaseModel):
     reason: str
 
 
+class TimelineEvent(BaseModel):
+    time_s: float | None = None
+    source: str = Field(description="firmware (MSG verdict), err, mode, event, or finding:<check_id>.")
+    label: str
+    severity: Severity | None = None
+    phase: str = Field(description="before_onset | onset | after_onset | impact | after_impact")
+
+
+class IncidentTimeline(BaseModel):
+    """What went wrong first, and what followed. Order in time only — never causation."""
+
+    path: str
+    onset_s: float | None = Field(default=None, description="Time of the first anomaly while armed.")
+    onset_basis: str | None = Field(default=None, description="The event that marks the onset.")
+    impact_s: float | None = Field(
+        default=None, description="Time of the crash/impact, when the log shows one."
+    )
+    impact_basis: str | None = None
+    log_ended_armed: bool = False
+    first_anomaly_check_id: str | None = Field(
+        default=None, description="Check (or 'firmware'/'err'/'mode') of the onset event."
+    )
+    events: list[TimelineEvent] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+
+
+class LoggingAdvice(BaseModel):
+    """A logging setting that would let the next log answer more (advice only, never applied)."""
+
+    missing: str = Field(description="Message (or data rate) the log lacks.")
+    needed_for: str = Field(description="What the diagnosis could not judge without it.")
+    setting: str = Field(description="The parameter change that logs it.")
+    bitmask_bit: int | None = None
+
+
 class DiagnosisReport(BaseModel):
     """Top-level structured output of ``analyze_log`` — the reliable backbone."""
 
@@ -149,6 +189,15 @@ class DiagnosisReport(BaseModel):
     )
     references: list[Reference] = Field(
         default_factory=list, description="De-duplicated documentation links across all findings."
+    )
+    logging_advice: list[LoggingAdvice] = Field(
+        default_factory=list,
+        description="Copter/Heli: LOG_BITMASK bits that are off and whose data a check needed.",
+    )
+    incident: IncidentTimeline | None = Field(
+        default=None,
+        description="Onset/impact summary when the log shows an anomaly while armed; the full event list "
+        "is available from the incident_timeline tool.",
     )
     guidance: str = Field(
         default="",
@@ -208,6 +257,38 @@ class ParamResult(BaseModel):
     note: str | None = Field(
         default=None, description="Completeness caveat (e.g. truncated log -> snapshot may be partial)."
     )
+
+
+class ParamChange(BaseModel):
+    name: str
+    a: float
+    b: float
+
+
+class MetricPair(BaseModel):
+    a: float | None = None
+    b: float | None = None
+
+
+class LogComparison(BaseModel):
+    """Differences between two logs (A = earlier/good, B = later/bad, by convention)."""
+
+    path_a: str
+    path_b: str
+    firmware_a: str | None = None
+    firmware_b: str | None = None
+    firmware_changed: bool = False
+    changed: list[ParamChange] = Field(
+        default_factory=list, description="Configuration parameters whose value differs (user changes)."
+    )
+    learned_changed: list[ParamChange] = Field(
+        default_factory=list,
+        description="Values the autopilot learns or counts itself (STAT_*, MOT_THST_HOVER, gyro offsets...).",
+    )
+    added: list[str] = Field(default_factory=list, description="Parameters only in log B.")
+    removed: list[str] = Field(default_factory=list, description="Parameters only in log A.")
+    metrics: dict[str, MetricPair] = Field(default_factory=dict, description="Flight metrics side by side.")
+    notes: list[str] = Field(default_factory=list)
 
 
 class TuningArea(str, Enum):

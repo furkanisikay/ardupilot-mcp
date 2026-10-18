@@ -41,7 +41,7 @@ def parse_bin(path: str) -> FlightLog:
     capture = io.StringIO()
     with contextlib.redirect_stderr(capture):
         try:
-            reader = DFReader.DFReader_binary(path)
+            reader = _open_reader(DFReader, path)
         except Exception as exc:  # noqa: BLE001
             raise ValueError(f"could not open DataFlash log {path!r}: {exc}") from exc
         try:
@@ -73,6 +73,22 @@ def parse_bin(path: str) -> FlightLog:
     log.meta.flight_modes = _extract_modes(log, kind)
     log.meta.max_altitude_m = _extract_max_alt(log)
     return log
+
+
+def _open_reader(DFReader, path: str):
+    """``DFReader_binary`` without its log-clock discovery.
+
+    pymavlink looks for a GPS message to build a wall-clock time base; in a log with
+    no GPS (indoor or optical-flow craft) that search decodes every message one by
+    one, which took ~7 s on a 15 MB forum log. Our time base is TimeUS/TimeMS
+    (see FlightLog), so a plain microsecond clock is all the reader needs.
+    """
+
+    class _Reader(DFReader.DFReader_binary):
+        def init_clock(self) -> None:
+            self.clock = DFReader.DFReaderClock_usec()
+
+    return _Reader(path)
 
 
 # DataFlash format char -> numpy dtype, mirroring pymavlink's FORMAT_TO_STRUCT

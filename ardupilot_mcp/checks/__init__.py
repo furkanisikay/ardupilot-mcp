@@ -13,6 +13,7 @@ from .base import Check, clear_registry, get_check, get_checks, register_check
 _CHECK_MODULES = [
     "integrity",
     "events",
+    "firmware",
     "ekf",
     "vibration",
     "power",

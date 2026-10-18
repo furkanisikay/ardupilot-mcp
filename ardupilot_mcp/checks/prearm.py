@@ -21,6 +21,7 @@ import re
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
+from .firmware import verdict_for
 from .util import make_finding
 
 # Substrings (case-insensitive) that mark a line as worth surfacing. Order does
@@ -163,6 +164,8 @@ class StartupMessagesCheck(Check):
             low = stripped.lower()
             if not _is_notable(low):
                 continue
+            if verdict_for(stripped) is not None:
+                continue  # reported by the firmware-verdicts check
             if _is_routine(low):
                 continue
             key = stripped

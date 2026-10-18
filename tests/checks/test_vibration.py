@@ -125,7 +125,8 @@ def test_modern_clip_counter_reset_is_not_negative():
     recs = _modern({"Clip": counts}, {})
     clip = [f for f in VibrationCheck().run(_log(recs)) if "clipping" in f.title.lower()]
     assert clip[0].evidence.samples["total_clips"] == 50
-    assert clip[0].severity == Severity.WARN
+    # Fewer than ~100 clips is "likely ok" per the wiki (e.g. a hard landing).
+    assert clip[0].severity == Severity.INFO
 
 
 def test_modern_vibration_secondary_imu_is_demoted():

@@ -42,6 +42,13 @@ RNGFND_MESSAGES = ("RFND", "RNGFND")
 # Parameter that declares a GPS receiver. >0 means GPS is configured. 4.6 renamed
 # GPS_TYPE to GPS1_TYPE (AP_GPS.cpp: AP_SUBGROUPINFO(params[0], "1_", ...)).
 GPS_TYPE_PARAMS = ("GPS_TYPE", "GPS1_TYPE")
+GPS_TYPE_AUTO = 1  # GPS1_TYPE default: auto-detect (AP_GPS.cpp @Values 1:AUTO)
+# Copter modes whose requires_GPS() is true (Copter-4.6.3 ArduCopter/mode.h), plus
+# AUTO/AUTO_RTL, which need a position estimate for any waypoint mission.
+GPS_MODES = {
+    "BRAKE", "CIRCLE", "DRIFT", "GUIDED", "LOITER", "POSHOLD", "RTL", "SMART_RTL",
+    "THROW", "AVOID_ADSB", "FOLLOW", "ZIGZAG", "AUTO", "AUTO_RTL",
+}  # fmt: skip
 GPS_MESSAGE = "GPS"
 
 # Compass: MAG.Health is 1 (healthy) / 0 (unhealthy) per sample. A healthy
@@ -100,10 +107,15 @@ class SensorsCheck(Check):
         if log.has(GPS_MESSAGE):
             return []  # configured and logged data -> healthy
         t = int(gps_type)
+        # GPS1_TYPE defaults to 1 (AUTO), so on a craft that never had a GPS the
+        # parameter is "configured" by default. Only an explicitly chosen receiver
+        # type, or flying a mode that needs GPS, makes the silence a real fault.
+        gps_modes = sorted(set(log.meta.flight_modes) & GPS_MODES)
+        sev = Severity.WARN if (t != GPS_TYPE_AUTO or gps_modes) else Severity.INFO
         return [
             make_finding(
                 self.id,
-                Severity.WARN,
+                sev,
                 "GPS configured but no data logged",
                 f"A GPS is configured (GPS type {t}) but no GPS data was logged — the receiver "
                 "produced no data. Check the GPS connection.",

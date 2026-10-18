@@ -56,12 +56,15 @@ class IntegrityCheck(Check):
         ivs = log.armed_intervals()
         if not ivs or log.meta.duration_s is None:
             return []
-        disarm_times = [
-            float(r["timestamp"]) for r in log.get("EV") if r.get("Id") == 11 and "timestamp" in r
-        ] or [float(r["timestamp"]) for r in log.get("ARM") if r.get("ArmState") == 0 and "timestamp" in r]
-        start, _end = ivs[-1]
-        if any(t >= start for t in disarm_times):
+        # A log recorded only while armed (LOG_DISARMED=0) with no arm/disarm
+        # record at all says nothing about how it ended.
+        if not log.has("EV") and not log.has("ARM"):
             return []
+        from ..timeline import log_ended_armed  # local: timeline imports the checks package
+
+        if not log_ended_armed(log, ivs):
+            return []
+        start = ivs[-1][0]
         return [
             make_finding(
                 "integrity",

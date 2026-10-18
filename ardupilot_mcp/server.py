@@ -21,6 +21,7 @@ from mcp.types import ToolAnnotations
 from . import ardupilot_docs as docs
 from . import ardupilot_meta as meta
 from .checks import get_checks
+from .compare import compare_logs as compare_logs_impl
 from .flight_log import FlightLog
 from .model import (
     CheckCatalog,
@@ -28,6 +29,8 @@ from .model import (
     DiagnosisReport,
     EventRecord,
     EventTimeline,
+    IncidentTimeline,
+    LogComparison,
     LogIntegrity,
     LogSummary,
     ParamResult,
@@ -40,6 +43,7 @@ from .orchestrator import diagnose
 from .param_file import parse_param_file
 from .parser import parse_bin
 from .profile import build_profile
+from .timeline import build_timeline
 
 # A full ArduPilot config is ~800-1400 params; far fewer suggests an incomplete dump.
 _LOW_PARAM_COUNT = 150
@@ -101,6 +105,29 @@ def analyze_log(path: str) -> DiagnosisReport:
     finding is grounded in the log; do not invent causes beyond them.
     """
     return diagnose(_load(path))
+
+
+@mcp.tool(annotations=_READONLY)
+def incident_timeline(path: str) -> IncidentTimeline:
+    """What went wrong first, and what followed: the onset (first anomaly while armed), the impact (crash
+    check, crash disarm, or the log ending while armed), and every firmware verdict, error, failsafe mode
+    change and finding in time order, each tagged before_onset / onset / after_onset / impact / after_impact.
+    Use it to answer "what failed first, and is the rest just the crash?". Time order only — never causation.
+    """
+    log = _load(path)
+    report = diagnose(log)
+    return build_timeline(log, report.findings)
+
+
+@mcp.tool(annotations=_READONLY)
+def compare_logs(path_a: str, path_b: str) -> LogComparison:
+    """What changed between two logs of the same vehicle ("it flew fine last week")? Lists configuration
+    parameters that differ (separately from values the autopilot learns/counts itself), parameters present
+    in only one log, the firmware change, and flight metrics side by side (vibration, hover throttle,
+    battery/board voltage minimums). Differences only — it does not judge which side is right.
+    By convention A is the earlier/good flight and B the later/bad one.
+    """
+    return compare_logs_impl(_load(path_a), _load(path_b))
 
 
 @mcp.tool(annotations=_READONLY)

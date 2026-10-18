@@ -11,28 +11,33 @@ from __future__ import annotations
 from . import ardupilot_docs as docs
 from .checks.base import Check, get_checks
 from .flight_log import FlightLog
+from .logging_advice import logging_advice
 from .model import (
     CheckStatus,
     DiagnosisReport,
     Finding,
+    IncidentTimeline,
     Reference,
     Severity,
     SkippedCheck,
 )
+from .timeline import build_timeline
 
 _GUIDANCE = (
     "Ground your explanation in the cited references and the firmware version in log_summary "
     "(behaviour and parameter meanings can differ by version). Call the vehicle_profile tool for "
     "the airframe's physical configuration (frame, motor count, battery cells, hover throttle, power "
     "margin) and weave in any real-world details the user gives (weight, prop/motor size, wind). "
-    "Report only what the deterministic findings show; cite the doc links rather than inventing causes."
+    "Report only what the deterministic findings show; cite the doc links rather than inventing causes. "
+    "When `incident` is set, start from its onset (what went wrong first) and treat findings flagged "
+    "after_impact as consequences of the crash; say what preceded what, not what caused what."
 )
 
 
-def _finding_sort_key(f: Finding) -> tuple[int, float]:
-    # Most severe first; within a severity, earliest evidence first.
+def _finding_sort_key(f: Finding) -> tuple[bool, int, float]:
+    # Consequences of a crash last; then most severe first; then earliest evidence first.
     t = f.evidence.time_start_s if f.evidence.time_start_s is not None else float("inf")
-    return (-f.severity.rank, t)
+    return (f.after_impact, -f.severity.rank, t)
 
 
 def diagnose(log: FlightLog, checks: list[Check] | None = None) -> DiagnosisReport:
@@ -48,7 +53,12 @@ def diagnose(log: FlightLog, checks: list[Check] | None = None) -> DiagnosisRepo
         # Each finding is reported once, in the top-level list: duplicating it in
         # results[] doubled the payload (and the LLM's token bill) for no information.
         r.findings = []
+    # Flags after-impact findings (it must run before sorting).
+    timeline = build_timeline(log, findings)
     findings.sort(key=_finding_sort_key)
+    incident = None
+    if timeline.onset_s is not None or timeline.impact_s is not None:
+        incident = timeline.model_copy(update={"events": []})
 
     # Attach authoritative ArduPilot doc references to each finding (vehicle-aware).
     kind = log.meta.vehicle_kind
@@ -80,9 +90,11 @@ def diagnose(log: FlightLog, checks: list[Check] | None = None) -> DiagnosisRepo
         critical_count=crit,
         warn_count=warn,
         info_count=info,
-        summary_text=_build_summary(log, findings, results, crit, warn, info, len(skipped)),
+        summary_text=_build_summary(log, findings, results, crit, warn, info, len(skipped), incident),
         references=report_refs,
         guidance=_GUIDANCE,
+        incident=incident,
+        logging_advice=logging_advice(log),
     )
 
 
@@ -104,6 +116,7 @@ def _build_summary(
     warn: int,
     info: int,
     n_skipped: int,
+    incident: IncidentTimeline | None = None,
 ) -> str:
     s = log.summary()
     lines: list[str] = []
@@ -117,6 +130,14 @@ def _build_summary(
         lines.append(
             f"Log integrity: {s.integrity.value} ({s.integrity_detail or 'see log_integrity finding'})."
         )
+
+    if incident is not None:
+        if incident.onset_s is not None:
+            lines.append(f"First anomaly while armed: {incident.onset_basis} @ {incident.onset_s:.0f}s.")
+        if incident.impact_s is not None:
+            n_after = sum(1 for f in findings if f.after_impact)
+            tail = f"; {n_after} finding(s) start after it and are listed last" if n_after else ""
+            lines.append(f"Impact: {incident.impact_basis} @ {incident.impact_s:.0f}s{tail}.")
 
     if not findings:
         lines.append("No issues detected by the deterministic checks.")

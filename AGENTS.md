@@ -41,6 +41,8 @@ ardupilot_mcp/
     base.py        Check ABC + registry (id, requires, vehicles, run())
     util.py        shared numeric helpers (intervals_above, make_finding, ...)
   orchestrator.py  runs all checks -> DiagnosisReport (+ attaches doc references)
+  timeline.py      incident timeline: onset (first anomaly while armed) vs impact; flags
+                   findings that start after the crash (`after_impact`). Time order, never cause
   tuning.py        advisory tuning (notch FFT, PID, autotune) — not a check
   profile.py       VehicleProfile (frame, motors, battery cells, power margin)
   param_file.py    parse a user-exported .param / .params file

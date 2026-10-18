@@ -33,8 +33,33 @@ All notable changes to this project are documented here. The format is based on
   by record (`null` where a record lacks the field) and unknown fields are reported.
 - `sensors` recognises `GPS1_TYPE` (4.6 renamed `GPS_TYPE`); compass health is per compass.
 - NaN/inf samples no longer poison max/mean comparisons (they are dropped from series).
+- Arming detection on real logs: with `LOG_DISARMED=0` the log opens at arming and the arm record
+  is often lost, so a log whose first edge is a disarm (or, with `LOG_DISARMED=0`, has none) is
+  treated as armed from its start. Many forum logs were previously "never armed".
+- `vibration`: fewer than 100 clips is INFO, not WARN (the wiki calls a small count around a hard
+  landing likely OK); 100+ stays CRITICAL.
+- `sensors`: "GPS configured but no data" is INFO when `GPS1_TYPE` is the default AUTO and no GPS
+  mode was flown (indoor/optical-flow craft), WARN otherwise.
+- Logs without GPS parsed ~40x slower than the rest: pymavlink scans the whole log for a GPS clock
+  we never use. The reader now skips that scan (15 MB forum log: 6.9 s -> 0.15 s).
 
 ### Added
+- `incident_timeline` tool and `DiagnosisReport.incident`: the onset (first anomaly while armed)
+  and the impact (ERR CRASH_CHECK, "Crash: Disarming", or the log ending while armed). Findings
+  that start at or after the impact are flagged `after_impact` and listed last, so a crash's
+  consequences (vibration spikes, attitude error, GPS loss) no longer top the report. Time order
+  only; no causal claims.
+- `compare_logs(path_a, path_b)` tool: what changed between two flights — configuration
+  parameter differences (kept apart from STAT_* counters, learned hover throttle, gyro offsets,
+  calibration temperatures and other values the autopilot writes itself), parameters only in one
+  log, the firmware change, and vibration / hover / voltage metrics side by side.
+- Logging advice (`DiagnosisReport.logging_advice`, Copter/Heli): for data a check needed but the
+  log lacks, the `LOG_BITMASK` bit that logs it — only when that bit is actually off — and
+  `IMU_FAST`/`INS_LOG_BAT_MASK` when the IMU rate is too low for a notch spectrum.
+- `firmware` check: the autopilot's own in-flight verdicts — "Potential Thrust Loss (motor N)",
+  "Crash: Disarming", "EKF Failsafe", "Yaw Imbalance", "Vibration compensation ON", "EKF
+  variance", GPS glitch, dead reckoning — and failsafe-driven mode changes decoded from
+  `MODE.Rsn` (radio, battery, GCS, EKF, fence, crash, ...).
 - `power`: flight-controller board voltage (`POWR.Vcc`) — CRITICAL below 4.6 V while armed,
   WARN on more than 0.3 V of ripple. Per-battery thresholds (`BATT2_*` for the second pack).
 - `compass`: throttle-correlated interference estimate (% field change at full throttle, the

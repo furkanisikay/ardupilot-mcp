@@ -156,15 +156,22 @@ class VibrationCheck(Check):
                 continue
             first = int(np.flatnonzero(steps > 0)[0]) + 1
             onset = float(times[first]) if first < times.size else None
-            sev = Severity.CRITICAL if total >= CLIP_CRIT_COUNT else Severity.WARN
+            # The wiki: "a small count (less than ~100) is likely ok, especially around a
+            # hard landing"; a large, steadily rising count is a serious problem.
+            sev = Severity.CRITICAL if total >= CLIP_CRIT_COUNT else Severity.INFO
+            meaning = (
+                "Clipping means the IMU saturated (railed); its data is unusable while clipped, which is a "
+                "serious vibration problem."
+                if sev == Severity.CRITICAL
+                else f"Fewer than {CLIP_CRIT_COUNT} clips is usually fine (a hard landing or touchdown "
+                "produces a few); watch whether the count grows from flight to flight."
+            )
             out.append(
                 make_finding(
                     self.id,
                     sev,
                     f"Accelerometer clipping (IMU{imu})",
-                    f"IMU{imu} recorded {int(total)} accelerometer clipping event(s). Clipping means the "
-                    "IMU saturated (railed) — its data is unusable while clipped, which is a serious "
-                    "vibration problem.",
+                    f"IMU{imu} recorded {int(total)} accelerometer clipping event(s). " + meaning,
                     recommendation="Reduce vibration at the source (balance props, soft-mount the FC) before the next flight.",
                     time_start_s=onset,
                     time_end_s=float(times[-1]) if times.size else None,
