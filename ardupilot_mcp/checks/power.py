@@ -117,7 +117,10 @@ class PowerCheck(Check):
     # -- flight-controller board voltage (POWR.Vcc) ---------------------------
 
     def _vcc_findings(self, log: FlightLog) -> list[Finding]:
-        times, vcc = log.clip_to_window(*log.series("POWR", "Vcc"), log.armed_window())
+        times, vcc = log.series("POWR", "Vcc")
+        armed = log.armed_mask(times)
+        if armed is not None:
+            times, vcc = times[armed], vcc[armed]
         if vcc.size < 2:
             return []
         med = float(np.median(vcc))

@@ -90,3 +90,21 @@ def test_flight_long_conditions_are_not_the_onset():
     tl = build_timeline(log, findings)
     assert tl.onset_s == 40.0  # the vibration, not the flight-long HDOP or compass statistic
     assert set(tl.conditions) >= {"High GPS HDOP, peak 3.0", "Unstable compass field strength"}
+
+
+def test_log_disarmed_off_without_arm_records_has_no_impact():
+    # LOG_DISARMED=0 and no EV/ARM at all: the end of the recording says nothing
+    # about a crash (the integrity check stays silent too).
+    att = build_series(0.0, 10.0, Roll=[0.0] * 200, DesRoll=[0.0] * 200)
+    log = make_flight_log({"ATT": att}, params={"LOG_DISARMED": 0})
+    tl = build_timeline(log, [])
+    assert tl.impact_s is None and not tl.log_ended_armed
+
+
+def test_crash_check_loss_of_control_is_an_anomaly_not_the_impact():
+    att = build_series(0.0, 10.0, Roll=[0.0] * 300, DesRoll=[0.0] * 300)
+    err = [{"TimeUS": 20_000_000, "Subsys": 12, "ECode": 2}]  # CRASH_CHECK_LOSS_OF_CONTROL
+    ev = ARMED + [{"TimeUS": 29_000_000, "Id": 11}]
+    tl = build_timeline(make_flight_log({"ATT": att, "ERR": err, "EV": ev}), [])
+    assert tl.impact_s is None
+    assert tl.onset_s == 20.0 and tl.first_anomaly_check_id == "err"

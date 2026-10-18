@@ -117,9 +117,10 @@ class _Table:
                     rec[k] = v.decode(errors="backslashreplace") if isinstance(v, bytes) else v
                     continue
                 fv = float(v)
-                if math.isnan(fv) and self.cols[k].dtype == float and k not in self.int_cols:
-                    # Missing in a dict-built table; a real NaN sample is indistinguishable
-                    # and equally unusable, so it is left out too.
+                if math.isnan(fv):
+                    # Missing in a dict-built table (an int column with gaps is stored as
+                    # float NaN); a real NaN sample is indistinguishable and equally
+                    # unusable, so it is left out too.
                     continue
                 rec[k] = int(v) if k in self.int_cols else fv
             ts = self.t[i]
@@ -273,7 +274,9 @@ class FlightLog:
         if instance is None:
             return recs
         idx = self._index(mtype, instance)
-        return [] if idx is None else [recs[i] for i in idx]
+        if idx is None:
+            return []
+        return recs[idx] if isinstance(idx, slice) else [recs[i] for i in idx]
 
     def count(self, mtype: str) -> int:
         tb = self._tables.get(mtype)
@@ -311,16 +314,19 @@ class FlightLog:
         self._instance_index[mtype] = out
         return out
 
-    def _index(self, mtype: str, instance: int | None) -> np.ndarray | None:
-        """Record indices for ``instance`` (None = all records; None result = no such instance)."""
+    def _index(self, mtype: str, instance: int | None) -> np.ndarray | slice | None:
+        """Record selector for ``instance`` (None = all records; None result = no such instance).
+
+        All records are selected with a slice, so indexing is a view, not a copy of the column.
+        """
         tb = self._tables.get(mtype)
         if tb is None:
             return None
         if instance is None:
-            return np.arange(tb.n)
+            return slice(None)
         if self.instance_field(mtype) is None:
             # Not a multi-instance type: the whole stream is instance 0.
-            return np.arange(tb.n) if int(instance) == 0 else None
+            return slice(None) if int(instance) == 0 else None
         return self._instance_map(mtype).get(int(instance))
 
     @staticmethod
@@ -343,7 +349,7 @@ class FlightLog:
         tb = self._tables.get(mtype)
         if idx is None or tb is None or name not in tb.cols:
             return np.array([], dtype=float)
-        v = self._numeric(tb.cols[name])[idx]
+        v = self._numeric(tb.cols[name][idx])
         return v[np.isfinite(v)]
 
     def series(self, mtype: str, name: str, instance: int | None = None) -> tuple[np.ndarray, np.ndarray]:
@@ -359,7 +365,7 @@ class FlightLog:
         if idx is None or tb is None or name not in tb.cols:
             return np.array([], dtype=float), np.array([], dtype=float)
         t = tb.t[idx]
-        v = self._numeric(tb.cols[name])[idx]
+        v = self._numeric(tb.cols[name][idx])
         ok = np.isfinite(t) & np.isfinite(v)
         return t[ok], v[ok]
 
@@ -380,7 +386,7 @@ class FlightLog:
         out: dict[str, np.ndarray] = {}
         for n in names:
             col = tb.cols.get(n)
-            out[n] = self._numeric(col)[idx][keep] if col is not None else np.full(int(keep.sum()), np.nan)
+            out[n] = self._numeric(col[idx])[keep] if col is not None else np.full(int(keep.sum()), np.nan)
         return t[keep], out
 
     def armed_window(self) -> tuple[float | None, float | None]:

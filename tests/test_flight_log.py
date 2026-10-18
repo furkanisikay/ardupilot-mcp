@@ -140,3 +140,13 @@ def test_flying_mask_uses_plane_is_flying():
     log = make_flight_log({"ATT": att, "STAT": stat, "EV": [{"TimeUS": 0, "Id": 10}]})
     t = np.array([1.0, 5.0, 9.0])
     assert list(log.flying_mask(t)) == [False, True, False]
+
+
+def test_records_with_an_int_field_missing_from_some_records():
+    log = make_flight_log(
+        {"EV": [{"TimeUS": 1_000_000, "Id": 10}, {"TimeUS": 2_000_000, "Id": 11, "Extra": 3}]}
+    )
+    recs = log.get("EV")
+    assert [r["Id"] for r in recs] == [10, 11]
+    assert "Extra" not in recs[0] and recs[1]["Extra"] == 3
+    assert isinstance(recs[1]["Extra"], int)

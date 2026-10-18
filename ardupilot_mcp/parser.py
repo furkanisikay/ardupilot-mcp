@@ -125,12 +125,15 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
         whole = offs + fmt.len <= buf.size
         cut += int(offs.size - np.count_nonzero(whole))
         offs = offs[whole]
-        if "a" in fmt.format or len(fmt.columns) != len(fmt.format):
+        # A type the structured view can't express (``a`` arrays, a format char we have
+        # no dtype for such as ``g`` half-floats, or a length mismatch) is decoded by
+        # pymavlink on its own, so one odd type never sends the whole log down the slow path.
+        dtype = None
+        if len(fmt.columns) == len(fmt.format) and all(ch in _NP_DTYPES for ch in fmt.format):
+            dtype = np.dtype([(c, _NP_DTYPES[ch]) for c, ch in zip(fmt.columns, fmt.format, strict=True)])
+        if dtype is None or dtype.itemsize != fmt.len - 3:
             out[fmt.name] = _columns_via_pymavlink(reader, fmt, offs)
             continue
-        dtype = np.dtype([(c, _NP_DTYPES[ch]) for c, ch in zip(fmt.columns, fmt.format, strict=True)])
-        if dtype.itemsize != fmt.len - 3:
-            raise ValueError(f"{fmt.name}: FMT length {fmt.len} != fields {dtype.itemsize + 3}")
         body = np.arange(3, fmt.len, dtype=np.int64)
         step = max(1, _GATHER_BYTES // max(1, body.size))
         parts = [buf[offs[i : i + step, None] + body] for i in range(0, offs.size, step)]

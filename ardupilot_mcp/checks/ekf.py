@@ -80,14 +80,16 @@ class EKFCheck(Check):
         cores = log.instances(mtype)
         findings: list[Finding] = []
         for core in cores:
-            recs = log.get(mtype, core)
-            times = np.array([float(r.get("timestamp", np.nan)) for r in recs])
-            pi = np.array([float(r["PI"]) if _num(r.get("PI")) else np.nan for r in recs])
+            # High-rate table: stay in numpy (record-aligned, NaN where a field is missing).
+            times, cols = log.aligned(mtype, ["PI", *(f for f, _ in SENSOR_FIELDS)], core)
+            pi = cols["PI"]
             # Samples where this core was flying the vehicle. Without PI (EKF2, old
             # logs, single core) every sample counts, as before.
-            primary = (pi == core) if (len(cores) > 1 and np.isfinite(pi).any()) else np.ones(len(recs), bool)
+            primary = (
+                (pi == core) if (len(cores) > 1 and np.isfinite(pi).any()) else np.ones(times.size, bool)
+            )
             for field, sensor in SENSOR_FIELDS:
-                vals = np.array([float(r[field]) if _num(r.get(field)) else np.nan for r in recs])
+                vals = cols[field]
                 f = self._field_finding(mtype, field, sensor, times, vals, primary)
                 if f is None:
                     continue
@@ -185,7 +187,3 @@ class EKFCheck(Check):
                 samples={"lane_switches": int(changes.size)},
             )
         ]
-
-
-def _num(v: object) -> bool:
-    return isinstance(v, (int, float)) and not isinstance(v, bool) and np.isfinite(v)

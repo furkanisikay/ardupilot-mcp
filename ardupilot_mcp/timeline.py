@@ -26,6 +26,10 @@ from .flight_log import FlightLog
 from .model import Finding, IncidentTimeline, Severity, TimelineEvent
 
 ERR_CRASH_CHECK = 12  # LogErrorSubsystem::CRASH_CHECK
+# LogErrorCode::CRASH_CHECK_CRASH. ECode 2 (CRASH_CHECK_LOSS_OF_CONTROL) is written by
+# Copter's parachute_check() while still airborne, so it is an anomaly, not the impact.
+# Source: Copter-4.6.3 libraries/AP_Logger/AP_Logger.h, ArduCopter/crash_check.cpp.
+ERR_CRASH_CODE_CRASH = 1
 # EV ids worth showing as context on the timeline (AP_Logger.h LogEvent).
 _CONTEXT_EVENTS = {10, 11, 15, 17, 18, 28, 54}
 # Design choice: findings starting this close after the impact time are still
@@ -66,6 +70,10 @@ def log_ended_armed(log: FlightLog, armed: list[tuple[float, float]] | None = No
     armed = log.armed_intervals() if armed is None else armed
     if not armed:
         return False
+    # A log recorded only while armed (LOG_DISARMED=0) with no arm/disarm record at
+    # all says nothing about how it ended.
+    if not log.has("EV") and not log.has("ARM"):
+        return False
     start = armed[-1][0]
     disarms = [_num(r.get("timestamp")) for r in log.get("EV") if r.get("Id") == 11]
     disarms += [_num(r.get("timestamp")) for r in log.get("ARM") if r.get("ArmState") == 0]
@@ -98,7 +106,7 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
             continue
         label = f"ERR {err_subsystem_name(int(sub))} (ECode {int(code)})"
         events.append(TimelineEvent(time_s=t, source="err", label=label, severity=Severity.WARN, phase=""))
-        if int(sub) == ERR_CRASH_CHECK:
+        if int(sub) == ERR_CRASH_CHECK and int(code) == ERR_CRASH_CODE_CRASH:
             impacts.append((t, label))
         elif _in_armed(t, armed):
             anomalies.append((t, "err", label))

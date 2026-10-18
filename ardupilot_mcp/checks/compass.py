@@ -38,6 +38,10 @@ INTERFERENCE_GREY_PCT = 30.0
 INTERFERENCE_BAD_PCT = 60.0
 # Design choice: the armed throttle must span at least this much (0..1) for a slope.
 MIN_THROTTLE_SPAN = 0.15
+# Vehicles whose CTUN.ThO is a 0..1 throttle fraction (Copter/Heli: motors->get_throttle(),
+# ArduCopter/Log.cpp). ArduPlane logs ThO in percent (-100..100, ArduPlane/Log.cpp), so
+# the per-unit-throttle slope would be 100x too small there; None = unknown/synthetic log.
+THROTTLE_FRACTION_KINDS = {"copter", "heli", None}
 
 
 @register_check
@@ -74,6 +78,8 @@ class CompassCheck(Check):
         quantity Mission Planner's CompassMot shows. Only the magnitude is visible in a
         log, so this underestimates vector interference: a lower bound, never inflated.
         """
+        if log.meta.vehicle_kind not in THROTTLE_FRACTION_KINDS:
+            return []
         tm, mx = log.series("MAG", "MagX", inst)
         _, my = log.series("MAG", "MagY", inst)
         _, mz = log.series("MAG", "MagZ", inst)

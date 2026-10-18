@@ -99,6 +99,12 @@ def test_query_timeseries_downsamples(sample_log):
     assert len(ts.series["VibeZ"]) == len(ts.times_s)
 
 
+def test_query_timeseries_max_points_zero_means_full_resolution(sample_log):
+    ts = query_timeseries(sample_log, "VIBE", ["VibeZ"], max_points=0)
+    assert ts.downsampled is False
+    assert len(ts.times_s) == ts.sample_count == 40
+
+
 def test_query_timeseries_missing_type(sample_log):
     ts = query_timeseries(sample_log, "NOPE", ["X"])
     assert ts.times_s == [] and "not present" in (ts.note or "")
@@ -172,3 +178,21 @@ def test_report_lists_each_finding_once(sample_log):
     rep = analyze_log(sample_log)
     assert all(r.findings == [] for r in rep.results)
     assert sum(r.finding_count for r in rep.results) == len(rep.findings)
+
+
+def test_incident_timeline_reuses_the_cached_diagnosis(monkeypatch, tmp_path):
+    from ardupilot_mcp import server
+    from tests.helpers import build_series, make_flight_log
+
+    path = tmp_path / "x.bin"
+    path.write_bytes(b"")
+    log = make_flight_log({"ATT": build_series(0.0, 5.0, Roll=[0.0] * 10)})
+    calls = []
+    monkeypatch.setattr(server, "parse_bin", lambda _p: log)
+    monkeypatch.setattr(server, "_CACHE", server.OrderedDict())
+    real = server.diagnose
+    monkeypatch.setattr(server, "diagnose", lambda lg: calls.append(1) or real(lg))
+    server.analyze_log(str(path))
+    server.incident_timeline(str(path))
+    server.incident_timeline(str(path))
+    assert len(calls) == 1

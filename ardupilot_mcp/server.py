@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 import os
 from collections import OrderedDict
+from dataclasses import dataclass
 from fnmatch import fnmatch
 
 from mcp.server.fastmcp import FastMCP
@@ -52,29 +53,49 @@ mcp = FastMCP("ardupilot-mcp")
 
 _READONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
 
-# Parsed logs, most recently used last: (abs_path -> ((mtime, size), FlightLog)).
+
+@dataclass
+class _Entry:
+    key: tuple[float, int]  # (mtime, size) of the file when it was parsed
+    log: FlightLog
+    report: DiagnosisReport | None = None
+    timeline: IncidentTimeline | None = None
+
+
+# Parsed logs (and their diagnosis, once computed), most recently used last.
 # Bounded, because a parsed log can take hundreds of MB and a long conversation may
 # open many logs; a conversation usually works on one or two at a time.
-_CACHE: OrderedDict[str, tuple[tuple[float, int], FlightLog]] = OrderedDict()
+_CACHE: OrderedDict[str, _Entry] = OrderedDict()
 _CACHE_MAX = 2
 
 
-def _load(path: str) -> FlightLog:
+def _entry(path: str) -> _Entry:
     apath = os.path.abspath(os.path.expanduser(path))
     if not os.path.exists(apath):
         raise FileNotFoundError(f"log file not found: {path}")
     st = os.stat(apath)
     key = (st.st_mtime, st.st_size)
     cached = _CACHE.get(apath)
-    if cached is not None and cached[0] == key:
+    if cached is not None and cached.key == key:
         _CACHE.move_to_end(apath)
-        return cached[1]
+        return cached
     _CACHE.pop(apath, None)
     while len(_CACHE) >= _CACHE_MAX:
         _CACHE.popitem(last=False)
-    log = parse_bin(apath)
-    _CACHE[apath] = (key, log)
-    return log
+    entry = _Entry(key, parse_bin(apath))
+    _CACHE[apath] = entry
+    return entry
+
+
+def _load(path: str) -> FlightLog:
+    return _entry(path).log
+
+
+def _report(entry: _Entry) -> DiagnosisReport:
+    """The diagnosis of a cached log, computed once: analyze_log and incident_timeline share it."""
+    if entry.report is None:
+        entry.report = diagnose(entry.log)
+    return entry.report
 
 
 def _rec_time(rec: dict) -> float | None:
@@ -104,7 +125,7 @@ def analyze_log(path: str) -> DiagnosisReport:
     real-world details the user gives — then explain and cite sources. Every
     finding is grounded in the log; do not invent causes beyond them.
     """
-    return diagnose(_load(path))
+    return _report(_entry(path))
 
 
 @mcp.tool(annotations=_READONLY)
@@ -114,9 +135,10 @@ def incident_timeline(path: str) -> IncidentTimeline:
     change and finding in time order, each tagged before_onset / onset / after_onset / impact / after_impact.
     Use it to answer "what failed first, and is the rest just the crash?". Time order only — never causation.
     """
-    log = _load(path)
-    report = diagnose(log)
-    return build_timeline(log, report.findings)
+    entry = _entry(path)
+    if entry.timeline is None:
+        entry.timeline = build_timeline(entry.log, _report(entry).findings)
+    return entry.timeline
 
 
 @mcp.tool(annotations=_READONLY)
@@ -252,7 +274,8 @@ def query_timeseries(
     hi = end_s if end_s is not None else math.inf
     win = (times >= lo) & (times <= hi)
     n = int(win.sum())
-    cap = max(1, max_points)
+    # max_points <= 0 means "no decimation".
+    cap = max_points if max_points > 0 else n
     stride = math.ceil(n / cap) if n > cap else 1
     sel_t = times[win][::stride]
     series = {f: [_num_or_none(v) for v in cols[f][win][::stride]] for f in fields}
