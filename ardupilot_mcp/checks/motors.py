@@ -12,14 +12,20 @@ modes are diagnosed deterministically:
   maximum PWM there is little headroom left for control; the craft is likely
   underpowered or overweight and can lose attitude authority.
 
-Only channels that look like real, spinning motors (mean output above
-``ACTIVE_MIN_PWM``) are considered; unused/disarmed-at-min channels are ignored.
+Which outputs are motors comes from the ``SERVOn_FUNCTION`` parameters (Motor1-8
+= 33-40, Motor9-12 = 82-85; Copter-4.6.3 libraries/SRV_Channel/SRV_Channel.h), so
+a gimbal or other servo on a spare output is never mistaken for a motor. Logs
+without those params fall back to the frame's motor count (FRAME_CLASS), then to
+channels that look like spinning motors (mean output above ``ACTIVE_MIN_PWM``).
+Only armed time is averaged: disarmed samples sit at the same minimum on every
+output and would dilute a real imbalance.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
+from .. import ardupilot_meta as meta
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
@@ -27,6 +33,10 @@ from .util import fraction_above, make_finding
 
 # Channels RCOU may carry; we only inspect the ones present and active.
 MOTOR_CHANNELS = ("C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8")
+# SERVOn_FUNCTION values that mean "this output drives a motor" (k_motor1..8, k_motor9..12).
+MOTOR_FUNCTIONS = set(range(33, 41)) | set(range(82, 86))
+# RCOU logs outputs C1..C14.
+RCOU_MAX_CHANNEL = 14
 
 # A channel is treated as an active motor only when its mean PWM exceeds this.
 # Idle/min for a spinning motor sits ~1000; a disarmed or unused output stays at
@@ -56,15 +66,38 @@ class MotorsCheck(Check):
     vehicles = {"copter"}
     description = "Per-motor PWM output balance and saturation from RCOU (multirotor only)."
 
+    @staticmethod
+    def _motor_channels(log: FlightLog) -> tuple[list[str], bool]:
+        """(RCOU channel names that drive motors, identified-from-config?)."""
+        by_function = [
+            f"C{n}"
+            for n in range(1, RCOU_MAX_CHANNEL + 1)
+            if int(log.params.get(f"SERVO{n}_FUNCTION", -1)) in MOTOR_FUNCTIONS
+        ]
+        if by_function:
+            return by_function, True
+        count = meta.motor_count_for_frame(log.params.get("FRAME_CLASS"))
+        if count:
+            return [f"C{n}" for n in range(1, count + 1)], True
+        return list(MOTOR_CHANNELS), False
+
     def run(self, log: FlightLog) -> list[Finding]:
-        # Collect aligned (times, values) for every channel that is logged and active.
+        # Collect aligned (times, values) for every motor channel that is logged and active.
+        channels, configured = self._motor_channels(log)
         active: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-        for ch in MOTOR_CHANNELS:
+        for ch in channels:
             times, vals = log.series("RCOU", ch)
             if vals.size == 0:
                 continue
-            if float(np.mean(vals)) > ACTIVE_MIN_PWM:
+            armed = log.armed_mask(times)
+            if armed is not None:
+                times, vals = times[armed], vals[armed]
+            if vals.size == 0:
+                continue
+            if configured or float(np.mean(vals)) > ACTIVE_MIN_PWM:
                 active[ch] = (times, vals)
+        # A configured motor that never left minimum is not spinning; ignore it too.
+        active = {ch: tv for ch, tv in active.items() if float(np.mean(tv[1])) > ACTIVE_MIN_PWM}
         if not active:
             return []
 

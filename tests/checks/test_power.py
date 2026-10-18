@@ -164,11 +164,56 @@ def test_works_on_older_curr_message():
     assert crit and crit[0].evidence.message_types == ["CURR"]
 
 
-def test_skipped_when_no_battery_message():
-    # Only board-voltage POWR present (Vcc), no BAT/CURR -> skipped.
+def test_skipped_when_no_power_message():
+    result = PowerCheck().execute(make_flight_log({"ATT": build_series(0.0, 10.0, Roll=[0.0] * 10)}))
+    assert result.status == CheckStatus.SKIPPED
+
+
+def test_board_voltage_only_still_runs():
+    # Only board-voltage POWR present (Vcc), no BAT/CURR -> the Vcc check runs; stable 5 V is clean.
     log = make_flight_log({"POWR": build_series(0.0, 10.0, Vcc=[5.0] * 10)})
     result = PowerCheck().execute(log)
-    assert result.status == CheckStatus.SKIPPED
+    assert result.status == CheckStatus.RAN
+    assert result.findings == []
+
+
+def _armed(extra: dict) -> dict:
+    return {"EV": [{"TimeUS": 1_000_000, "Id": 10}, {"TimeUS": 9_000_000, "Id": 11}], **extra}
+
+
+def test_vcc_brownout_while_armed_is_critical():
+    vcc = [5.05] * 40 + [4.3] * 5 + [5.05] * 55
+    log = make_flight_log(_armed({"POWR": build_series(0.0, 10.0, Vcc=vcc)}))
+    f = [x for x in PowerCheck().run(log) if "Vcc" in x.title]
+    assert f and f[0].severity == Severity.CRITICAL
+    assert f[0].evidence.samples["min_vcc"] == 4.3
+
+
+def test_vcc_brownout_before_arming_is_ignored():
+    vcc = [4.3] * 5 + [5.05] * 95  # USB/bench sag before arming at t=1 s
+    log = make_flight_log(_armed({"POWR": build_series(0.0, 10.0, Vcc=vcc)}))
+    assert [x for x in PowerCheck().run(log) if "Vcc" in x.title] == []
+
+
+def test_vcc_ripple_is_warn():
+    vcc = [5.0, 5.35] * 50
+    log = make_flight_log(_armed({"POWR": build_series(0.0, 10.0, Vcc=vcc)}))
+    f = [x for x in PowerCheck().run(log) if "Vcc" in x.title]
+    assert f and f[0].severity == Severity.WARN
+
+
+def test_second_battery_uses_its_own_thresholds():
+    from tests.helpers import interleave_instances
+
+    n = 60
+    main = build_series(0.0, 10.0, Volt=[16.4 - 0.01 * i for i in range(n)], Curr=[10.0] * n)
+    payload = build_series(0.0, 10.0, Volt=[7.4] * n, Curr=[0.5] * n)
+    bat = interleave_instances("Inst", {0: main, 1: payload})
+    log = make_flight_log({"BAT": bat}, params={"BATT_LOW_VOLT": 14.0, "BATT_CRT_VOLT": 13.2})
+    assert PowerCheck().run(log) == []  # 7.4 V is healthy for the 2S payload pack
+    log = make_flight_log({"BAT": bat}, params={"BATT2_LOW_VOLT": 7.6})
+    f = PowerCheck().run(log)
+    assert [x.title for x in f] == ["Battery reached low-voltage threshold (battery 2)"]
 
 
 def test_check_is_registered():

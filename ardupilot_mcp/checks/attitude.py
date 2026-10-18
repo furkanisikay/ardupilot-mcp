@@ -60,6 +60,11 @@ class AttitudeTrackingCheck(Check):
         findings: list[Finding] = []
         motors_saturated = self._motors_saturated(log)
         for des_field, act_field, axis, is_yaw in _AXES:
+            # ArduPlane logs DesYaw as a constant 0 placeholder ("Plane does not have
+            # the concept of navyaw", ArduPlane/Log.cpp), so its yaw "error" is just
+            # the heading.
+            if is_yaw and log.meta.vehicle_kind == "plane":
+                continue
             finding = self._axis_finding(log, des_field, act_field, axis, is_yaw, motors_saturated)
             if finding is not None:
                 findings.append(finding)
@@ -87,6 +92,12 @@ class AttitudeTrackingCheck(Check):
             # Yaw is circular: wrap error into [-180, 180].
             err = ((err + 180.0) % 360.0) - 180.0
         abs_err = np.abs(err)
+        # Judge flight only: on the ground (before take-off, after landing, a crashed
+        # airframe lying on its side, disarmed) the targets are relaxed or frozen.
+        # Zero the error there instead of dropping samples, so no interval spans a gap.
+        flying = log.flying_mask(times)
+        if flying is not None:
+            abs_err = np.where(flying, abs_err, 0.0)
 
         peak_err = safe_max(abs_err) or 0.0
         if peak_err <= WARN_DEG:

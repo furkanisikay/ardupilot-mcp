@@ -91,7 +91,8 @@ def test_error_and_failed_are_warn():
     findings = StartupMessagesCheck().run(log)
     sev = {f.severity for f in findings}
     assert sev == {Severity.WARN}
-    assert len(findings) == 2
+    # The GPS-glitch line is a firmware verdict, reported once by the firmware check.
+    assert [f.title for f in findings] == ["Startup warning: PreArm: Logging failed"]
 
 
 def test_dedupe_identical_lines_keeps_earliest_timestamp():

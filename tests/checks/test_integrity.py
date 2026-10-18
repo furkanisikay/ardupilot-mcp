@@ -5,7 +5,7 @@ from __future__ import annotations
 from ardupilot_mcp.checks.integrity import IntegrityCheck
 from ardupilot_mcp.flight_log import FlightLog, LogMeta
 from ardupilot_mcp.model import CheckStatus, LogIntegrity, Severity
-from tests.helpers import make_flight_log
+from tests.helpers import build_series, make_flight_log
 
 
 def test_always_runs_even_on_empty_log():
@@ -89,3 +89,16 @@ def test_check_is_registered():
     assert check.title == "Log integrity"
     assert check.category == "integrity"
     assert check.requires == set()
+
+
+def test_recording_ended_while_armed_is_flagged():
+    att = build_series(0.0, 10.0, Roll=[0.0] * 100)  # 0..9.9 s
+    log = make_flight_log({"ATT": att, "EV": [{"TimeUS": 2_000_000, "Id": 10}]})
+    f = [x for x in IntegrityCheck().run(log) if x.title == "Recording ended while armed"]
+    assert f and f[0].severity == Severity.WARN
+
+
+def test_normal_disarm_is_clean():
+    att = build_series(0.0, 10.0, Roll=[0.0] * 100)
+    ev = [{"TimeUS": 2_000_000, "Id": 10}, {"TimeUS": 9_000_000, "Id": 11}]
+    assert IntegrityCheck().run(make_flight_log({"ATT": att, "EV": ev})) == []

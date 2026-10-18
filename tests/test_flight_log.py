@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from ardupilot_mcp.flight_log import FlightLog, LogMeta
 from ardupilot_mcp.model import LogIntegrity
@@ -105,3 +106,47 @@ def test_empty_log_is_safe():
     assert log.available_messages == set()
     assert isinstance(log.times("ATT"), np.ndarray)
     assert log.summary().integrity == LogIntegrity.OK
+
+
+def test_armed_intervals_pairs_arm_and_disarm():
+    att = build_series(0.0, 10.0, Roll=[0.0] * 300)  # 0..29.9 s
+    ev = [{"TimeUS": 2_000_000, "Id": 10}, {"TimeUS": 9_000_000, "Id": 11}, {"TimeUS": 15_000_000, "Id": 10}]
+    log = make_flight_log({"ATT": att, "EV": ev})
+    assert log.armed_intervals() == [(2.0, 9.0), (15.0, pytest.approx(29.9))]
+
+
+def test_log_starting_armed_is_armed_from_its_start():
+    # LOG_DISARMED=0: the file opens at arming, so the ARM record is often missing
+    # and the first edge seen is the disarm.
+    att = build_series(0.0, 10.0, Roll=[0.0] * 300)
+    log = make_flight_log({"ATT": att, "ARM": [{"TimeUS": 20_000_000, "ArmState": 0}]})
+    assert log.armed_intervals() == [(0.0, 20.0)]
+
+
+def test_no_arm_edges_with_log_disarmed_off_means_whole_log_armed():
+    att = build_series(0.0, 10.0, Roll=[0.0] * 300)
+    log = make_flight_log({"ATT": att}, params={"LOG_DISARMED": 0})
+    assert log.armed_intervals() == [(0.0, pytest.approx(29.9))]
+    assert make_flight_log({"ATT": att}, params={"LOG_DISARMED": 1}).armed_intervals() == []
+
+
+def test_flying_mask_uses_plane_is_flying():
+    att = build_series(0.0, 10.0, Roll=[0.0] * 100)
+    stat = [
+        {"TimeUS": 0, "isFlying": 0},
+        {"TimeUS": 4_000_000, "isFlying": 1},
+        {"TimeUS": 8_000_000, "isFlying": 0},
+    ]
+    log = make_flight_log({"ATT": att, "STAT": stat, "EV": [{"TimeUS": 0, "Id": 10}]})
+    t = np.array([1.0, 5.0, 9.0])
+    assert list(log.flying_mask(t)) == [False, True, False]
+
+
+def test_records_with_an_int_field_missing_from_some_records():
+    log = make_flight_log(
+        {"EV": [{"TimeUS": 1_000_000, "Id": 10}, {"TimeUS": 2_000_000, "Id": 11, "Extra": 3}]}
+    )
+    recs = log.get("EV")
+    assert [r["Id"] for r in recs] == [10, 11]
+    assert "Extra" not in recs[0] and recs[1]["Extra"] == 3
+    assert isinstance(recs[1]["Extra"], int)

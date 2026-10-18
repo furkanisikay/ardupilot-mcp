@@ -14,8 +14,17 @@ degrade position-hold / RTL reliability:
   and ArduPilot's default ``GPS_HDOP_GOOD`` arming gate is 1.4; rising HDOP
   means the satellite geometry is poor and the horizontal position is loose.
 
-Emits at most one finding per concern (fix, sats, hdop), each citing the
-concrete min/max value, threshold and time window.
+Emits at most one finding per concern (fix, sats, hdop) per receiver, each
+citing the concrete min/max value, threshold and time window.
+
+Multiple receivers: modern firmware logs every GPS under the one ``GPS`` message,
+told apart by the ``I`` instance field (0 = GPS1, 1 = GPS2, 2 = the blended
+solution when GPS_AUTO_SWITCH=2; Copter-4.6.3 libraries/AP_GPS). Each receiver is
+judged on its own samples. A problem on one receiver while another physical
+receiver held a 3D fix for the same window is downgraded from CRITICAL to WARN:
+the autopilot can keep navigating on the healthy unit, so it is a hardware fault
+to fix, not a loss of navigation. This only applies when GPS_AUTO_SWITCH != 0
+(0 = always use the primary receiver).
 """
 
 from __future__ import annotations
@@ -29,6 +38,10 @@ from .util import intervals_above, make_finding, safe_max, safe_min
 
 # Fix-type thresholds (ArduPilot GPS Status enum).
 FIX_3D = 3  # Status >= 3 is a usable 3D fix.
+# GPS instance id used for the blended solution (GPS_AUTO_SWITCH=2): it is derived
+# from the physical receivers, so only receivers 0/1 are judged when present.
+# Source: Copter-4.6.3 libraries/AP_GPS/AP_GPS_config.h (GPS_BLENDED_INSTANCE = GPS_MAX_RECEIVERS = 2).
+BLENDED_INSTANCE = 2
 
 # Satellite-count thresholds.
 SATS_WARN = 6  # below this the solution is marginal.
@@ -55,15 +68,51 @@ class GpsCheck(Check):
         # phase (sats climbing from 0, no fix yet) and post-land idling don't
         # look like in-flight GPS failures.
         window = log.armed_window()
+        insts = log.instances("GPS")
+        receivers = [i for i in insts if i < BLENDED_INSTANCE] or insts
+        multi = len(receivers) > 1
         findings: list[Finding] = []
-        for sub in (self._fix_finding, self._sats_finding, self._hdop_finding):
-            f = sub(log, window)
-            if f is not None:
+        for inst in receivers:
+            label = f"GPS{inst + 1}" if multi else "GPS"
+            for sub in (self._fix_finding, self._sats_finding, self._hdop_finding):
+                f = sub(log, window, inst, label)
+                if f is None:
+                    continue
+                if multi:
+                    f.evidence.samples["gps_instance"] = inst
+                    self._downgrade_if_covered(log, f, inst, receivers)
                 findings.append(f)
         return findings
 
-    def _fix_finding(self, log: FlightLog, window) -> Finding | None:
-        times, status = log.clip_to_window(*log.series("GPS", "Status"), window)
+    @staticmethod
+    def _downgrade_if_covered(log: FlightLog, f: Finding, inst: int, receivers: list[int]) -> None:
+        """CRITICAL -> WARN when another receiver held a 3D fix across the whole window."""
+        if f.severity != Severity.CRITICAL:
+            return
+        # Only true when the autopilot is allowed to switch receivers
+        # (GPS_AUTO_SWITCH: 0 = use primary only; default 1 = use best; 2 = blend;
+        # 4 = primary while it has 3D fix, else best. Copter-4.6.3 libraries/AP_GPS/AP_GPS.cpp).
+        if log.params.get("GPS_AUTO_SWITCH", 1.0) == 0:
+            return
+        t0, t1 = f.evidence.time_start_s, f.evidence.time_end_s
+        for other in receivers:
+            if other == inst:
+                continue
+            times, status = log.series("GPS", "Status", other)
+            if t0 is not None and t1 is not None:
+                mask = (times >= t0) & (times <= t1)
+                times, status = times[mask], status[mask]
+            if status.size and bool(np.all(status >= FIX_3D)):
+                f.severity = Severity.WARN
+                f.explanation += (
+                    f" GPS{other + 1} kept a 3D fix throughout, so the autopilot could keep navigating "
+                    "on it; this is a fault of one receiver (wiring, antenna, interference), not a loss "
+                    "of GPS navigation."
+                )
+                return
+
+    def _fix_finding(self, log: FlightLog, window, inst: int = 0, label: str = "GPS") -> Finding | None:
+        times, status = log.clip_to_window(*log.series("GPS", "Status", inst), window)
         if status.size == 0:
             return None
 
@@ -75,8 +124,8 @@ class GpsCheck(Check):
             return make_finding(
                 self.id,
                 Severity.WARN,
-                "GPS never achieved a 3D fix",
-                f"GPS Status never reached {FIX_3D} (3D fix) across {status.size} samples; "
+                f"{label} never achieved a 3D fix",
+                f"{label} Status never reached {FIX_3D} (3D fix) across {status.size} samples; "
                 f"the best fix type seen was {int(worst)}. Without a 3D fix the GPS cannot "
                 "supply usable position to the EKF.",
                 recommendation="Check antenna placement and interference; allow more time/clear sky to acquire a fix before flying.",
@@ -106,8 +155,8 @@ class GpsCheck(Check):
         return make_finding(
             self.id,
             Severity.CRITICAL,
-            "GPS lost 3D fix during the flight",
-            f"GPS first reached a 3D fix at t={first_fix_t:.1f}s but then dropped below 3D "
+            f"{label} lost 3D fix during the flight",
+            f"{label} first reached a 3D fix at t={first_fix_t:.1f}s but then dropped below 3D "
             f"(Status fell to {int(min_after)}) in {len(loss_intervals)} window(s) between "
             f"t={t0:.1f}s and t={t1:.1f}s. A mid-flight fix loss removes GPS position aiding "
             "and can trigger EKF failsafes or position drift.",
@@ -123,8 +172,8 @@ class GpsCheck(Check):
             },
         )
 
-    def _sats_finding(self, log: FlightLog, window) -> Finding | None:
-        times, nsats = log.clip_to_window(*log.series("GPS", "NSats"), window)
+    def _sats_finding(self, log: FlightLog, window, inst: int = 0, label: str = "GPS") -> Finding | None:
+        times, nsats = log.clip_to_window(*log.series("GPS", "NSats", inst), window)
         if nsats.size == 0:
             return None
         nmin = safe_min(nsats)
@@ -139,7 +188,7 @@ class GpsCheck(Check):
         if nmin < SATS_CRIT:
             sev = Severity.CRITICAL
             msg = (
-                f"GPS satellite count dropped to {int(nmin)} (below {SATS_CRIT}); with this few "
+                f"{label} satellite count dropped to {int(nmin)} (below {SATS_CRIT}); with this few "
                 f"satellites the receiver cannot hold a 3D fix. Min across {nsats.size} samples "
                 f"was {int(nmin)}."
             )
@@ -147,7 +196,7 @@ class GpsCheck(Check):
         else:
             sev = Severity.WARN
             msg = (
-                f"GPS satellite count fell to a low of {int(nmin)} (below {SATS_WARN}); the "
+                f"{label} satellite count fell to a low of {int(nmin)} (below {SATS_WARN}); the "
                 f"position solution is marginal. Min across {nsats.size} samples was {int(nmin)}."
             )
             rec = "Prefer 6+ satellites before arming in GPS modes; improve antenna placement/sky view."
@@ -155,7 +204,7 @@ class GpsCheck(Check):
         return make_finding(
             self.id,
             sev,
-            f"Low GPS satellite count, min {int(nmin)}",
+            f"Low {label} satellite count, min {int(nmin)}",
             msg,
             recommendation=rec,
             time_start_s=t0,
@@ -168,14 +217,14 @@ class GpsCheck(Check):
             },
         )
 
-    def _hdop_finding(self, log: FlightLog, window) -> Finding | None:
-        times, hdop = log.clip_to_window(*log.series("GPS", "HDop"), window)
+    def _hdop_finding(self, log: FlightLog, window, inst: int = 0, label: str = "GPS") -> Finding | None:
+        times, hdop = log.clip_to_window(*log.series("GPS", "HDop", inst), window)
         if hdop.size == 0:
             return None
         # HDOP only means something when there's a fix. Drop no-fix sentinel
         # readings (~99.99) so we don't mislabel "no signal" as "poor geometry"
         # (the fix/sats findings already cover the no-fix case).
-        _, status = log.clip_to_window(*log.series("GPS", "Status"), window)
+        _, status = log.clip_to_window(*log.series("GPS", "Status", inst), window)
         if status.size == hdop.size:
             valid = (status >= FIX_3D) & (hdop < HDOP_SENTINEL)
         else:
@@ -191,7 +240,7 @@ class GpsCheck(Check):
             sev = Severity.CRITICAL
             threshold = HDOP_CRIT
             msg = (
-                f"GPS HDOP peaked at {hmax:.1f} (above {HDOP_CRIT:.1f}); horizontal position is "
+                f"{label} HDOP peaked at {hmax:.1f} (above {HDOP_CRIT:.1f}); horizontal position is "
                 "effectively unusable at this dilution. Good HDOP is under ~1.5."
             )
             rec = "Do not trust horizontal position; resolve the cause (sky view, interference, multipath) before GPS flight."
@@ -199,7 +248,7 @@ class GpsCheck(Check):
             sev = Severity.WARN
             threshold = HDOP_WARN
             msg = (
-                f"GPS HDOP peaked at {hmax:.1f} (above {HDOP_WARN:.1f}); satellite geometry is "
+                f"{label} HDOP peaked at {hmax:.1f} (above {HDOP_WARN:.1f}); satellite geometry is "
                 "poor and the horizontal position is loose. Good HDOP is under ~1.5."
             )
             rec = "Aim for HDOP under ~1.5 before arming in GPS modes; improve antenna placement/sky view."
@@ -210,7 +259,7 @@ class GpsCheck(Check):
         return make_finding(
             self.id,
             sev,
-            f"High GPS HDOP, peak {hmax:.1f}",
+            f"High {label} HDOP, peak {hmax:.1f}",
             msg,
             recommendation=rec,
             time_start_s=t0,

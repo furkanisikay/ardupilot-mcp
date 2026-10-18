@@ -34,6 +34,7 @@ COPTER_MODES: dict[int, str] = {
     25: "SYSTEMID",
     26: "AUTOROTATE",
     27: "AUTO_RTL",
+    28: "TURTLE",
 }
 
 # ERR subsystem id -> name.
@@ -141,8 +142,90 @@ _VEHICLE_PREFIX_MAP = {
 }
 
 
-def mode_name(mode_num: int) -> str:
-    return COPTER_MODES.get(int(mode_num), f"MODE_{int(mode_num)}")
+# Mode numbers are per-vehicle: the same number means different modes on Copter,
+# Plane, Rover and Sub (e.g. 0 = STABILIZE on Copter but MANUAL on Plane).
+# Source: the `enum class Number` in ArduPlane/mode.h, Rover/mode.h and
+# ArduSub/mode.h at Copter-4.6.3 (same release train as the Copter table above).
+# https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/ArduPlane/mode.h
+PLANE_MODES: dict[int, str] = {
+    0: "MANUAL",
+    1: "CIRCLE",
+    2: "STABILIZE",
+    3: "TRAINING",
+    4: "ACRO",
+    5: "FBWA",
+    6: "FBWB",
+    7: "CRUISE",
+    8: "AUTOTUNE",
+    10: "AUTO",
+    11: "RTL",
+    12: "LOITER",
+    13: "TAKEOFF",
+    14: "AVOID_ADSB",
+    15: "GUIDED",
+    16: "INITIALISING",
+    17: "QSTABILIZE",
+    18: "QHOVER",
+    19: "QLOITER",
+    20: "QLAND",
+    21: "QRTL",
+    22: "QAUTOTUNE",
+    23: "QACRO",
+    24: "THERMAL",
+    25: "LOITER_ALT_QLAND",
+}
+
+# https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/Rover/mode.h
+ROVER_MODES: dict[int, str] = {
+    0: "MANUAL",
+    1: "ACRO",
+    3: "STEERING",
+    4: "HOLD",
+    5: "LOITER",
+    6: "FOLLOW",
+    7: "SIMPLE",
+    8: "DOCK",
+    9: "CIRCLE",
+    10: "AUTO",
+    11: "RTL",
+    12: "SMART_RTL",
+    15: "GUIDED",
+    16: "INITIALISING",
+}
+
+# https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/ArduSub/mode.h
+SUB_MODES: dict[int, str] = {
+    0: "STABILIZE",
+    1: "ACRO",
+    2: "ALT_HOLD",
+    3: "AUTO",
+    4: "GUIDED",
+    7: "CIRCLE",
+    9: "SURFACE",
+    16: "POSHOLD",
+    19: "MANUAL",
+    20: "MOTOR_DETECT",
+}
+
+_MODES_BY_KIND: dict[str, dict[int, str]] = {
+    "copter": COPTER_MODES,
+    "heli": COPTER_MODES,
+    "plane": PLANE_MODES,
+    "rover": ROVER_MODES,
+    "sub": SUB_MODES,
+}
+
+
+def mode_name(mode_num: int | str, vehicle_kind: str | None = None) -> str:
+    """Decode a MODE number for the vehicle that logged it.
+
+    Unknown kinds fall back to the Copter table (historical behaviour). Old logs
+    that already carry the mode as a string are passed through unchanged.
+    """
+    if isinstance(mode_num, str):
+        return mode_num.strip().upper() or "UNKNOWN"
+    table = _MODES_BY_KIND.get(vehicle_kind or "", COPTER_MODES)
+    return table.get(int(mode_num), f"MODE_{int(mode_num)}")
 
 
 def err_subsystem_name(subsys: int) -> str:

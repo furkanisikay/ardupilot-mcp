@@ -239,3 +239,58 @@ def test_check_is_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("attitude") is not None
+
+
+def test_plane_yaw_is_not_judged():
+    # ArduPlane logs DesYaw as a 0 placeholder, so heading != 0 is not an error.
+    n = 100
+    recs = build_series(
+        0.0,
+        10.0,
+        DesRoll=[0.0] * n,
+        Roll=[0.0] * n,
+        DesPitch=[0.0] * n,
+        Pitch=[0.0] * n,
+        DesYaw=[0.0] * n,
+        Yaw=[120.0] * n,
+    )
+    log = make_flight_log({"ATT": recs}, vehicle_type="ArduPlane", vehicle_kind="plane")
+    assert AttitudeTrackingCheck().run(log) == []
+
+
+def test_ground_time_after_landing_is_not_judged():
+    # Upside down on the ground after LAND_COMPLETE: not an in-flight tracking failure.
+    n = 300
+    roll = [0.0] * 200 + [170.0] * 100
+    recs = build_series(
+        0.0,
+        10.0,
+        DesRoll=[0.0] * n,
+        Roll=roll,
+        DesPitch=[0.0] * n,
+        Pitch=[0.0] * n,
+        DesYaw=[0.0] * n,
+        Yaw=[0.0] * n,
+    )
+    ev = [{"TimeUS": 1_000_000, "Id": 10}, {"TimeUS": 3_000_000, "Id": 28}, {"TimeUS": 19_500_000, "Id": 18}]
+    log = make_flight_log({"ATT": recs, "EV": ev}, vehicle_kind="copter")
+    assert AttitudeTrackingCheck().run(log) == []
+
+
+def test_in_flight_divergence_still_critical_with_land_detector():
+    n = 300
+    roll = [0.0] * 100 + [40.0] * 30 + [0.0] * 170
+    recs = build_series(
+        0.0,
+        10.0,
+        DesRoll=[0.0] * n,
+        Roll=roll,
+        DesPitch=[0.0] * n,
+        Pitch=[0.0] * n,
+        DesYaw=[0.0] * n,
+        Yaw=[0.0] * n,
+    )
+    ev = [{"TimeUS": 1_000_000, "Id": 10}, {"TimeUS": 3_000_000, "Id": 28}, {"TimeUS": 25_000_000, "Id": 18}]
+    log = make_flight_log({"ATT": recs, "EV": ev}, vehicle_kind="copter")
+    f = AttitudeTrackingCheck().run(log)
+    assert [x.severity for x in f] == [Severity.CRITICAL]

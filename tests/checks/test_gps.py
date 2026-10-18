@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ardupilot_mcp.checks.gps import GpsCheck
 from ardupilot_mcp.model import CheckStatus, Severity
-from tests.helpers import build_series, make_flight_log
+from tests.helpers import build_series, interleave_instances, make_flight_log
 
 
 def _log(gps_records):
@@ -193,3 +193,48 @@ def test_check_is_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("gps") is not None
+
+
+# ---- dual receivers (modern layout: one GPS stream, instance field "I") ----
+
+
+def _dual(gps1: dict, gps2: dict, n: int = 100) -> list[dict]:
+    base = {"Status": [3] * n, "NSats": [14] * n, "HDop": [0.8] * n}
+    return interleave_instances(
+        "I",
+        {0: build_series(0.0, 5.0, **{**base, **gps1}), 1: build_series(0.0, 5.0, **{**base, **gps2})},
+    )
+
+
+def test_secondary_never_fixing_is_warn_not_critical():
+    recs = _dual({}, {"Status": [1] * 100, "NSats": [3] * 100, "HDop": [99.99] * 100})
+    findings = GpsCheck().run(make_flight_log({"GPS": recs}))
+    assert findings, "a dead second receiver is still worth reporting"
+    assert all(f.severity != Severity.CRITICAL for f in findings)
+    assert any(f.title == "GPS2 never achieved a 3D fix" for f in findings)
+    assert all(f.evidence.samples["gps_instance"] == 1 for f in findings)
+
+
+def test_primary_loss_covered_by_secondary_is_downgraded():
+    status = [3] * 40 + [1] * 20 + [3] * 40
+    recs = _dual({"Status": status}, {})
+    loss = [f for f in GpsCheck().run(make_flight_log({"GPS": recs})) if "lost 3D fix" in f.title]
+    assert loss and loss[0].title == "GPS1 lost 3D fix during the flight"
+    assert loss[0].severity == Severity.WARN
+    assert "GPS2 kept a 3D fix" in loss[0].explanation
+
+
+def test_both_receivers_losing_fix_stays_critical():
+    status = [3] * 40 + [1] * 20 + [3] * 40
+    recs = _dual({"Status": status}, {"Status": status})
+    loss = [f for f in GpsCheck().run(make_flight_log({"GPS": recs})) if "lost 3D fix" in f.title]
+    assert len(loss) == 2
+    assert all(f.severity == Severity.CRITICAL for f in loss)
+
+
+def test_primary_loss_stays_critical_when_auto_switch_disabled():
+    status = [3] * 40 + [1] * 20 + [3] * 40
+    recs = _dual({"Status": status}, {})
+    log = make_flight_log({"GPS": recs}, params={"GPS_AUTO_SWITCH": 0})
+    loss = [f for f in GpsCheck().run(log) if "lost 3D fix" in f.title]
+    assert loss and loss[0].severity == Severity.CRITICAL

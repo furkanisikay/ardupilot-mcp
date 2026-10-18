@@ -18,14 +18,18 @@ Do all of the following:
    optional `vehicles` (e.g. `{"copter","heli"}`), `description`, and a pure deterministic
    `run(self, log) -> list[Finding]`. Put thresholds in named constants WITH a source
    comment. Cite the concrete numbers in each finding's `explanation`; numeric evidence in
-   `samples=`. Be conservative to avoid false positives.
+   `samples=`. Be conservative to avoid false positives. Multi-instance messages (VIBE,
+   GPS, MAG, BAT, IMU, XKF*): loop over `log.instances(mtype)` and read
+   `log.series(mtype, field, inst)` — never one interleaved series. Judge in-flight
+   behaviour over `log.armed_mask(times)`.
 
 3. **Register it:** add `"<name>"` to `_CHECK_MODULES` in `ardupilot_mcp/checks/__init__.py`,
    and (optionally) map it in `CHECK_TOPICS` in `ardupilot_mcp/ardupilot_docs.py`.
 
 4. **Write `tests/checks/test_<name>.py`** using `make_flight_log` / `build_series`
    (synthetic — no real `.bin`): the skipped/empty case, a clean no-finding case, and one
-   case per severity it can emit.
+   case per severity it can emit. If it catches a new kind of fault, add a labelled flight
+   (plus a benign variant that must stay clean) to `tests/scenarios/flights.py`.
 
 5. **Update docs:** add the check to the catalogue in `README.md`, add a `CHANGELOG.md`
    entry, and record any new threshold + its source in `docs/SOURCES.md`.

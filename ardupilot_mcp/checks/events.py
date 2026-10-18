@@ -112,7 +112,7 @@ class EventsCheck(Check):
         first_ts: float | None = None
         last_ts: float | None = None
         for rec in log.get("MODE"):
-            label = self._mode_label(rec)
+            label = self._mode_label(rec, log.meta.vehicle_kind)
             if label is None:
                 continue
             ts = float(rec["timestamp"]) if "timestamp" in rec else None
@@ -141,20 +141,20 @@ class EventsCheck(Check):
         ]
 
     @staticmethod
-    def _mode_label(rec: dict) -> str | None:
+    def _mode_label(rec: dict, kind: str | None = None) -> str | None:
         """Decode a MODE record to a human-readable mode name.
 
         Prefer the numeric ``ModeNum`` decoded via the meta table; fall back to a
         string ``Mode`` field, then to the raw ``Mode`` number.
         """
         if "ModeNum" in rec and _is_number(rec["ModeNum"]):
-            return mode_name(int(rec["ModeNum"]))
+            return mode_name(int(rec["ModeNum"]), kind)
         if "Mode" in rec:
             val = rec["Mode"]
             if isinstance(val, str) and val:
                 return val
             if _is_number(val):
-                return mode_name(int(val))
+                return mode_name(int(val), kind)
         return None
 
     # -- EV: one INFO finding counting key lifecycle events -------------------

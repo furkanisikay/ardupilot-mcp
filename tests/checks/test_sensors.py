@@ -80,11 +80,24 @@ def test_rangefinder_absent_param_no_finding():
 
 
 def test_gps_configured_no_data_warns():
-    findings = _run({}, params={"GPS_TYPE": 1})
+    # An explicitly chosen receiver type (2 = uBlox) that never logs -> WARN.
+    findings = _run({}, params={"GPS1_TYPE": 2})
     gps = [f for f in findings if "GPS" in f.title]
     assert len(gps) == 1
     assert gps[0].severity == Severity.WARN
-    assert gps[0].evidence.samples["gps_type"] == 1
+    assert gps[0].evidence.samples["gps_type"] == 2
+
+
+def test_default_auto_gps_type_without_gps_modes_is_info():
+    # GPS1_TYPE=1 (AUTO) is the default even on craft that never had a GPS.
+    gps = [f for f in _run({}, params={"GPS1_TYPE": 1}) if "GPS" in f.title]
+    assert len(gps) == 1 and gps[0].severity == Severity.INFO
+
+
+def test_default_auto_gps_type_with_gps_mode_flown_warns():
+    log = make_flight_log({}, params={"GPS1_TYPE": 1}, flight_modes=["STABILIZE", "LOITER"])
+    gps = [f for f in SensorsCheck().run(log) if "GPS" in f.title]
+    assert len(gps) == 1 and gps[0].severity == Severity.WARN
 
 
 def test_gps_configured_with_data_no_finding():
@@ -137,7 +150,7 @@ def test_compass_no_mag_no_finding():
 def test_multiple_faults_each_reported_once():
     health = [0] * 30 + [1] * 20  # 60% unhealthy
     mag = build_series(0.0, 10.0, Health=health, MagX=[100.0] * 50)
-    findings = _run({"MAG": mag}, params={"RNGFND1_TYPE": 30, "GPS_TYPE": 1})
+    findings = _run({"MAG": mag}, params={"RNGFND1_TYPE": 30, "GPS_TYPE": 2})
     titles = [f.title for f in findings]
     assert any("Rangefinder" in t for t in titles)
     assert any("GPS" in t for t in titles)

@@ -6,6 +6,95 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- **Multi-instance sensors were interleaved.** Firmware 4.x logs every IMU, GPS, compass,
+  battery and EKF core under one message name (told apart by an instance field). Checks now
+  judge each instance on its own samples, using the log's own FMTU `#` declarations. This
+  removes false alarms such as a CRITICAL "GPS lost 3D fix" caused by a second receiver,
+  a CRITICAL "battery critical voltage" caused by a 2S payload pack on the second monitor,
+  and "unstable compass" caused by two healthy compasses with different field strengths.
+- **Accelerometer clipping was never detected on 4.x logs**: modern `VIBE` has one `Clip`
+  counter per IMU (the check only read the pre-4.0 `Clip0/1/2`). Counter resets are handled.
+- `timing`: "long loops" warned whenever `PM.NLon > 0`, i.e. on almost every healthy log. It
+  now judges the long-loop percentage per PM window (`NLon/NL`), as ArduPilot's LogAnalyzer
+  did, and cites `PM.Ex`.
+- Flight modes were decoded with the Copter table for every vehicle (a Plane in MANUAL was
+  reported as STABILIZE). Plane, Rover and Sub have their own tables; Copter gains TURTLE.
+- `max_altitude_m` mixed AMSL (`POS/GPS.Alt`) with relative altitude; it is now the maximum
+  altitude above home (`POS.RelHomeAlt`, else `CTUN.Alt`/`BARO.Alt`).
+- `rcin`: RC loss is judged only while armed (a receiver with no transmitter on the bench is
+  no longer a CRITICAL), and uses `RCI2.Flags` (no valid input / RC failsafe) when logged —
+  most receivers hold the last values on link loss, which the PWM heuristic cannot see.
+- `motors`: motor outputs come from `SERVOn_FUNCTION` (or the frame's motor count), so a
+  gimbal servo is no longer a "motor imbalance"; only armed time is averaged, so a real
+  imbalance is no longer diluted by disarmed samples.
+- `query_timeseries`: when a field was missing from some records, the time window was
+  silently not applied and values no longer lined up with `times_s`. Values are now aligned
+  by record (`null` where a record lacks the field) and unknown fields are reported.
+- `sensors` recognises `GPS1_TYPE` (4.6 renamed `GPS_TYPE`); compass health is per compass.
+- NaN/inf samples no longer poison max/mean comparisons (they are dropped from series).
+- Arming detection on real logs: with `LOG_DISARMED=0` the log opens at arming and the arm record
+  is often lost, so a log whose first edge is a disarm (or, with `LOG_DISARMED=0`, has none) is
+  treated as armed from its start. Many forum logs were previously "never armed".
+- `vibration`: fewer than 100 clips is INFO, not WARN (the wiki calls a small count around a hard
+  landing likely OK); 100+ stays CRITICAL.
+- `sensors`: "GPS configured but no data" is INFO when `GPS1_TYPE` is the default AUTO and no GPS
+  mode was flown (indoor/optical-flow craft), WARN otherwise.
+- `attitude`: judged in flight only (armed, and between Copter's NOT_LANDED and LAND_COMPLETE
+  events when logged), and Plane yaw is skipped (ArduPlane logs `ATT.DesYaw` as a 0 placeholder).
+  On 100 forum logs this was the most common CRITICAL: an upside-down crashed or carried
+  airframe, and every Plane's heading, read as "attitude tracking failure". The PID tuning advice
+  uses the same flight window. Compass field-strength stability uses it too.
+- `timing`: a logging gap that starts while disarmed is expected with `LOG_DISARMED=0` (logging
+  pauses between flights in the same file) and is no longer a "main-loop stall"; half of the gap
+  warnings on the forum corpus were this.
+- Logs without GPS parsed ~40x slower than the rest: pymavlink scans the whole log for a GPS clock
+  we never use. The reader now skips that scan (15 MB forum log: 6.9 s -> 0.15 s).
+
+### Added
+- `incident_timeline` tool and `DiagnosisReport.incident`: the onset (first anomaly while armed)
+  and the impact (ERR CRASH_CHECK, "Crash: Disarming", or the log ending while armed). Findings
+  that start at or after the impact are flagged `after_impact` and listed last, so a crash's
+  consequences (vibration spikes, attitude error, GPS loss) no longer top the report. Flight-long
+  conditions (compass statistics, parameters, boot messages, windows covering most of the flight)
+  are listed as context and never chosen as the onset. Time order only; no causal claims.
+- `compare_logs(path_a, path_b)` tool: what changed between two flights — configuration
+  parameter differences (kept apart from STAT_* counters, learned hover throttle, gyro offsets,
+  calibration temperatures and other values the autopilot writes itself), parameters only in one
+  log, the firmware change, and vibration / hover / voltage metrics side by side.
+- Logging advice (`DiagnosisReport.logging_advice`, Copter/Heli): for data a check needed but the
+  log lacks, the `LOG_BITMASK` bit that logs it — only when that bit is actually off — and
+  `IMU_FAST`/`INS_LOG_BAT_MASK` when the IMU rate is too low for a notch spectrum.
+- `firmware` check: the autopilot's own in-flight verdicts — "Potential Thrust Loss (motor N)",
+  "Crash: Disarming", "EKF Failsafe", "Yaw Imbalance", "Vibration compensation ON", "EKF
+  variance", GPS glitch, dead reckoning — and failsafe-driven mode changes decoded from
+  `MODE.Rsn` (radio, battery, GCS, EKF, fence, crash, ...).
+- `power`: flight-controller board voltage (`POWR.Vcc`) — CRITICAL below 4.6 V while armed,
+  WARN on more than 0.3 V of ripple. Per-battery thresholds (`BATT2_*` for the second pack).
+- `compass`: throttle-correlated interference estimate (% field change at full throttle, the
+  quantity CompassMot shows), graded with ArduPilot's 30 % / 60 % bands.
+- `ekf`: per-core evaluation; full severity only while the core was primary (`XKF4.PI`),
+  standby-core strain is INFO, and an EKF lane switch is reported.
+- `integrity`: "Recording ended while armed" — the log stops with no disarm, the signature of
+  an in-flight power loss or crash.
+- `query_timeseries(..., instance=)` and `available_instances` for multi-instance messages.
+- `FlightLog.instances()`, `series(..., instance=)`, `armed_intervals()`, `armed_mask()`.
+- `tests/test_scenarios.py`: 23 labelled fault-injection flights written in Copter-4.6.3's
+  exact log format (dual GPS, dual compass, three IMUs, two EKF cores) run through the full
+  pipeline; a clean flight that raises a single warning fails CI.
+
+### Changed
+- **Parsing is ~20x faster and uses ~4x less memory.** Messages are decoded into numpy
+  columns straight from pymavlink's own index instead of one Python object per record (a
+  20-minute log with 400 Hz IMU: 26 s / 1.6 GB -> 1.2 s / 0.4 GB). The decoder is checked
+  field-for-field against pymavlink and falls back to it for unusual layouts. Raw sensor
+  dumps no check reads (`ISBH/ISBD/ACC/GYR`) are not loaded.
+- `analyze_log` lists each finding once (in `findings`); `results[]` now carries
+  `finding_count` instead of a second copy, roughly halving the payload sent to the LLM.
+- The server keeps at most two parsed logs in memory (LRU) instead of every log ever opened.
+- A half-written final record (what unplugging the battery after landing leaves) is dropped
+  without flagging the log as truncated.
+
 ## [0.1.3] — 2026-10-17
 
 ### Fixed

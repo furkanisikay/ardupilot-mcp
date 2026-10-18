@@ -11,9 +11,9 @@ whether the log itself is continuous:
   which matters for every other check.
 
 * **Scheduler overruns** — ArduPilot's ``PM`` (performance monitoring) message
-  records scheduler statistics, including a counter of "long loops" (the
-  ``NLon`` field) where the main loop ran over its time budget. A nonzero total
-  means the flight controller was, at times, CPU-starved.
+  records, per reporting window, how many main loops ran (``NL``/``NLoop``) and
+  how many overran their budget (``NLon``). A high long-loop *percentage* means
+  the flight controller was CPU-starved (a handful per window is normal).
 
 This check never *requires* a specific message (``requires=set()``); it guards
 each signal internally and returns ``[]`` when none of the relevant messages
@@ -44,9 +44,18 @@ GAP_REL_FACTOR = 10.0  # ...or smaller than 10x the nominal sample spacing
 # report; we report the largest gaps first.
 MAX_GAP_FINDINGS = 3
 
-# PM scheduler "long loop" counter field name(s). ArduPilot's PM message uses
-# "NLon" for the number of long loops in the reporting window.
-PM_LONG_LOOP_FIELDS = ("NLon",)
+# PM scheduler counters: "NLon" = long loops and "NL" (4.x; "NLoop" in older logs)
+# = loops measured in the reporting window (Copter-4.6.3 AP_Logger/LogStructure.h).
+# A few long loops per window are normal, so judge the percentage, as ArduPilot's
+# LogAnalyzer TestPerformance did: a window is "slow" above 6 %; WARN (LogAnalyzer
+# FAIL) when any window exceeds 10 % or more than 6 windows are slow; INFO (its WARN)
+# when only the 6 % line is crossed.
+# https://github.com/ArduPilot/ardupilot/blob/Copter-4.0.7/Tools/LogAnalyzer/tests/TestPerformance.py
+PM_LONG_LOOP_FIELD = "NLon"
+PM_LOOP_FIELDS = ("NL", "NLoop")
+PM_SLOW_PCT = 6.0
+PM_FAIL_PCT = 10.0
+PM_FAIL_SLOW_RECORDS = 6
 
 
 @register_check
@@ -86,11 +95,17 @@ class TimingCheck(Check):
 
         threshold = max(GAP_ABS_FLOOR_S, GAP_REL_FACTOR * median_dt)
 
-        # Collect every anomalous gap with the timestamp it starts at.
+        # Collect every anomalous gap with the timestamp it starts at. With
+        # LOG_DISARMED=0 logging pauses at disarm and resumes at the next arm in the
+        # same file, so a gap that starts while disarmed is expected, not a stall.
+        armed = log.armed_intervals()
         gaps: list[tuple[float, float, float]] = []  # (gap_s, start_s, end_s)
         for i in range(dt.size):
             if dt[i] > threshold:
-                gaps.append((float(dt[i]), float(times[i]), float(times[i + 1])))
+                start = float(times[i])
+                if armed and not any(a <= start < b for a, b in armed):
+                    continue
+                gaps.append((float(dt[i]), start, float(times[i + 1])))
         if not gaps:
             return []
 
@@ -133,41 +148,62 @@ class TimingCheck(Check):
     def _pm_findings(self, log: FlightLog) -> list[Finding]:
         if not log.has("PM"):
             return []
-        field = next((f for f in PM_LONG_LOOP_FIELDS if self._pm_has_field(log, f)), None)
-        if field is None:
+        loops_field = next((f for f in PM_LOOP_FIELDS if self._pm_has_field(log, f)), None)
+        if loops_field is None or not self._pm_has_field(log, PM_LONG_LOOP_FIELD):
             return []
-
-        recs = log.get("PM")
-        total = 0
-        for r in recs:
-            v = r.get(field)
-            if isinstance(v, (int, float)) and not isinstance(v, bool):
-                total += int(v)
-        if total <= 0:
+        times, nlon = log.series("PM", PM_LONG_LOOP_FIELD)
+        _, nloop = log.series("PM", loops_field)
+        n = min(nlon.size, nloop.size)
+        if n == 0:
             return []
-
-        times = log.times("PM")
-        t0 = float(times[0]) if times.size else None
-        t1 = float(times[-1]) if times.size else None
+        times, nlon, nloop = times[:n], nlon[:n], nloop[:n]
+        valid = nloop > 0
+        if not np.any(valid):
+            return []
+        pct = np.zeros(n)
+        pct[valid] = 100.0 * nlon[valid] / nloop[valid]
+        max_pct = float(np.max(pct))
+        slow_records = int(np.count_nonzero(pct > PM_SLOW_PCT))
+        if max_pct <= PM_SLOW_PCT:
+            return []  # a few long loops per reporting window are normal
+        sev = (
+            Severity.WARN if (max_pct > PM_FAIL_PCT or slow_records > PM_FAIL_SLOW_RECORDS) else Severity.INFO
+        )
+        worst = int(np.argmax(pct))
+        _, extra = log.series("PM", "Ex")
+        max_ex = float(np.max(extra)) if extra.size else 0.0
+        ex_txt = (
+            f" The scheduler was also adding up to {max_ex:.0f} us to each loop to absorb overruns (PM.Ex)."
+            if max_ex > 0
+            else ""
+        )
+        samples: dict[str, float] = {
+            "max_long_loop_pct": round(max_pct, 1),
+            "slow_records": slow_records,
+            "pm_records": n,
+            "long_loops_total": int(np.sum(nlon)),
+        }
+        if extra.size:
+            samples["max_extra_loop_us"] = max_ex
         return [
             make_finding(
                 self.id,
-                Severity.WARN,
+                sev,
                 "Scheduler recorded long loops",
                 (
-                    f"The PM scheduler log recorded {total} long loop(s) (field '{field}') — the "
-                    "main loop ran over its time budget. Persistent long loops indicate the flight "
-                    "controller was CPU-starved, which can delay control updates and degrade "
-                    "estimator/control performance."
+                    f"Up to {max_pct:.1f}% of main loops ran over their time budget in one PM window "
+                    f"(PM.NLon/PM.{loops_field}); {slow_records} of {n} windows exceeded {PM_SLOW_PCT:.0f}%. "
+                    "Persistent long loops mean the flight controller was CPU-starved, which delays control "
+                    "updates and degrades estimator/control performance." + ex_txt
                 ),
                 recommendation=(
                     "Reduce CPU load: lower logging/notch/EKF rates or disable unused features; "
                     "check for a fast loop rate set too high for the board."
                 ),
-                time_start_s=t0,
-                time_end_s=t1,
+                time_start_s=float(times[worst]),
+                time_end_s=float(times[-1]),
                 message_types=["PM"],
-                samples={"long_loops": total},
+                samples=samples,
             )
         ]
 
