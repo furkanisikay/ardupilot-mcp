@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Curated ArduPilot documentation references attached to findings.
 
 The server stays offline and deterministic; it does not fetch the web. Instead it

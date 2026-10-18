@@ -1,0 +1,94 @@
+# Pull request hygiene: title format, release-notes label, changelog entry and CLA.
+# Runs on pull_request_target so it can label fork PRs. It never checks out or runs
+# the PR's code; it only reads the PR through the API.
+name: PR
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  title:
+    name: Conventional title
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      NUMBER: ${{ github.event.pull_request.number }}
+      TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - name: Check the title
+        run: |
+          re='^(feat|fix|docs|refactor|perf|test|ci|build|chore|revert)(\([a-z0-9._-]+\))?(!)?: .+'
+          if ! [[ "$TITLE" =~ $re ]]; then
+            echo "::error::Title must look like 'feat: ...' or 'fix(parser): ...' (Conventional Commits). Got: $TITLE"
+            exit 1
+          fi
+      - name: Label from the title
+        # The title owns these labels: the one it implies is added, the others removed.
+        run: |
+          type="${TITLE%%[(:!]*}"
+          case "$type" in
+            feat) want=enhancement ;;
+            fix) want=bug ;;
+            docs) want=documentation ;;
+            refactor|perf) want=refactor ;;
+            test) want=tests ;;
+            ci|build) want=ci ;;
+            *) want="" ;;
+          esac
+          breaking=""
+          if [[ "$TITLE" =~ ^[a-z]+(\([^\)]*\))?!: ]]; then breaking=breaking; fi
+          have=$(gh pr view "$NUMBER" --repo "$REPO" --json labels -q '.labels[].name')
+          for label in enhancement bug documentation refactor tests ci breaking; do
+            if [ "$label" = "$want" ] || [ "$label" = "$breaking" ]; then
+              grep -qx "$label" <<<"$have" || gh pr edit "$NUMBER" --repo "$REPO" --add-label "$label"
+            elif grep -qx "$label" <<<"$have"; then
+              gh pr edit "$NUMBER" --repo "$REPO" --remove-label "$label"
+            fi
+          done
+
+  changelog:
+    name: Changelog entry
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      NUMBER: ${{ github.event.pull_request.number }}
+      SKIP: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+    steps:
+      - name: Require a CHANGELOG.md entry for package changes
+        run: |
+          if [ "$SKIP" = "true" ]; then echo "skip-changelog label set"; exit 0; fi
+          files=$(gh api "repos/$REPO/pulls/$NUMBER/files" --paginate -q '.[].filename')
+          if echo "$files" | grep -q '^ardupilot_mcp/' && ! echo "$files" | grep -qx 'CHANGELOG.md'; then
+            echo "::error::This PR changes ardupilot_mcp/ but not CHANGELOG.md. Add an Unreleased entry, or ask a maintainer for the skip-changelog label."
+            exit 1
+          fi
+
+  cla:
+    name: CLA
+    runs-on: ubuntu-latest
+    env:
+      AUTHOR: ${{ github.event.pull_request.user.login }}
+      BODY: ${{ github.event.pull_request.body }}
+    steps:
+      - name: Check the CLA box
+        run: |
+          case "$AUTHOR" in
+            furkanisikay|dependabot\[bot\]|github-actions\[bot\]|claude\[bot\]) echo "$AUTHOR: no CLA needed"; exit 0 ;;
+          esac
+          if printf '%s' "$BODY" | grep -Eiq '^\s*-\s*\[x\]\s*I have read the \[Contributor License Agreement\]'; then
+            echo "CLA accepted by $AUTHOR"
+          else
+            echo "::error::Tick the Contributor License Agreement box in the PR description (see .github/CLA.md)."
+            exit 1
+          fi

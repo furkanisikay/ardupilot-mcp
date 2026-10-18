@@ -6,9 +6,10 @@ Codex, …) working in this repo. Read it before changing anything. `CLAUDE.md`,
 
 ## What this is
 
-An **MCP server that diagnoses ArduPilot DataFlash (`.bin`) flight logs**. You give
-it a log; an LLM client (Claude Desktop, …) calls our tools and explains, in plain
-language, what went wrong — grounded in a deterministic check engine, not guesses.
+An **MCP server that diagnoses ArduPilot flight logs** (onboard DataFlash `.bin` and
+ground-station `.tlog`). You give it a log; an LLM client (Claude Desktop, …) calls our
+tools and explains in plain language what went wrong, grounded in a deterministic check
+engine. Licensed AGPL-3.0-only.
 
 ## Golden rules (do not break these)
 
@@ -23,9 +24,13 @@ language, what went wrong — grounded in a deterministic check engine, not gues
    the MCP spec) and recorded in [`docs/SOURCES.md`](docs/SOURCES.md). Put the source
    URL in a comment next to the constant. If it's a judgement call we chose, label it a
    *design choice*, not a fact.
-4. **Keep docs in sync.** If you add/rename a check or an MCP tool you MUST update
-   `README.md` and `CHANGELOG.md` (and `docs/SOURCES.md` for any new threshold). A test
-   (`tests/test_docs_sync.py`) enforces this — it fails if a check/tool isn't documented.
+4. **Keep docs in sync.** Run `python scripts/gen_docs.py` after changing a tool, a check
+   or the version: it regenerates `docs/reference.md`, the version in `server.json` and
+   `.claude-plugin/*.json`, and the license in `.claude-plugin/plugin.json`.
+   `tests/test_docs_sync.py` fails when those are stale or when a tool is missing from the
+   tools table of `README.md` or `README.en.md`. A user-visible change needs a
+   `CHANGELOG.md` entry (the PR workflow fails without one) and a new threshold an entry
+   in `docs/SOURCES.md` (reviewers check that).
 5. **Tests gate everything.** `ruff`, `mypy` and `pytest` must all pass. New behaviour
    needs tests. CI runs these on every PR and protects `main`.
 
@@ -65,7 +70,10 @@ tests/scenarios/   labelled fault-injection flights in Copter-4.6.3's exact log 
                    (tests/test_scenarios.py: expected findings fire, clean flights stay clean)
 bench/             real-crash benchmark: labelled forum flights (URL + sha256 + label, no
                    logs) and an offline scorer, `python -m bench.run --logs DIR`
-docs/SOURCES.md    every assumption, audited + cited
+scripts/          gen_docs.py (generated docs + manifests), gen_param_meta.py, gen_motor_geometry.py
+docs/              SOURCES.md (every assumption, audited and cited), reference.md (generated),
+                   clients.md (client setup), design/ (dated design records)
+.github/           CONTRIBUTING, SECURITY, CLA, issue/PR templates, workflows
 ```
 
 ## How to add a check (the main contribution path)
@@ -98,8 +106,8 @@ A check is one module + one test. The registry makes it a drop-in.
 4. Write `tests/checks/test_my_check.py`: the skip/empty case, a clean (no-finding)
    case, and one case per severity. Test against synthetic logs (`make_flight_log` /
    `build_series`) — no real `.bin` needed.
-5. Update `README.md` (check catalogue) + `CHANGELOG.md`; add any new threshold to
-   `docs/SOURCES.md` with its source.
+5. Run `python scripts/gen_docs.py` (the check appears in `docs/reference.md`), add a
+   `CHANGELOG.md` entry, and add any new threshold to `docs/SOURCES.md` with its source.
 6. If the check fires on a new kind of fault, add a labelled flight to
    `tests/scenarios/flights.py` (and a benign variant that must stay clean).
 7. Run the commands below until green. If you have the benchmark logs locally, run
@@ -111,10 +119,12 @@ A check is one module + one test. The registry makes it a drop-in.
 
 ```bash
 pip install -e ".[dev]"
-ruff check ardupilot_mcp tests        # lint
-ruff format ardupilot_mcp tests       # format
+ruff check ardupilot_mcp tests scripts bench examples    # lint
+ruff format ardupilot_mcp tests scripts bench examples   # format
 mypy ardupilot_mcp                    # types
-pytest                                # tests
+pytest                                # tests (includes the docs-sync gate)
+python scripts/gen_docs.py            # regenerate docs/reference.md and the manifests
+pre-commit install                    # optional: run the above on every commit
 python -m ardupilot_mcp               # run the server (stdio)
 python examples/analyze.py log.bin    # diagnose a log from the CLI
 ```
@@ -136,3 +146,6 @@ python examples/analyze.py log.bin    # diagnose a log from the CLI
 - `log.get()` builds dicts — fine for event-like types (ERR/EV/MODE/MSG); for high-rate data
   use `series()`/`times()`/`aligned()`, which stay in numpy.
 - Python ≥ 3.11, full type hints, `from __future__ import annotations`.
+- Every Python file outside `tests/` starts with `# SPDX-License-Identifier: AGPL-3.0-only`.
+- PR titles and squash commits follow Conventional Commits (`feat:`, `fix:`, `docs:`, ...);
+  the title sets the release-notes label.

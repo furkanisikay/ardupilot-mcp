@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Diagnosis orchestrator: run the check registry over a FlightLog.
 
 This is the reliable backbone. It runs every registered check (with skip/error

@@ -1,28 +1,44 @@
-name: "Bug report"
-description: Something broke — a crash, a parse error, a tool that errors, install/setup trouble.
+name: Bug report
+description: A crash, a log that fails to parse, a tool error or an install problem.
 labels: ["bug"]
 body:
   - type: textarea
     id: what
     attributes:
-      label: What went wrong?
-      description: What did you do, what did you expect, what happened instead?
+      label: What happened?
+      description: What you did, what you expected and what you got.
     validations:
       required: true
-  - type: textarea
-    id: repro
-    attributes:
-      label: Steps to reproduce
-      render: text
   - type: textarea
     id: error
     attributes:
-      label: Error output / traceback
+      label: Error output
+      description: The traceback or the error the client showed.
       render: text
   - type: input
-    id: env
+    id: version
     attributes:
-      label: Environment
-      placeholder: "OS, Python version, ardupilot-mcp version, MCP client (e.g. Claude Desktop)"
+      label: ardupilot-mcp version
+      description: "`pip show ardupilot-mcp`, or `ardupilot-mcp --version` on releases after 0.1.3"
+      placeholder: "0.1.3"
     validations:
       required: true
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      options: ["Claude Desktop", "Claude Code", "Cursor", "VS Code", "Windsurf", "Cline", "Continue", "Zed", "LM Studio", "Other", "None (examples/analyze.py)"]
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: ["Windows", "macOS", "Linux"]
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log file
+      description: Attach the log or link to it if you can. A .bin or .tlog holds GPS positions; share it only if you are fine with that.

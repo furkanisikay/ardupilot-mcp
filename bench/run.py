@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Run the real-crash benchmark against locally downloaded logs.
 
     python -m bench.run --logs DIR [--json OUT]

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Configuration safety check.
 
 Inspects ``log.params`` (the parameter snapshot stored in the DataFlash log) for

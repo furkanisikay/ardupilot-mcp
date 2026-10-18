@@ -1,0 +1,27 @@
+# pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: ["--markdown-linebreak-ext=md"]
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.17  # keep in step with the ruff pin in pyproject.toml
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+      - id: ruff-format
+  - repo: local
+    hooks:
+      - id: gen-docs
+        name: regenerate docs/reference.md and the manifests
+        entry: python scripts/gen_docs.py
+        language: system
+        pass_filenames: false
+        files: ^(ardupilot_mcp/|scripts/gen_docs\.py$|server\.json$|\.claude-plugin/)

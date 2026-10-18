@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """In-memory flight-log domain model.
 
 Deliberately free of any ``pymavlink`` dependency: checks, the orchestrator and

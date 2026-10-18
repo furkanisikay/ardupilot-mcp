@@ -1,0 +1,16 @@
+# Categories for the GitHub release notes; labels come from the PR title (see workflows/pr.yml).
+changelog:
+  exclude:
+    labels: ["skip-changelog"]
+    authors: ["dependabot[bot]"]
+  categories:
+    - title: Breaking changes
+      labels: ["breaking"]
+    - title: New features
+      labels: ["enhancement"]
+    - title: Fixes
+      labels: ["bug", "diagnosis"]
+    - title: Documentation
+      labels: ["documentation"]
+    - title: Other changes
+      labels: ["*"]

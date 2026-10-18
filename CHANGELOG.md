@@ -88,6 +88,15 @@ All notable changes to this project are documented here. The format is based on
   we never use. The reader now skips that scan (15 MB forum log: 6.9 s -> 0.15 s).
 
 ### Added
+- `ardupilot-mcp --version` prints the installed version without starting the server.
+- `docs/reference.md` lists every tool with its arguments and every check with the vehicles,
+  log types and messages it needs. `scripts/gen_docs.py` generates it from the code and
+  keeps the version and license in `server.json` and the plugin manifests in step; a test
+  fails when any of them is out of date.
+- Repository automation: CodeQL and dependency review on every PR, Dependabot for pip and
+  GitHub Actions, a PR check for the Conventional Commits title, the changelog entry and the
+  CLA, labels from `.github/labels.json`, release notes grouped by label, and pre-commit
+  hooks (ruff, the generated docs, whitespace).
 - MAVLink telemetry logs (`.tlog`): every tool accepts the log a ground station records,
   mapped onto the DataFlash messages the checks read (ATT with the demand interpolated at
   each attitude sample, VIBE, XKF4, BAT, GPS, IMU, MAG, RCIN, RCOU, CTUN, POS, MODE, ARM,
@@ -174,6 +183,13 @@ All notable changes to this project are documented here. The format is based on
   pipeline; a clean flight that raises a single warning fails CI.
 
 ### Changed
+- **License: AGPL-3.0-only** from this change on, with a commercial license available
+  (contact@furkanisikay.com). The packages published on PyPI up to 0.1.3 remain under the
+  MIT license.
+  Contributions need the [Contributor License Agreement](.github/CLA.md).
+- README (Turkish and English) cut to what a new user needs; client setup and
+  troubleshooting moved to `docs/clients.md`. Community files (contributing, security,
+  code of conduct, support) live in `.github/`.
 - **One event, one finding.** A radio failsafe used to appear as ERR FAILSAFE_RADIO, ERR RADIO,
   a "radio failsafe" mode change and the RC-loss finding, each on its own line. ERR, failsafe
   mode-change and firmware echoes now join the finding that measured the event (RC, battery,

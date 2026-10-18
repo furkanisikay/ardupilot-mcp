@@ -196,3 +196,11 @@ def test_incident_timeline_reuses_the_cached_diagnosis(monkeypatch, tmp_path):
     server.incident_timeline(str(path))
     server.incident_timeline(str(path))
     assert len(calls) == 1
+
+
+def test_version_flag_prints_the_version_without_starting_the_server(capsys):
+    from ardupilot_mcp import __version__
+    from ardupilot_mcp.__main__ import main
+
+    main(["--version"])
+    assert capsys.readouterr().out.strip() == f"ardupilot-mcp {__version__}"

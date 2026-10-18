@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Motor roll/pitch factors per frame, generated from ArduPilot Copter-4.6.3.
 
 Source: libraries/AP_Motors/AP_MotorsMatrix.cpp (setup_*_matrix). Do not edit by hand:

@@ -1,0 +1,5 @@
+* text=auto eol=lf
+*.gz binary
+*.bin binary
+*.tlog binary
+docs/reference.md linguist-generated=true

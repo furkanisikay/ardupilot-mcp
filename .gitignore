@@ -14,10 +14,13 @@ env/
 .coverage
 htmlcov/
 
-# Logs / fixtures (büyük .bin/.tlog/.ulog dosyaları repoya girmesin — fixture'lar ayrı yönetilecek)
+# Flight logs stay out of the repository; tests build synthetic ones
 *.tlog
 *.ulg
-# NOT: test fixture .bin dosyaları için tests/fixtures/ altında seçici allow-list kullanılacak (plan aşamasında)
+examples/*.bin
+
+# Real logs downloaded for validation and the benchmark (third-party data)
+_reallogs/
 
 # IDE / OS
 .idea/
@@ -25,11 +28,5 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Local Claude Code settings (machine-specific)
+# Local Claude Code settings
 .claude/settings.local.json
-
-# Demo output
-examples/*.bin
-
-# Downloaded real logs (third-party data; not ours to redistribute)
-_reallogs/

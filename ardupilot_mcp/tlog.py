@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """MAVLink telemetry logs (``.tlog``) read into the same ``FlightLog`` the checks use.
 
 A ground station records every MAVLink message it receives, each prefixed with the

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generate the bundled parameter metadata in ``ardupilot_mcp/data/params/``.
 
 Usage (offline, against apm.pdef.xml files you downloaded from ArduPilot's versioned

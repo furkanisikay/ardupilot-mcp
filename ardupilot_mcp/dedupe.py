@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """One event, one finding.
 
 A single in-flight event reaches the log several ways. A radio failsafe is an ERR

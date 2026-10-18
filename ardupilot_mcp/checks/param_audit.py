@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Parameter audit check.
 
 Deterministic, high-confidence checks for *misconfigured* parameters — values

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Core data model for the ArduPilot log-diagnosis MCP server.
 
 All types are Pydantic models so MCP tools can emit validated ``structuredContent``

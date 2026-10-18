@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Harmonic-notch advice from the data that can actually show motor noise.
 
 Motor and propeller noise sits at tens to hundreds of Hz. The IMU message is usually

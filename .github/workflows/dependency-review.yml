@@ -1,0 +1,21 @@
+# Needs the repository's Dependency graph (Settings → Advanced Security). Once it is on,
+# set the repository variable DEPENDENCY_REVIEW to "true" to run this check.
+name: Dependency review
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    name: Dependency review
+    if: vars.DEPENDENCY_REVIEW == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/dependency-review-action@v5.0.0
+        with:
+          fail-on-severity: high

@@ -2,7 +2,7 @@
 
 ## What this project does and where untrusted input enters
 
-ardupilot-mcp is an offline, read-only MCP server that parses ArduPilot DataFlash flight logs (`.bin`) and parameter files (`.param`) and returns structured diagnoses to an LLM client (Claude Desktop, Cursor, VS Code and similar). It runs locally over stdio by default.
+ardupilot-mcp is an offline, read-only MCP server that parses ArduPilot DataFlash flight logs (`.bin`), MAVLink telemetry logs (`.tlog`) and parameter files (`.param`) and returns structured diagnoses to an LLM client (Claude Desktop, Cursor, VS Code and similar). It runs locally over stdio by default.
 
 Treat the following as adversarial:
 
@@ -34,5 +34,5 @@ Treat the following as adversarial:
 ## Anything to leave alone
 
 - The tool is read-only by design and has no vehicle link; do not report the absence of authentication on the stdio transport.
-- Running the server over a network transport is outside intended use (see SECURITY.md).
+- Running the server over a network transport is outside intended use (see .github/SECURITY.md).
 - Diagnostic accuracy (a wrong or missed finding) is not a security issue.

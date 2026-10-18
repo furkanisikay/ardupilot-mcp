@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """A Markdown report to paste into a forum thread (discuss.ardupilot.org).
 
 Most help requests on the forum start with "here is my log, what happened?". This builds

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Analyze an ArduPilot .bin log from the command line (no MCP client needed).
 
 A thin convenience wrapper around the same engine the MCP server uses, handy for
@@ -36,8 +37,10 @@ def main(path: str) -> int:
     print("=" * 72)
     print(f"  {s.vehicle_type or 'Vehicle'}  {s.firmware_version or ''}".rstrip())
     dur = f"{s.duration_s:.0f}s" if s.duration_s is not None else "unknown"
-    print(f"  duration {dur}  |  {len(s.available_messages)} message types  |  "
-          f"{sum(s.message_counts.values())} records  |  integrity: {s.integrity.value}")
+    print(
+        f"  duration {dur}  |  {len(s.available_messages)} message types  |  "
+        f"{sum(s.message_counts.values())} records  |  integrity: {s.integrity.value}"
+    )
     if s.flight_modes:
         print(f"  flight modes: {' -> '.join(s.flight_modes)}")
     print("=" * 72)
@@ -45,8 +48,9 @@ def main(path: str) -> int:
     report = diagnose(log)
     print(report.summary_text)
     print("-" * 72)
-    print(f"FINDINGS  ({report.critical_count} critical, {report.warn_count} warning, "
-          f"{report.info_count} info)")
+    print(
+        f"FINDINGS  ({report.critical_count} critical, {report.warn_count} warning, {report.info_count} info)"
+    )
     for f in report.findings:
         when = f"  @ {f.evidence.time_start_s:.0f}s" if f.evidence.time_start_s is not None else ""
         print(f"  [{f.severity.value.upper():8}] {f.check_id:10}{when}: {f.title}")

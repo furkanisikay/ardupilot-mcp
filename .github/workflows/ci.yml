@@ -28,11 +28,13 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: pip install -e ".[dev]"
       - name: Ruff (lint)
-        run: ruff check ardupilot_mcp tests
+        run: ruff check ardupilot_mcp tests scripts bench examples
       - name: Ruff (format check)
-        run: ruff format --check ardupilot_mcp tests
+        run: ruff format --check ardupilot_mcp tests scripts bench examples
       - name: Mypy (type-check)
         run: mypy ardupilot_mcp
+      - name: Generated docs and manifests are current
+        run: python scripts/gen_docs.py --check
 
   test:
     name: Test (py${{ matrix.python-version }} · ${{ matrix.os }})
@@ -63,13 +65,16 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install build
+      - run: pip install build twine
       - name: Build sdist + wheel
         run: python -m build
-      - name: Check the package can be imported from the wheel
+      - name: Check the package metadata
+        run: twine check --strict dist/*
+      - name: Install the wheel and start it
         run: |
           pip install dist/*.whl
-          python -c "import ardupilot_mcp; from ardupilot_mcp.server import mcp; print('import OK', ardupilot_mcp.__version__)"
+          ardupilot-mcp --version
+          python -c "from ardupilot_mcp.server import mcp; print('import OK')"
       - uses: actions/upload-artifact@v7
         with:
           name: dist

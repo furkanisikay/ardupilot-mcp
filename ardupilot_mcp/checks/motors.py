@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Motor outputs & balance check.
 
 Reads the ``RCOU`` message: the PWM (microseconds) commanded to each ESC/motor

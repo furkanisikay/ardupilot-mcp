@@ -10,7 +10,8 @@ Claude-specific notes:
 - Use `/add-check` (`.claude/commands/add-check.md`) to scaffold a new diagnostic check
   the right way.
 - After any change, run `ruff check`, `ruff format`, `mypy ardupilot_mcp`, and `pytest`.
-- When you add or rename a check/tool, update `README.md`, `CHANGELOG.md`, and
-  `docs/SOURCES.md` — `tests/test_docs_sync.py` will fail if you don't.
+- After changing a tool, a check or the version, run `python scripts/gen_docs.py`. A new
+  or renamed tool also needs a row in both READMEs; user-visible changes need a
+  `CHANGELOG.md` entry and new thresholds a `docs/SOURCES.md` entry.
 - Never add network access or vehicle actuation: the server is offline and read-only by
   design, and that is its entire safety guarantee.

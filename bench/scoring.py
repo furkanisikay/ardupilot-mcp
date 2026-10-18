@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Score diagnosis reports against labelled real flights.
 
 Each label category maps to the checks whose findings would point a reader at that

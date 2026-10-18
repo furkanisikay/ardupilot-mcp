@@ -1,0 +1,13 @@
+[
+  {"name": "bug", "color": "d73a4a", "description": "Something does not work"},
+  {"name": "diagnosis", "color": "fbca04", "description": "Wrong or missed diagnosis on a real log"},
+  {"name": "enhancement", "color": "a2eeef", "description": "New feature, tool or check"},
+  {"name": "documentation", "color": "0075ca", "description": "Docs only"},
+  {"name": "refactor", "color": "c5def5", "description": "Code change without a behaviour change"},
+  {"name": "tests", "color": "bfd4f2", "description": "Tests only"},
+  {"name": "ci", "color": "ededed", "description": "Workflows and tooling"},
+  {"name": "dependencies", "color": "0366d6", "description": "Dependency updates"},
+  {"name": "breaking", "color": "b60205", "description": "Changes a tool's output or behaviour incompatibly"},
+  {"name": "skip-changelog", "color": "ffffff", "description": "No CHANGELOG entry needed"},
+  {"name": "good first issue", "color": "7057ff", "description": "A small, well-defined task"}
+]

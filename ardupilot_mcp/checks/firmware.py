@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """The firmware's own in-flight verdicts.
 
 ArduPilot already runs detectors in flight and writes their conclusions into the

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Errors, failsafes & mode/event timeline check.
 
 Reconstructs the safety-relevant event narrative of a flight from three

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Shared numeric helpers for checks.
 
 Small, pure, independently tested. Checks compose these instead of re-deriving

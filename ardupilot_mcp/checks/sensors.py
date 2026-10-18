@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Sensor presence & health check (wiring / connection / detection faults).
 
 A sensor that is *configured* in the parameters but produces *no data* in the

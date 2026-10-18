@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 """Battery & power check.
 
 Reads the battery message: pack voltage (``Volt``, V) and current draw
