@@ -66,7 +66,11 @@ class Check(ABC):
                 error=f"{type(exc).__name__}: {exc}",
             )
         return CheckResult(
-            check_id=self.id, title=self.title, status=CheckStatus.RAN, findings=list(findings)
+            check_id=self.id,
+            title=self.title,
+            status=CheckStatus.RAN,
+            findings=list(findings),
+            finding_count=len(findings),
         )
 
     def info(self) -> CheckInfo:

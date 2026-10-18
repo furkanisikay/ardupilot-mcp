@@ -62,3 +62,14 @@ def make_flight_log(
         integrity=integrity,
     )
     return FlightLog(messages=messages or {}, params=params, meta=meta, path=path)
+
+
+def interleave_instances(field: str, streams: dict[int, list[dict]]) -> list[dict]:
+    """Merge per-instance record lists into one stream, as modern firmware logs them.
+
+    Each record is tagged with ``field`` (e.g. ``"IMU"`` for VIBE, ``"I"`` for
+    GPS/MAG, ``"Inst"`` for BAT) and the result is ordered by ``TimeUS``.
+    """
+    merged = [{**rec, field: inst} for inst, recs in streams.items() for rec in recs]
+    merged.sort(key=lambda r: r.get("TimeUS", 0))
+    return merged

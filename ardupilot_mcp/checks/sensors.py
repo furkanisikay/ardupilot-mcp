@@ -39,8 +39,9 @@ RNGFND_TYPE_PARAMS = ("RNGFND_TYPE", "RNGFND1_TYPE")
 # Message families that prove a rangefinder actually logged data.
 RNGFND_MESSAGES = ("RFND", "RNGFND")
 
-# Parameter that declares a GPS receiver. >0 means GPS is configured.
-GPS_TYPE_PARAM = "GPS_TYPE"
+# Parameter that declares a GPS receiver. >0 means GPS is configured. 4.6 renamed
+# GPS_TYPE to GPS1_TYPE (AP_GPS.cpp: AP_SUBGROUPINFO(params[0], "1_", ...)).
+GPS_TYPE_PARAMS = ("GPS_TYPE", "GPS1_TYPE")
 GPS_MESSAGE = "GPS"
 
 # Compass: MAG.Health is 1 (healthy) / 0 (unhealthy) per sample. A healthy
@@ -93,8 +94,8 @@ class SensorsCheck(Check):
     # -- GPS: configured (GPS_TYPE>0) but no GPS data ------------------------
 
     def _gps_finding(self, log: FlightLog) -> list[Finding]:
-        gps_type = log.params.get(GPS_TYPE_PARAM)
-        if not (gps_type and gps_type > 0):
+        gps_type = self._configured_type(log, GPS_TYPE_PARAMS)
+        if gps_type is None:
             return []  # not configured -> nothing to check
         if log.has(GPS_MESSAGE):
             return []  # configured and logged data -> healthy
@@ -104,7 +105,7 @@ class SensorsCheck(Check):
                 self.id,
                 Severity.WARN,
                 "GPS configured but no data logged",
-                f"A GPS is configured (GPS_TYPE {t}) but no GPS data was logged — the receiver "
+                f"A GPS is configured (GPS type {t}) but no GPS data was logged — the receiver "
                 "produced no data. Check the GPS connection.",
                 recommendation=(
                     "Check the GPS cable and connector and confirm the receiver is wired to the "
@@ -120,39 +121,43 @@ class SensorsCheck(Check):
     def _compass_health_finding(self, log: FlightLog) -> list[Finding]:
         if not log.has("MAG"):
             return []
-        times, health = log.series("MAG", "Health")
-        if health.size == 0:
-            return []
-        unhealthy_frac = float(np.count_nonzero(health == 0)) / float(health.size)
-        if unhealthy_frac <= MAG_UNHEALTHY_FRACTION:
-            return []
-        pct = unhealthy_frac * 100.0
-        # Time window of the first/last unhealthy sample for context.
-        bad_idx = np.nonzero(health == 0)[0]
-        t0 = float(times[bad_idx[0]]) if times.size and bad_idx.size else None
-        t1 = float(times[bad_idx[-1]]) if times.size and bad_idx.size else None
-        return [
-            make_finding(
-                self.id,
-                Severity.WARN,
-                "Compass reported unhealthy",
-                f"The compass (MAG.Health) reported unhealthy for {pct:.0f}% of the flight "
-                f"({int(unhealthy_frac * health.size)} of {int(health.size)} samples). A healthy "
-                "compass reads healthy almost always, so a sustained unhealthy reading points to a "
-                "failing or disconnected magnetometer.",
-                recommendation=(
-                    "Inspect the compass wiring/connector (especially external compasses), check for "
-                    "interference, and confirm the magnetometer is detected and calibrated."
-                ),
-                time_start_s=t0,
-                time_end_s=t1,
-                message_types=["MAG"],
-                samples={
-                    "unhealthy_fraction": round(unhealthy_frac, 3),
-                    "mag_samples": int(health.size),
-                },
+        insts = log.instances("MAG")
+        out: list[Finding] = []
+        for inst in insts:
+            times, health = log.series("MAG", "Health", inst)
+            if health.size == 0:
+                continue
+            unhealthy_frac = float(np.count_nonzero(health == 0)) / float(health.size)
+            if unhealthy_frac <= MAG_UNHEALTHY_FRACTION:
+                continue
+            pct = unhealthy_frac * 100.0
+            # Time window of the first/last unhealthy sample for context.
+            bad_idx = np.nonzero(health == 0)[0]
+            label = f"Compass {inst + 1}" if len(insts) > 1 else "The compass"
+            out.append(
+                make_finding(
+                    self.id,
+                    Severity.WARN,
+                    "Compass reported unhealthy" + (f" (compass {inst + 1})" if len(insts) > 1 else ""),
+                    f"{label} (MAG.Health) reported unhealthy for {pct:.0f}% of the flight "
+                    f"({int(unhealthy_frac * health.size)} of {int(health.size)} samples). A healthy "
+                    "compass reads healthy almost always, so a sustained unhealthy reading points to a "
+                    "failing or disconnected magnetometer.",
+                    recommendation=(
+                        "Inspect the compass wiring/connector (especially external compasses), check for "
+                        "interference, and confirm the magnetometer is detected and calibrated."
+                    ),
+                    time_start_s=float(times[bad_idx[0]]),
+                    time_end_s=float(times[bad_idx[-1]]),
+                    message_types=["MAG"],
+                    samples={
+                        "unhealthy_fraction": round(unhealthy_frac, 3),
+                        "mag_samples": int(health.size),
+                        "compass_instance": inst,
+                    },
+                )
             )
-        ]
+        return out
 
     # -- helpers -------------------------------------------------------------
 

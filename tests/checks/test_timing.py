@@ -96,19 +96,33 @@ def test_small_jitter_below_threshold_no_findings():
 
 
 def test_pm_long_loops_emits_warn():
-    pm = build_series(0.0, 1.0, NLon=[0.0, 2.0, 3.0, 0.0, 1.0], Load=[30.0] * 5)
+    # 60 of 400 loops (15 %) overran in one window -> above the 10 % line.
+    pm = build_series(0.0, 1.0, NLon=[0.0, 2.0, 60.0, 0.0, 1.0], NL=[400.0] * 5, Load=[30.0] * 5)
     findings = TimingCheck().run(make_flight_log({"PM": pm}))
     pm_findings = [f for f in findings if "long loop" in f.title.lower()]
     assert pm_findings, "expected a PM long-loop finding"
     f = pm_findings[0]
     assert f.severity == Severity.WARN
     assert f.evidence.message_types == ["PM"]
-    # 0 + 2 + 3 + 0 + 1 = 6 long loops.
-    assert f.evidence.samples["long_loops"] == 6
+    assert f.evidence.samples["long_loops_total"] == 63
+    assert f.evidence.samples["max_long_loop_pct"] == 15.0
+
+
+def test_pm_a_few_long_loops_are_normal():
+    # Real healthy logs: a handful of long loops per 400-loop window (< 6 %).
+    pm = build_series(0.0, 1.0, NLon=[0.0, 2.0, 3.0, 0.0, 1.0], NL=[400.0] * 5)
+    assert [f for f in TimingCheck().run(make_flight_log({"PM": pm})) if "long loop" in f.title.lower()] == []
+
+
+def test_pm_legacy_nloop_field_and_marginal_is_info():
+    # Pre-4.x field name NLoop; 8 % in a single window -> INFO only.
+    pm = build_series(0.0, 1.0, NLon=[20.0, 0.0, 0.0], NLoop=[250.0] * 3)
+    f = [x for x in TimingCheck().run(make_flight_log({"PM": pm})) if "long loop" in x.title.lower()]
+    assert f and f[0].severity == Severity.INFO
 
 
 def test_pm_zero_long_loops_no_finding():
-    pm = build_series(0.0, 1.0, NLon=[0.0] * 5, Load=[30.0] * 5)
+    pm = build_series(0.0, 1.0, NLon=[0.0] * 5, NL=[400.0] * 5, Load=[30.0] * 5)
     findings = TimingCheck().run(make_flight_log({"PM": pm}))
     assert [f for f in findings if "long loop" in f.title.lower()] == []
 
@@ -124,7 +138,7 @@ def test_gap_and_pm_combined():
     # Both signals present at once -> both kinds of finding emitted.
     seg1 = build_series(0.0, 50.0, Roll=[0.0] * 100, Pitch=[0.0] * 100)
     seg2 = build_series(4.0, 50.0, Roll=[0.0] * 100, Pitch=[0.0] * 100)
-    pm = build_series(0.0, 1.0, NLon=[5.0, 0.0], Load=[40.0, 40.0])
+    pm = build_series(0.0, 1.0, NLon=[50.0, 0.0], NL=[400.0, 400.0], Load=[40.0, 40.0])
     findings = TimingCheck().run(make_flight_log({"ATT": seg1 + seg2, "PM": pm}))
     titles = " ".join(f.title.lower() for f in findings)
     assert "gap" in titles

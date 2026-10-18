@@ -122,3 +122,53 @@ def test_list_checks_includes_vibration():
 def test_missing_file_raises():
     with pytest.raises(FileNotFoundError):
         analyze_log("nope_does_not_exist.bin")
+
+
+# ---- query_timeseries: instances and alignment (in-memory logs) ----
+
+
+@pytest.fixture
+def mem_log(monkeypatch):
+    from ardupilot_mcp import server
+    from tests.helpers import build_series, interleave_instances, make_flight_log
+
+    vibe = interleave_instances(
+        "IMU",
+        {
+            0: build_series(0.0, 10.0, VibeX=[1.0] * 20, Clip=[0] * 20),
+            1: build_series(0.0, 10.0, VibeX=[9.0] * 20, Clip=[0] * 20),
+        },
+    )
+    att = build_series(0.0, 10.0, Roll=list(range(10)))
+    del att[3]["Roll"]  # one record without the field
+    log = make_flight_log({"VIBE": vibe, "ATT": att})
+    monkeypatch.setattr(server, "_load", lambda _p: log)
+    return log
+
+
+def test_timeseries_returns_one_instance(mem_log):
+    r = query_timeseries("x.bin", "VIBE", ["VibeX"])
+    assert r.available_instances == [0, 1]
+    assert r.instance == 0
+    assert set(r.series["VibeX"]) == {1.0}
+    r1 = query_timeseries("x.bin", "VIBE", ["VibeX"], instance=1)
+    assert set(r1.series["VibeX"]) == {9.0}
+    assert len(r1.times_s) == 20
+
+
+def test_timeseries_stays_aligned_and_windowed_with_missing_field(mem_log):
+    r = query_timeseries("x.bin", "ATT", ["Roll"], start_s=0.2, end_s=0.5)
+    assert r.times_s == pytest.approx([0.2, 0.3, 0.4, 0.5])
+    assert r.series["Roll"] == [2.0, None, 4.0, 5.0]
+
+
+def test_timeseries_reports_unknown_field(mem_log):
+    r = query_timeseries("x.bin", "ATT", ["Nope"])
+    assert r.note and "Nope" in r.note and "Roll" in r.note
+    assert set(r.series["Nope"]) == {None}
+
+
+def test_report_lists_each_finding_once(sample_log):
+    rep = analyze_log(sample_log)
+    assert all(r.findings == [] for r in rep.results)
+    assert sum(r.finding_count for r in rep.results) == len(rep.findings)

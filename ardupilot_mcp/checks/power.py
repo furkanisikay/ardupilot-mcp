@@ -45,6 +45,18 @@ HIGH_CURRENT_A = 20.0
 # Only surface a sag INFO if the spread under load is at least this many volts.
 SAG_MIN_V = 1.0
 
+# Flight-controller 5 V rail (POWR.Vcc). ArduPilot's LogAnalyzer TestVCC flagged a
+# minimum below 4.6 V (FAIL) and a spread above 0.3 V (WARN); the wiki says 0.10-0.15 V
+# variation is normal. Evaluated over the armed window only (USB/bench power before
+# arming is irrelevant).
+# https://github.com/ArduPilot/ardupilot/blob/Copter-4.0.7/Tools/LogAnalyzer/tests/TestVCC.py
+# https://ardupilot.org/copter/docs/common-diagnosing-problems-using-logs.html
+VCC_MIN_V = 4.6
+VCC_MAX_SPREAD_V = 0.3
+# Design choice: a median outside this is not a 5 V rail reading, so skip.
+VCC_PLAUSIBLE_MIN_V = 3.0
+VCC_PLAUSIBLE_MAX_V = 6.0
+
 # Plausible pack-voltage range (V). Outside this the log has no real battery
 # monitor or an odd scale (e.g. raw ADC reading thousands), and any "drop" is
 # noise — skip power analysis rather than emit nonsense.
@@ -57,9 +69,10 @@ class PowerCheck(Check):
     id = "power"
     title = "Battery & power"
     category = "power"
-    requires = set()  # resolved dynamically in applicable() (BAT or CURR)
+    requires = set()  # resolved dynamically in applicable() (BAT/CURR and/or POWR)
     description = (
-        "Pack voltage vs failsafe thresholds, sudden brown-out drops, and sag under load from BAT/CURR."
+        "Per-battery voltage vs failsafe thresholds, sudden brown-out drops and sag under load (BAT/CURR), "
+        "plus flight-controller board voltage (POWR.Vcc)."
     )
 
     def _source(self, log: FlightLog) -> str | None:
@@ -70,30 +83,91 @@ class PowerCheck(Check):
         return None
 
     def applicable(self, log: FlightLog) -> tuple[bool, str | None]:
-        if self._source(log) is None:
-            return False, "no battery message (BAT/CURR) logged"
+        if self._source(log) is None and not log.has("POWR"):
+            return False, "no battery (BAT/CURR) or board power (POWR) message logged"
         return True, None
 
     def run(self, log: FlightLog) -> list[Finding]:
-        src = self._source(log)
-        if src is None:
-            return []
-        # Guard against logs with no real battery monitor / an odd voltage scale.
-        _, volts = log.series(src, "Volt")
-        if volts.size:
-            med = float(np.median(volts))
-            if med < PLAUSIBLE_MIN_V or med > PLAUSIBLE_MAX_V:
-                return []
         findings: list[Finding] = []
-        findings.extend(self._min_voltage_findings(log, src))
-        findings.extend(self._sudden_drop_findings(log, src))
-        findings.extend(self._sag_findings(log, src))
+        src = self._source(log)
+        if src is not None:
+            # Every battery monitor is its own pack with its own failsafe params
+            # (BATT_* for the first, BATT2_* for the second, ...): judging a 2S
+            # payload battery against the 4S main pack's thresholds is meaningless.
+            insts = log.instances(src)
+            for inst in insts:
+                # Guard against monitors with no real sensor / an odd voltage scale.
+                _, volts = log.series(src, "Volt", inst)
+                if volts.size:
+                    med = float(np.median(volts))
+                    if med < PLAUSIBLE_MIN_V or med > PLAUSIBLE_MAX_V:
+                        continue
+                for f in (
+                    self._min_voltage_findings(log, src, inst)
+                    + self._sudden_drop_findings(log, src, inst)
+                    + self._sag_findings(log, src, inst)
+                ):
+                    if len(insts) > 1:
+                        f.title += f" (battery {inst + 1})"
+                        f.evidence.samples["battery_instance"] = inst
+                    findings.append(f)
+        findings.extend(self._vcc_findings(log))
         return findings
+
+    # -- flight-controller board voltage (POWR.Vcc) ---------------------------
+
+    def _vcc_findings(self, log: FlightLog) -> list[Finding]:
+        times, vcc = log.clip_to_window(*log.series("POWR", "Vcc"), log.armed_window())
+        if vcc.size < 2:
+            return []
+        med = float(np.median(vcc))
+        if not VCC_PLAUSIBLE_MIN_V <= med <= VCC_PLAUSIBLE_MAX_V:
+            return []  # not a 5 V rail reading (unpowered sensor / other scale)
+        vmin, vmax = float(np.min(vcc)), float(np.max(vcc))
+        spread = vmax - vmin
+        t_min = float(times[int(np.argmin(vcc))])
+        samples = {"min_vcc": round(vmin, 3), "max_vcc": round(vmax, 3), "spread_v": round(spread, 3)}
+        if vmin < VCC_MIN_V:
+            return [
+                make_finding(
+                    self.id,
+                    Severity.CRITICAL,
+                    "Flight-controller board voltage (Vcc) brown-out",
+                    f"The flight controller's board supply (POWR.Vcc) fell to {vmin:.2f} V while armed, "
+                    f"below the {VCC_MIN_V:.1f} V minimum. A 5 V rail this low can brown out or reset the "
+                    "autopilot and its sensors mid-flight.",
+                    recommendation=(
+                        "Check the power module / BEC feeding the autopilot and the servo rail; avoid powering "
+                        "servos or peripherals from the same regulator."
+                    ),
+                    time_start_s=t_min,
+                    time_end_s=t_min,
+                    message_types=["POWR"],
+                    samples={**samples, "min_threshold_v": VCC_MIN_V},
+                )
+            ]
+        if spread > VCC_MAX_SPREAD_V:
+            return [
+                make_finding(
+                    self.id,
+                    Severity.WARN,
+                    "Flight-controller board voltage (Vcc) unstable",
+                    f"The board supply (POWR.Vcc) varied by {spread:.2f} V while armed ({vmin:.2f}-{vmax:.2f} V), "
+                    f"more than {VCC_MAX_SPREAD_V:.1f} V. Variations of 0.10-0.15 V are normal; larger ripple "
+                    "suggests other devices sharing the autopilot's supply are dragging it down.",
+                    recommendation="Give the autopilot a dedicated, adequately rated 5 V supply (power module/BEC).",
+                    time_start_s=float(times[0]),
+                    time_end_s=float(times[-1]),
+                    message_types=["POWR"],
+                    samples={**samples, "spread_threshold_v": VCC_MAX_SPREAD_V},
+                )
+            ]
+        return []
 
     # -- minimum voltage vs configured failsafe thresholds -------------------
 
-    def _min_voltage_findings(self, log: FlightLog, src: str) -> list[Finding]:
-        times, volts = log.series(src, "Volt")
+    def _min_voltage_findings(self, log: FlightLog, src: str, inst: int = 0) -> list[Finding]:
+        times, volts = log.series(src, "Volt", inst)
         if volts.size == 0:
             return []
         vmin = safe_min(volts)
@@ -103,7 +177,7 @@ class PowerCheck(Check):
         idx = int(np.argmin(volts))
         t_at_min = float(times[idx]) if idx < times.size else None
 
-        crt, low, source = self._thresholds(log, volts)
+        crt, low, source = self._thresholds(log, volts, inst)
 
         # Critical takes precedence over low.
         if crt is not None and vmin <= crt:
@@ -140,19 +214,20 @@ class PowerCheck(Check):
             ]
         return []
 
-    def _thresholds(self, log: FlightLog, volts) -> tuple[float | None, float | None, str]:
+    def _thresholds(self, log: FlightLog, volts, inst: int = 0) -> tuple[float | None, float | None, str]:
         """Resolve (critical, low) voltage thresholds and a human description.
 
         Prefers the vehicle's configured BATT_CRT_VOLT / BATT_LOW_VOLT; when those
         aren't set, derives them from the estimated battery cell count so the check
         still works on logs without a configured failsafe.
         """
-        crt = log.params.get("BATT_CRT_VOLT")
-        low = log.params.get("BATT_LOW_VOLT")
+        prefix = "BATT_" if inst == 0 else f"BATT{inst + 1}_"
+        crt = log.params.get(prefix + "CRT_VOLT")
+        low = log.params.get(prefix + "LOW_VOLT")
         crt = crt if (crt and crt > 0.0) else None
         low = low if (low and low > 0.0) else None
         if crt is not None or low is not None:
-            return crt, low, "configured BATT_*_VOLT failsafe"
+            return crt, low, f"configured {prefix}*_VOLT failsafe"
         cells = meta.estimate_cells(safe_max(volts))
         if cells:
             return (
@@ -164,8 +239,8 @@ class PowerCheck(Check):
 
     # -- sudden fast voltage drop (connector dropout / brown-out) ------------
 
-    def _sudden_drop_findings(self, log: FlightLog, src: str) -> list[Finding]:
-        times, volts = log.series(src, "Volt")
+    def _sudden_drop_findings(self, log: FlightLog, src: str, inst: int = 0) -> list[Finding]:
+        times, volts = log.series(src, "Volt", inst)
         if volts.size < 2:
             return []
         # Largest fast drop: most-negative delta over a short dt.
@@ -224,12 +299,12 @@ class PowerCheck(Check):
 
     # -- voltage sag under load (informational) ------------------------------
 
-    def _sag_findings(self, log: FlightLog, src: str) -> list[Finding]:
+    def _sag_findings(self, log: FlightLog, src: str, inst: int = 0) -> list[Finding]:
         # Need both voltage and current to talk about sag "under load".
         if not log.has(src):
             return []
-        v_times, volts = log.series(src, "Volt")
-        c_times, curr = log.series(src, "Curr")
+        v_times, volts = log.series(src, "Volt", inst)
+        c_times, curr = log.series(src, "Curr", inst)
         if volts.size == 0 or curr.size == 0:
             return []
         # Volt and Curr come from the same BAT records, so align by the shorter

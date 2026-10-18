@@ -90,7 +90,12 @@ class CheckResult(BaseModel):
         default=None, description="Why the check was skipped, e.g. 'VIBE not logged'."
     )
     error: str | None = Field(default=None, description="Error message if the check raised.")
-    findings: list[Finding] = Field(default_factory=list)
+    finding_count: int = Field(default=0, description="Number of findings this check produced.")
+    findings: list[Finding] = Field(
+        default_factory=list,
+        description="The check's findings. Empty inside DiagnosisReport.results: the report lists every "
+        "finding once, in DiagnosisReport.findings (filter by check_id), to keep the payload small.",
+    )
 
 
 class LogIntegrity(str, Enum):
@@ -111,7 +116,9 @@ class LogSummary(BaseModel):
     available_messages: list[str] = Field(default_factory=list)
     message_counts: dict[str, int] = Field(default_factory=dict)
     flight_modes: list[str] = Field(default_factory=list)
-    max_altitude_m: float | None = None
+    max_altitude_m: float | None = Field(
+        default=None, description="Highest altitude above home/take-off (m) — not AMSL."
+    )
     integrity: LogIntegrity = LogIntegrity.OK
     integrity_detail: str | None = None
 
@@ -171,8 +178,17 @@ class TimeseriesResult(BaseModel):
     path: str
     message_type: str
     fields: list[str]
+    instance: int | None = Field(
+        default=None, description="Sensor/core instance returned (multi-instance messages only)."
+    )
+    available_instances: list[int] = Field(
+        default_factory=list, description="Instances this message type has in the log (e.g. one per IMU/GPS)."
+    )
     times_s: list[float] = Field(default_factory=list)
-    series: dict[str, list[float]] = Field(default_factory=dict)
+    series: dict[str, list[float | None]] = Field(
+        default_factory=dict,
+        description="One value per entry of times_s (aligned by index); null where a record lacks the field.",
+    )
     sample_count: int = 0
     downsampled: bool = False
     note: str | None = None

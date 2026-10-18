@@ -6,6 +6,61 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- **Multi-instance sensors were interleaved.** Firmware 4.x logs every IMU, GPS, compass,
+  battery and EKF core under one message name (told apart by an instance field). Checks now
+  judge each instance on its own samples, using the log's own FMTU `#` declarations. This
+  removes false alarms such as a CRITICAL "GPS lost 3D fix" caused by a second receiver,
+  a CRITICAL "battery critical voltage" caused by a 2S payload pack on the second monitor,
+  and "unstable compass" caused by two healthy compasses with different field strengths.
+- **Accelerometer clipping was never detected on 4.x logs**: modern `VIBE` has one `Clip`
+  counter per IMU (the check only read the pre-4.0 `Clip0/1/2`). Counter resets are handled.
+- `timing`: "long loops" warned whenever `PM.NLon > 0`, i.e. on almost every healthy log. It
+  now judges the long-loop percentage per PM window (`NLon/NL`), as ArduPilot's LogAnalyzer
+  did, and cites `PM.Ex`.
+- Flight modes were decoded with the Copter table for every vehicle (a Plane in MANUAL was
+  reported as STABILIZE). Plane, Rover and Sub have their own tables; Copter gains TURTLE.
+- `max_altitude_m` mixed AMSL (`POS/GPS.Alt`) with relative altitude; it is now the maximum
+  altitude above home (`POS.RelHomeAlt`, else `CTUN.Alt`/`BARO.Alt`).
+- `rcin`: RC loss is judged only while armed (a receiver with no transmitter on the bench is
+  no longer a CRITICAL), and uses `RCI2.Flags` (no valid input / RC failsafe) when logged —
+  most receivers hold the last values on link loss, which the PWM heuristic cannot see.
+- `motors`: motor outputs come from `SERVOn_FUNCTION` (or the frame's motor count), so a
+  gimbal servo is no longer a "motor imbalance"; only armed time is averaged, so a real
+  imbalance is no longer diluted by disarmed samples.
+- `query_timeseries`: when a field was missing from some records, the time window was
+  silently not applied and values no longer lined up with `times_s`. Values are now aligned
+  by record (`null` where a record lacks the field) and unknown fields are reported.
+- `sensors` recognises `GPS1_TYPE` (4.6 renamed `GPS_TYPE`); compass health is per compass.
+- NaN/inf samples no longer poison max/mean comparisons (they are dropped from series).
+
+### Added
+- `power`: flight-controller board voltage (`POWR.Vcc`) — CRITICAL below 4.6 V while armed,
+  WARN on more than 0.3 V of ripple. Per-battery thresholds (`BATT2_*` for the second pack).
+- `compass`: throttle-correlated interference estimate (% field change at full throttle, the
+  quantity CompassMot shows), graded with ArduPilot's 30 % / 60 % bands.
+- `ekf`: per-core evaluation; full severity only while the core was primary (`XKF4.PI`),
+  standby-core strain is INFO, and an EKF lane switch is reported.
+- `integrity`: "Recording ended while armed" — the log stops with no disarm, the signature of
+  an in-flight power loss or crash.
+- `query_timeseries(..., instance=)` and `available_instances` for multi-instance messages.
+- `FlightLog.instances()`, `series(..., instance=)`, `armed_intervals()`, `armed_mask()`.
+- `tests/test_scenarios.py`: 24 labelled fault-injection flights written in Copter-4.6.3's
+  exact log format (dual GPS, dual compass, three IMUs, two EKF cores) run through the full
+  pipeline; a clean flight that raises a single warning fails CI.
+
+### Changed
+- **Parsing is ~20x faster and uses ~4x less memory.** Messages are decoded into numpy
+  columns straight from pymavlink's own index instead of one Python object per record (a
+  20-minute log with 400 Hz IMU: 26 s / 1.6 GB -> 1.2 s / 0.4 GB). The decoder is checked
+  field-for-field against pymavlink and falls back to it for unusual layouts. Raw sensor
+  dumps no check reads (`ISBH/ISBD/ACC/GYR`) are not loaded.
+- `analyze_log` lists each finding once (in `findings`); `results[]` now carries
+  `finding_count` instead of a second copy, roughly halving the payload sent to the LLM.
+- The server keeps at most two parsed logs in memory (LRU) instead of every log ever opened.
+- A half-written final record (what unplugging the battery after landing leaves) is dropped
+  without flagging the log as truncated.
+
 ## [0.1.3] — 2026-10-17
 
 ### Fixed

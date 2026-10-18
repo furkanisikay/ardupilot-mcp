@@ -287,7 +287,7 @@ The **Add to LM Studio** button above; or `~/.lmstudio/mcp.json` (Windows: `%USE
 | `log_summary(path)` | Vehicle, firmware, duration, message counts, flight modes, max altitude, integrity. |
 | `vehicle_profile(path)` | **Physical/architecture profile**: frame & type, motor count, battery cells/capacity, hover throttle, **power margin** and thrust-to-weight. For physically-grounded reasoning. |
 | `list_events(path, kinds?, start_s?, end_s?)` | Decoded `ERR`/`MODE`/`EV`/`MSG` timeline. |
-| `query_timeseries(path, message_type, fields, start_s?, end_s?, max_points?)` | Decimated numeric series for drilling into a finding. |
+| `query_timeseries(path, message_type, fields, start_s?, end_s?, max_points?, instance?)` | Decimated numeric series for drilling into a finding. Multi-instance messages (per IMU/GPS/compass/battery/EKF core) return one `instance` at a time; `available_instances` lists them. |
 | `get_params(path, name_glob?)` | Parameter values from the log's PARM dump (e.g. `INS_HNTCH_*`), plus the total count, a version-specific metadata link to interpret them, and a note if the snapshot looks incomplete. |
 | `load_param_file(path, name_glob?)` | Read a user-exported `.param`/`.params` file — the authoritative complete config, for when the log's snapshot is truncated or to compare flown-vs-current. |
 | `recommend_tuning(path, area?)` | Advisory tuning (harmonic notch from gyro FFT, PID, autotune). **Recommendation only — never applied.** |
@@ -313,7 +313,7 @@ Reading an ArduPilot `.bin` is an expert bottleneck: you filter `ERR` rows, comp
 ## How it works
 
 ```
-.bin ──▶ parser.py (pymavlink DFReader) ──▶ FlightLog (pure domain model)
+.bin ──▶ parser.py (pymavlink index + numpy) ──▶ FlightLog (pure, columnar domain model)
                                                │
                                                ▼
                        checks/ registry ──▶ Check plugins (one per concern)
@@ -326,7 +326,8 @@ Reading an ArduPilot `.bin` is an expert bottleneck: you filter `ERR` rows, comp
 ```
 
 - **Core principle:** the deterministic engine is the single source of truth; the LLM only *explains* and cites — it never decides.
-- **`FlightLog`** is a pure, `pymavlink`-free domain model, so checks and their tests run against synthetic logs without a real `.bin`.
+- **`FlightLog`** is a pure, `pymavlink`-free, columnar (numpy) domain model, so checks and their tests run against synthetic logs without a real `.bin`. The parser bulk-decodes messages from pymavlink's own index (a 20-minute log with 400 Hz IMU takes ~1.2 s), and is tested field-for-field against pymavlink's own decoding.
+- **Multi-instance aware:** 4.x firmware logs every IMU, GPS, compass, battery and EKF core under one message name with an instance field. Each instance is judged on its own samples and the primary sensor sets the severity (primary EKF core from `XKF4.PI`; a single-receiver fault is a warning while the other GPS keeps its fix).
 - **Checks** are independent, registry-registered plugins (`@register_check`). Adding one is a single new module. The orchestrator skips a check cleanly when its data wasn't logged, when it doesn't apply to the vehicle kind (e.g. motor-balance on a heli/plane), and isolates any check that raises.
 - The check catalogue has two families. **Flight dynamics:** events/errors, EKF health, vibration, power (BAT/CURR), GPS (fix/sats/HDOP, scoped to the armed window), compass, attitude tracking, motor balance, RC-link loss, timing. **Configuration & setup** (because many crashes are setup mistakes, not flight events): risky parameters (disabled arming checks/failsafes), a **parameter audit** of contradictory/disabled/implausible values, calibration (large/zero compass offsets), configured-but-silent sensors (wiring/connection faults), and the firmware's own pre-arm/startup warnings. Plus advisory tuning.
 - It is **vehicle-aware** (copter / heli / plane / rover): multirotor-specific checks don't run on a heli's swashplate servos or a plane's control surfaces. Validated against 40 real forum logs across Copter 3.2–4.6, Plane, QuadPlane, Heli and Rover.
@@ -358,7 +359,8 @@ Checks are tested against synthetic in-memory logs (`tests/helpers.py`) and a sy
 
 - **Toilet-bowl / compass-heading faults** aren't detected yet — they need circular-position-drift analysis (planned), not just field-magnitude stability.
 - A **genuinely corrupt log** (e.g. a bit-flipped message format) fails to parse with a clear error rather than partial recovery.
-- Large logs (3–4 MB / ~100k records) take ~12–15 s to parse; the MCP server caches a parsed log by path+mtime, so only the first tool call pays that cost.
+- An 85 MB log with ~1.6 M records parses in ~1.2 s using ~0.4 GB; the server caches the last two parsed logs by path+mtime.
+- In pre-4.0 logs, separately named secondary sensors (`GPS2`, `MAG2`, `IMU2`, `BAT2`) are not yet merged as instances; only the primary sensor is judged there.
 
 ## Roadmap
 

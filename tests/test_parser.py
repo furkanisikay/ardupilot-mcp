@@ -115,3 +115,53 @@ def test_garbage_tail_flagged_truncated(tmp_path):
     assert log.count("ATT") >= 1  # good prefix still parsed
     assert log.meta.integrity == LogIntegrity.TRUNCATED
     assert "truncated" in (log.meta.integrity_detail or "").lower()
+
+
+# ---- vectorised decoder == pymavlink's own per-message decoding ----
+
+
+def _legacy(path: str):
+    """The same log decoded record-by-record through pymavlink (the fallback path)."""
+    import contextlib
+    import io
+
+    from pymavlink import DFReader
+
+    from ardupilot_mcp.flight_log import FlightLog
+    from ardupilot_mcp.parser import _read_records
+
+    with contextlib.redirect_stderr(io.StringIO()):
+        messages, _, _ = _read_records(DFReader.DFReader_binary(path))
+    return FlightLog(messages=messages)
+
+
+@pytest.mark.parametrize("scenario", ["clean_flight", "fault_crash_err", "gps2_never_fixes"])
+def test_fast_decoder_matches_pymavlink_field_for_field(scenario, tmp_path):
+    from tests.scenarios.flights import SCENARIOS, write_flight
+
+    s = next(x for x in SCENARIOS if x.name == scenario)
+    path = str(tmp_path / "log.bin")
+    write_flight(path, s.inject, duration=30.0)
+    fast, ref = parse_bin(path), _legacy(path)
+    assert fast.message_counts() == ref.message_counts()
+    for mtype in ref.available_messages:
+        for a, b in zip(fast.get(mtype), ref.get(mtype), strict=True):
+            assert a.keys() == b.keys(), mtype
+            for k, v in b.items():
+                if isinstance(v, str):
+                    assert a[k] == v, (mtype, k)
+                else:
+                    assert a[k] == pytest.approx(v, rel=1e-9, abs=1e-12), (mtype, k)
+
+
+def test_partial_final_record_is_dropped_not_flagged(tmp_path):
+    # Unplugging the battery after landing leaves half a record at EOF; that alone
+    # is not a crash signature, so integrity stays OK and the record is dropped.
+    from tests.scenarios.flights import write_flight
+
+    path = tmp_path / "log.bin"
+    write_flight(str(path), {}, duration=12.0)
+    data = path.read_bytes()
+    path.write_bytes(data[:-7])
+    log = parse_bin(str(path))
+    assert log.meta.integrity == LogIntegrity.OK

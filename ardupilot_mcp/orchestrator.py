@@ -43,7 +43,11 @@ def diagnose(log: FlightLog, checks: list[Check] | None = None) -> DiagnosisRepo
 
     findings: list[Finding] = []
     for r in results:
+        r.finding_count = len(r.findings)
         findings.extend(r.findings)
+        # Each finding is reported once, in the top-level list: duplicating it in
+        # results[] doubled the payload (and the LLM's token bill) for no information.
+        r.findings = []
     findings.sort(key=_finding_sort_key)
 
     # Attach authoritative ArduPilot doc references to each finding (vehicle-aware).

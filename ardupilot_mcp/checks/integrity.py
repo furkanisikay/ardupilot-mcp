@@ -40,9 +40,48 @@ class IntegrityCheck(Check):
     # Meta-check on the parse result itself - no message stream is required, so
     # it always runs (even on an otherwise empty/garbage log).
     requires: set[str] = set()
-    description = "Reports whether the log parsed cleanly or was truncated/partial."
+    description = "Reports whether the log parsed cleanly, was truncated/partial, or stopped while armed."
 
     def run(self, log: FlightLog) -> list[Finding]:
+        return self._parse_findings(log) + self._ended_armed(log)
+
+    @staticmethod
+    def _ended_armed(log: FlightLog) -> list[Finding]:
+        """The recording stops while the vehicle is still armed (no DISARMED event).
+
+        A normal flight ends with a disarm; a log that stops mid-armed is the
+        signature of an in-flight power loss, brown-out or crash. Design choice: the
+        last armed interval must reach the end of the log (within END_SLACK_S).
+        """
+        ivs = log.armed_intervals()
+        if not ivs or log.meta.duration_s is None:
+            return []
+        disarm_times = [
+            float(r["timestamp"]) for r in log.get("EV") if r.get("Id") == 11 and "timestamp" in r
+        ] or [float(r["timestamp"]) for r in log.get("ARM") if r.get("ArmState") == 0 and "timestamp" in r]
+        start, _end = ivs[-1]
+        if any(t >= start for t in disarm_times):
+            return []
+        return [
+            make_finding(
+                "integrity",
+                Severity.WARN,
+                "Recording ended while armed",
+                f"The vehicle armed at t={start:.0f}s and the log stops at t={log.meta.duration_s:.0f}s "
+                "without a disarm. A flight normally ends with a disarm, so the recording was cut while "
+                "the motors were armed — typical of an in-flight power loss, brown-out or crash.",
+                recommendation=(
+                    "Look at the last seconds of the log (power, attitude, motor outputs); check battery "
+                    "connector, power module and the SD card."
+                ),
+                time_start_s=start,
+                time_end_s=log.meta.duration_s,
+                message_types=["EV"],
+                samples={"armed_at_s": round(start, 1), "log_end_s": round(log.meta.duration_s, 1)},
+            )
+        ]
+
+    def _parse_findings(self, log: FlightLog) -> list[Finding]:
         integrity = log.meta.integrity
         detail = log.meta.integrity_detail
 

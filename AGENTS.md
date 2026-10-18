@@ -33,8 +33,9 @@ language, what went wrong — grounded in a deterministic check engine, not gues
 
 ```
 ardupilot_mcp/
-  parser.py        DataFlash .bin -> FlightLog   (the ONLY pymavlink-dependent module)
-  flight_log.py    FlightLog domain model (pure; checks/tests use this, no real .bin needed)
+  parser.py        DataFlash .bin -> FlightLog   (the ONLY pymavlink-dependent module;
+                   numpy-decodes columns from pymavlink's index, falls back to recv_match)
+  flight_log.py    FlightLog domain model (pure, columnar; checks/tests use this, no real .bin needed)
   model.py         Pydantic models (Finding, DiagnosisReport, VehicleProfile, ...)
   checks/          one module per check; @register_check auto-registers it
     base.py        Check ABC + registry (id, requires, vehicles, run())
@@ -48,6 +49,8 @@ ardupilot_mcp/
   server.py        FastMCP server + the read-only MCP tools
   __main__.py      `python -m ardupilot_mcp` (stdio)
 tests/             pytest; synthetic logs via tests/helpers.py + tests/synth_bin.py
+tests/scenarios/   labelled fault-injection flights in Copter-4.6.3's exact log format
+                   (tests/test_scenarios.py: expected findings fire, clean flights stay clean)
 docs/SOURCES.md    every assumption, audited + cited
 ```
 
@@ -83,7 +86,9 @@ A check is one module + one test. The registry makes it a drop-in.
    `build_series`) — no real `.bin` needed.
 5. Update `README.md` (check catalogue) + `CHANGELOG.md`; add any new threshold to
    `docs/SOURCES.md` with its source.
-6. Run the commands below until green.
+6. If the check fires on a new kind of fault, add a labelled flight to
+   `tests/scenarios/flights.py` (and a benign variant that must stay clean).
+7. Run the commands below until green.
 
 ## Commands
 
@@ -105,4 +110,12 @@ python examples/analyze.py log.bin    # diagnose a log from the CLI
 - Be conservative — **avoid false positives**. Prefer skipping to crying wolf. Validate
   new checks against `_reallogs/` (gitignored real logs) so clean flights stay clean.
 - `samples` values are numbers, not strings (the Pydantic model enforces it).
+- **Multi-instance messages.** 4.x logs every IMU/GPS/compass/battery/EKF core under ONE
+  message name (VIBE.IMU, GPS.I, MAG.I, BAT.Inst, XKF*.C). Never read them as one series:
+  loop over `log.instances(mtype)` and use `log.series(mtype, field, inst)`. Decide severity
+  from the primary instance and label the rest.
+- **Armed time.** Ground/bench data (before arming, after disarm) looks like faults. Use
+  `log.armed_mask(times)` / `log.armed_intervals()` for in-flight judgements.
+- `log.get()` builds dicts — fine for event-like types (ERR/EV/MODE/MSG); for high-rate data
+  use `series()`/`times()`/`aligned()`, which stay in numpy.
 - Python ≥ 3.11, full type hints, `from __future__ import annotations`.

@@ -287,7 +287,7 @@ goose configure
 | `log_summary(path)` | Araç, firmware, süre, mesaj sayıları, uçuş modları, max irtifa, bütünlük. |
 | `vehicle_profile(path)` | **Fiziksel / mimari profil**: frame & tip, motor sayısı, batarya hücresi/kapasitesi, hover gazı, **güç marjı** ve itki/ağırlık. Fiziğe-dayalı muhakeme için. |
 | `list_events(path, kinds?, start_s?, end_s?)` | Çözümlenmiş `ERR`/`MODE`/`EV`/`MSG` zaman çizelgesi. |
-| `query_timeseries(path, message_type, fields, start_s?, end_s?, max_points?)` | Bir bulguya derinlemesine bakmak için seyreltilmiş sayısal seri. |
+| `query_timeseries(path, message_type, fields, start_s?, end_s?, max_points?, instance?)` | Bir bulguya derinlemesine bakmak için seyreltilmiş sayısal seri. Çoklu sensörlü mesajlarda (IMU/GPS/pusula/batarya/EKF çekirdeği başına) tek bir `instance` döner; `available_instances` hangilerinin olduğunu söyler. |
 | `get_params(path, name_glob?)` | Logun PARM dökümünden parametre değerleri (ör. `INS_HNTCH_*`), toplam sayı, yorumlamak için sürüm-özel metadata linki, ve döküm eksikse bir uyarı. |
 | `load_param_file(path, name_glob?)` | Kullanıcının dışa aktardığı `.param`/`.params` dosyasını okur — log dökümü kesikse veya "uçtuğu config vs şimdiki"yi karşılaştırmak için tam, otoriter config. |
 | `recommend_tuning(path, area?)` | Tavsiye niteliğinde tuning (gyro FFT'sinden harmonik notch, PID, autotune). **Sadece öneri — asla uygulanmaz.** |
@@ -313,7 +313,7 @@ Bir ArduPilot `.bin` logunu okumak uzmanlık ister: `ERR` satırlarını filtrel
 ## Nasıl çalışır
 
 ```
-.bin ──▶ parser.py (pymavlink DFReader) ──▶ FlightLog (saf domain modeli)
+.bin ──▶ parser.py (pymavlink indeksi + numpy) ──▶ FlightLog (saf, sütunlu domain modeli)
                                                │
                                                ▼
                        checks/ registry ──▶ Check eklentileri (her biri bir konu)
@@ -326,7 +326,8 @@ Bir ArduPilot `.bin` logunu okumak uzmanlık ister: `ERR` satırlarını filtrel
 ```
 
 - **Anahtar ilke:** deterministik motor **tek doğruluk kaynağı**; yapay zekâ sadece açıklar ve kaynak gösterir, *karar vermez*.
-- **`FlightLog`** saf, `pymavlink`-bağımsız bir domain modelidir; bu yüzden kontroller ve testler gerçek `.bin` olmadan sentetik loglarla çalışır.
+- **`FlightLog`** saf, `pymavlink`-bağımsız, sütun tabanlı (numpy) bir domain modelidir; bu yüzden kontroller ve testler gerçek `.bin` olmadan sentetik loglarla çalışır. Parser, pymavlink'in kendi indeksinden mesajları toplu çözer (20 dakikalık, 400 Hz IMU'lu bir log ~1,2 sn); sonuç pymavlink'in kendi çözümüyle alan alan test edilir.
+- **Çoklu sensör farkında:** 4.x firmware her IMU, GPS, pusula, batarya ve EKF çekirdeğini tek mesaj adı altında, bir instance alanıyla loglar. Her instance kendi verisiyle değerlendirilir; önem derecesini birincil sensör belirler (birincil EKF çekirdeği `XKF4.PI`, diğer GPS fix'i koruyorsa tek alıcı arızası uyarıya düşer).
 - **Kontroller** bağımsız, registry'e kayıtlı eklentilerdir (`@register_check`). Yeni bir tane eklemek = tek bir yeni modül. Orchestrator, verisi loglanmamış kontrolü zarifçe atlar, araç tipine uymayanı (ör. heli/uçakta motor-dengesi) çalıştırmaz ve hata fırlatan kontrolü izole eder.
 - Katalog iki aile: **Uçuş dinamiği** — olaylar/hatalar, EKF sağlığı, titreşim, güç (BAT/CURR), GPS (fix/uydu/HDOP, armed pencerede), pusula, attitude takibi, motor dengesi, RC sinyal kaybı, zamanlama. **Konfigürasyon & kurulum** (çünkü çoğu kaza uçuş anında değil kurulum hatasıdır): riskli parametreler (kapalı arming/failsafe), çelişkili/kapalı/mantıksız değerlerin **parametre denetimi**, kalibrasyon (büyük/sıfır pusula offset'i), yapılandırılmış-ama-sessiz sensörler (kablo/bağlantı arızası), ve firmware'in kendi pre-arm/açılış uyarıları. Artı tavsiye niteliğinde tuning.
 - **Araç-farkında** (copter / heli / uçak / rover): çoklu-rotora özel kontroller bir helinin swashplate servolarında ya da bir uçağın kontrol yüzeylerinde çalışmaz. Copter 3.2–4.6, Plane, QuadPlane, Heli ve Rover'ı kapsayan **40 gerçek forum loguyla doğrulandı.**
@@ -358,7 +359,8 @@ Kontroller sentetik in-memory loglarla (`tests/helpers.py`) test edilir; senteti
 
 - **Toilet-bowl / pusula-heading** arızaları henüz tespit edilmiyor — sadece alan-büyüklüğü stabilitesi değil, dairesel-pozisyon-drift analizi gerektiriyor (planlı).
 - **Gerçekten bozuk bir log** (ör. bit-flip'li mesaj formatı) kısmi-kurtarma yerine net bir hatayla başarısız olur.
-- Büyük loglar (3–4 MB / ~100k kayıt) ~12–15 sn'de parse olur; MCP sunucusu parse'ı path+mtime ile cache'ler, yani bu maliyeti sadece ilk araç çağrısı öder.
+- 85 MB'lık, ~1,6 milyon kayıtlı bir log ~1,2 sn'de parse olur ve ~0,4 GB bellek kullanır; sunucu son iki logu path+mtime ile cache'ler.
+- Pre-4.0 loglardaki ayrı adlı ikincil sensörler (`GPS2`, `MAG2`, `IMU2`, `BAT2`) henüz instance olarak birleştirilmiyor; bu loglarda yalnız birincil sensör değerlendirilir.
 
 ## Yol haritası
 

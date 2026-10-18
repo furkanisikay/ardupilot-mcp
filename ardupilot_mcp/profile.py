@@ -125,9 +125,10 @@ def build_profile(log: FlightLog) -> VehicleProfile:
         battery_capacity_mah=float(capacity) if capacity else None,
         nominal_voltage_v=nominal_v,
         max_voltage_v=max_v,
-        hover_throttle=hover,
-        power_margin_pct=power_margin,
-        thrust_to_weight_estimate=t2w,
+        # Params are logged as float32 (0.55 -> 0.550000011920929); round for readability.
+        hover_throttle=round(hover, 3) if hover is not None else None,
+        power_margin_pct=round(power_margin, 1) if power_margin is not None else None,
+        thrust_to_weight_estimate=round(t2w, 2) if t2w is not None else None,
         assessment=assessment,
         notes=notes,
         references=docs.baseline_references(kind),
