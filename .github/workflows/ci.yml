@@ -57,6 +57,22 @@ jobs:
       - name: Run tests
         run: pytest
 
+  lowest:
+    name: Test (lowest supported versions)
+    # The floors in pyproject.toml (mcp, pymavlink, numpy, pydantic) must keep working:
+    # users install this next to other packages that may hold them back.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - run: pip install uv
+      - name: Install the lowest direct dependencies
+        run: uv pip install --system --resolution lowest-direct -e ".[dev]"
+      - name: Run tests
+        run: pytest
+
   build:
     name: Build distribution
     runs-on: ubuntu-latest

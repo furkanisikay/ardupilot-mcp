@@ -36,18 +36,18 @@ async def main() -> int:
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             init = await session.initialize()
-            print(f"connected to server: {init.serverInfo.name} v{init.serverInfo.version}")
+            print(f"connected to server: {init.server_info.name} v{init.server_info.version}")
 
             tools = (await session.list_tools()).tools
             print(f"\ntools ({len(tools)}):")
             for t in tools:
-                ro = t.annotations.readOnlyHint if t.annotations else None
+                ro = t.annotations.read_only_hint if t.annotations else None
                 print(f"  - {t.name:18} readOnly={ro}")
 
             print("\ncall analyze_log:")
             res = await session.call_tool("analyze_log", {"path": log_path})
-            report = res.structuredContent
-            assert report is not None, "expected structuredContent"
+            report = res.structured_content
+            assert report is not None, "expected structured_content"
             print(
                 f"  critical={report['critical_count']} warn={report['warn_count']} info={report['info_count']}"
             )
@@ -60,7 +60,7 @@ async def main() -> int:
 
             print("\ncall vehicle_profile:")
             res = await session.call_tool("vehicle_profile", {"path": log_path})
-            prof = res.structuredContent
+            prof = res.structured_content
             print(
                 f"  {prof.get('frame_class_name')} ({prof.get('frame_type_name')}), "
                 f"{prof.get('motor_count')} motors, {prof.get('battery_cells')}S, "
@@ -71,14 +71,14 @@ async def main() -> int:
 
             print("\ncall recommend_tuning:")
             res = await session.call_tool("recommend_tuning", {"path": log_path})
-            for r in res.structuredContent["recommendations"]:
+            for r in res.structured_content["recommendations"]:
                 print(f"    ({r['area']}) {r['title']}")
 
             print("\ncall list_checks:")
             res = await session.call_tool("list_checks", {})
             print(
-                f"    {res.structuredContent['total']} checks: "
-                f"{[c['check_id'] for c in res.structuredContent['checks']]}"
+                f"    {res.structured_content['total']} checks: "
+                f"{[c['check_id'] for c in res.structured_content['checks']]}"
             )
 
     print("\nMCP smoke test OK")

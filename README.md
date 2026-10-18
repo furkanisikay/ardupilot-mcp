@@ -74,6 +74,8 @@ Parser logu sütunlu bir `FlightLog` modeline çevirir. Kayıtlı kontroller bu 
 
 4.x firmware her IMU, GPS, pusula, batarya ve EKF çekirdeğini tek mesaj adı altında yazar. Kontroller her birini ayrı değerlendirir. 4.1 öncesi loglarda ayrı adla yazılan ikincil sensörler de aynı yapıya çevrilir.
 
+Sunucu MCP Python SDK 2 üzerinde çalışır. Hem 2026-07-28 protokol sürümünü hem de bugün çoğu masaüstü istemcinin kullandığı eski el sıkışmayı (2024-11-05 ile 2025-11-25 arası) konuşur.
+
 ## Doğruluk ve sınırlar
 
 Motor, forumdaki 49 gerçek kaza logu üzerinde ölçülür; logların sebebini o logu inceleyen bir geliştirici ya da deneyimli bir kullanıcı yazmıştır. Güncel skorlar ve yöntem [bench/README.md](bench/README.md)'de.

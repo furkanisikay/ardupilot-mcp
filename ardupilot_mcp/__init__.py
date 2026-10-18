@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-__version__ = "0.1.3"
+__version__ = "1.0.0"
 
 # Importing the checks package registers every check via decorator side effects.
 from . import checks as checks  # noqa: E402,F401

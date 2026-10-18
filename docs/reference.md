@@ -2,7 +2,7 @@
 
 # Reference
 
-ardupilot-mcp 0.1.3: 12 MCP tools and 18 checks. Every tool is read-only.
+ardupilot-mcp 1.0.0: 12 MCP tools and 18 checks. Every tool is read-only.
 
 ## Tools
 

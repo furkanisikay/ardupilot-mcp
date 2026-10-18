@@ -1,27 +1,29 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-"""FastMCP server exposing the ArduPilot log-diagnosis tools.
+"""MCP server exposing the ArduPilot log-diagnosis tools.
 
-Every tool is read-only (``readOnlyHint=True``): the server parses offline
+Every tool is read-only (``read_only_hint=True``): the server parses offline
 ``.bin`` DataFlash logs and ``.tlog`` telemetry logs and never connects to a vehicle,
-arms, or writes anything. That
-is the whole safety story for this MVP — it physically cannot move a drone.
+arms, or writes anything. That is the whole safety story: it cannot move a drone.
 
-Parsed logs are cached by (absolute path, mtime) so a conversation that calls
-several tools on the same log parses it once.
+Parsed logs are cached by (absolute path, mtime, size) so a conversation that calls
+several tools on the same log parses it once. The SDK runs these synchronous tools on
+worker threads, so the cache is guarded by a lock.
 """
 
 from __future__ import annotations
 
 import math
 import os
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 from fnmatch import fnmatch
 from typing import TypeGuard
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
+from . import __version__
 from . import ardupilot_docs as docs
 from . import ardupilot_meta as meta
 from .checks import get_checks
@@ -59,9 +61,25 @@ _LOW_PARAM_COUNT = 150
 # parameters (a full dump of ~1000 would bury the values; a name_glob narrows it).
 _DOC_LIMIT = 200
 
-mcp = FastMCP("ardupilot-mcp")
+_INSTRUCTIONS = """\
+Diagnoses ArduPilot flight logs (.bin DataFlash logs and .tlog telemetry logs) from local files.
+Start with analyze_log: its findings come from deterministic checks and carry official ArduPilot
+doc links, so ground every claim in them. For a crash, incident_timeline tells what failed first
+and which findings came after the impact. vehicle_profile gives the airframe's power margin.
+query_timeseries, list_events and get_params drill into a finding; recommend_tuning is advice
+only and is never applied. Do not assert a cause the tools did not report."""
 
-_READONLY = ToolAnnotations(readOnlyHint=True, openWorldHint=False)
+mcp = MCPServer(
+    "ardupilot-mcp",
+    title="ArduPilot log diagnosis",
+    description="Deterministic diagnosis of ArduPilot flight logs, offline and read-only.",
+    instructions=_INSTRUCTIONS,
+    website_url="https://github.com/furkanisikay/ardupilot-mcp",
+    version=__version__,
+)
+
+# Every tool reads local files only: no side effects, same answer on a repeated call.
+_READONLY = ToolAnnotations(read_only_hint=True, idempotent_hint=True, open_world_hint=False)
 
 
 @dataclass
@@ -77,6 +95,9 @@ class _Entry:
 # open many logs; a conversation usually works on one or two at a time.
 _CACHE: OrderedDict[str, _Entry] = OrderedDict()
 _CACHE_MAX = 2
+# One parse at a time: concurrent tool calls on the same log share the result instead of
+# parsing it twice, and the LRU order is never mutated from two threads.
+_CACHE_LOCK = threading.RLock()
 
 
 def _entry(path: str) -> _Entry:
@@ -85,16 +106,17 @@ def _entry(path: str) -> _Entry:
         raise FileNotFoundError(f"log file not found: {path}")
     st = os.stat(apath)
     key = (st.st_mtime, st.st_size)
-    cached = _CACHE.get(apath)
-    if cached is not None and cached.key == key:
-        _CACHE.move_to_end(apath)
-        return cached
-    _CACHE.pop(apath, None)
-    while len(_CACHE) >= _CACHE_MAX:
-        _CACHE.popitem(last=False)
-    entry = _Entry(key, parse_tlog(apath) if is_tlog(apath) else parse_bin(apath))
-    _CACHE[apath] = entry
-    return entry
+    with _CACHE_LOCK:
+        cached = _CACHE.get(apath)
+        if cached is not None and cached.key == key:
+            _CACHE.move_to_end(apath)
+            return cached
+        _CACHE.pop(apath, None)
+        while len(_CACHE) >= _CACHE_MAX:
+            _CACHE.popitem(last=False)
+        entry = _Entry(key, parse_tlog(apath) if is_tlog(apath) else parse_bin(apath))
+        _CACHE[apath] = entry
+        return entry
 
 
 def _load(path: str) -> FlightLog:
@@ -103,9 +125,10 @@ def _load(path: str) -> FlightLog:
 
 def _report(entry: _Entry) -> DiagnosisReport:
     """The diagnosis of a cached log, computed once: analyze_log and incident_timeline share it."""
-    if entry.report is None:
-        entry.report = diagnose(entry.log)
-    return entry.report
+    with _CACHE_LOCK:
+        if entry.report is None:
+            entry.report = diagnose(entry.log)
+        return entry.report
 
 
 def _rec_time(rec: dict) -> float | None:
@@ -155,9 +178,10 @@ def incident_timeline(path: str) -> IncidentTimeline:
     Use it to answer "what failed first, and is the rest just the crash?". Time order only — never causation.
     """
     entry = _entry(path)
-    if entry.timeline is None:
-        entry.timeline = build_timeline(entry.log, _report(entry).findings)
-    return entry.timeline
+    with _CACHE_LOCK:
+        if entry.timeline is None:
+            entry.timeline = build_timeline(entry.log, _report(entry).findings)
+        return entry.timeline
 
 
 @mcp.tool(annotations=_READONLY)

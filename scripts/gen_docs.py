@@ -75,7 +75,7 @@ def render_reference() -> str:
 
     out.append("## Tools\n")
     for tool in tools:
-        schema = tool.inputSchema or {}
+        schema = tool.input_schema or {}
         out.append(f"### `{_signature(tool.name, schema)}`\n")
         out.extend(p + "\n" for p in _paragraphs(tool.description or ""))
         props = schema.get("properties", {})

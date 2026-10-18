@@ -74,6 +74,8 @@ The parser turns a log into a columnar `FlightLog`. Registered checks read it: a
 
 4.x firmware logs every IMU, GPS, compass, battery and EKF core under one message name, and the checks judge each one separately. Pre-4.1 logs, which write secondary sensors under their own names, are folded into the same structure.
 
+The server runs on the MCP Python SDK 2. It speaks the 2026-07-28 protocol revision and the older initialize handshake (2024-11-05 to 2025-11-25) that most desktop clients use today.
+
 ## Accuracy and limits
 
 The engine is measured on 49 real crash logs from the ArduPilot forum, each labelled with the cause that a developer or an experienced helper stated after reading the log. Current scores and the method are in [bench/README.md](bench/README.md).

@@ -8,7 +8,7 @@
       "name": "ardupilot-mcp",
       "source": "./",
       "description": "Diagnose ArduPilot flight logs (.bin and .tlog) over MCP, with a /diagnose command.",
-      "version": "0.1.3",
+      "version": "1.0.0",
       "author": {
         "name": "Furkan IŞIKAY"
       }

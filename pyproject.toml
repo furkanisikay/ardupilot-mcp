@@ -13,7 +13,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Furkan IŞIKAY" }]
 keywords = ["mcp", "model-context-protocol", "ardupilot", "dataflash", "flight-log", "diagnostics", "mavlink", "drone", "uav"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
@@ -26,15 +26,16 @@ classifiers = [
 ]
 
 dependencies = [
-    "mcp>=1.27,<2",
+    "mcp>=2.0,<3",
     "pymavlink>=2.4.49",
     "numpy>=2.0",
+    "pydantic>=2.12",
 ]
 
 # Lint/type tools are pinned so local and CI use the exact same versions
 # (a newer ruff/mypy can introduce new rules and fail CI that passed locally).
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff==0.15.17", "mypy==2.1.0", "build>=1.2", "pre-commit>=4.0"]
+dev = ["pytest>=8.0", "ruff==0.17.1", "mypy==2.4.0", "build>=1.2", "pre-commit>=4.0"]
 
 [project.urls]
 Homepage = "https://github.com/furkanisikay/ardupilot-mcp"
