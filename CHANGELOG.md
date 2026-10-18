@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- `python examples/generate_demo_log.py --help` wrote a log file named `--help`. It now
+  prints its usage; the output path stays an optional argument.
+
+### Changed
+- `scripts/gen_docs.py` now generates the README example output, the check and
+  benchmark-log counts, and the benchmark table in `bench/README.md` (from the new
+  `bench/results.json`). CI fails when these sections drift from the code and
+  `bench/results.json`.
+- `python -m bench.run --json` refuses to write when a log was skipped, unless
+  `--allow-partial` is given, and records the version and revision it measured.
+
 ## [1.0.0] — 2026-10-18
 
 The first stable release: the tool set, the report schema and the check catalogue are now

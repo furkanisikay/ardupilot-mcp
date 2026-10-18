@@ -36,6 +36,7 @@ Claude Code için tek satır yeterli: `claude mcp add ardupilot-mcp -- uvx ardup
 
 `python examples/analyze.py demo.bin` çıktısından bir bölüm. İstemci aynı bulguları senin dilinde anlatır.
 
+<!-- gen:example -->
 ```text
 First anomaly while armed: Elevated VibeZ vibration @ 9s.
 6 critical, 2 warning, 3 info finding(s).
@@ -44,8 +45,9 @@ First anomaly while armed: Elevated VibeZ vibration @ 9s.
 [CRITICAL] attitude  @ 20s: Attitude tracking failure (roll)
            Roll failed to track the demand for 3.0 s, error up to 35 deg (sustained >25 deg).
 [CRITICAL] power     @ 25s: Battery reached critical voltage
-           Pack voltage fell to 13.22 V, at or below the critical-voltage level (13.50 V).
+           Pack voltage fell to 13.32 V, at or below the critical-voltage level (13.50 V, configured BATT_*_VOLT failsafe).
 ```
+<!-- /gen:example -->
 
 ## Araçlar
 
@@ -66,7 +68,7 @@ Bütün araçlar salt okunurdur.
 | `recommend_tuning` | Harmonik notch, PID ve autotune önerisi. Hiçbir şeyi uygulamaz. |
 | `list_checks` | Kayıtlı kontrollerin listesi. |
 
-Araçların argümanları ve 18 kontrolün tamamı [docs/reference.md](docs/reference.md)'de. Bu dosyayı `scripts/gen_docs.py` koddan üretir, CI da güncel olup olmadığını denetler.
+Araçların argümanları ve <!-- gen:checks -->18<!-- /gen:checks --> kontrolün tamamı [docs/reference.md](docs/reference.md)'de. Bu dosyayı `scripts/gen_docs.py` koddan üretir, CI da güncel olup olmadığını denetler.
 
 ## Nasıl çalışır
 
@@ -78,7 +80,7 @@ Sunucu MCP Python SDK 2 üzerinde çalışır. Hem 2026-07-28 protokol sürümü
 
 ## Doğruluk ve sınırlar
 
-Motor, forumdaki 49 gerçek kaza logu üzerinde ölçülür; logların sebebini o logu inceleyen bir geliştirici ya da deneyimli bir kullanıcı yazmıştır. Güncel skorlar ve yöntem [bench/README.md](bench/README.md)'de.
+Motor, forumdaki <!-- gen:bench-logs -->49<!-- /gen:bench-logs --> gerçek kaza logu üzerinde ölçülür; logların sebebini o logu inceleyen bir geliştirici ya da deneyimli bir kullanıcı yazmıştır. Güncel skorlar ve yöntem [bench/README.md](bench/README.md)'de.
 
 - Pusula yön hatasından kaynaklanan dairesel sürüklenme (toilet-bowl) henüz tespit edilmiyor.
 - Format tanımları bozulmuş bir log, kısmi sonuç yerine açık bir hata verir.

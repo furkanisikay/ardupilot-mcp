@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import os
 
+import pytest
+
 from ardupilot_mcp.checks.util import make_finding
 from ardupilot_mcp.model import DiagnosisReport, Severity
 from bench.scoring import CATEGORY_CHECKS, finding_categories, score_report, summarize
@@ -111,6 +113,32 @@ def test_runner_skips_an_unreadable_log(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(run, "parse_bin", _boom)
     assert run.main(["--logs", str(tmp_path)]) == 0
     assert f"skipped {first['id']}: could not analyse" in capsys.readouterr().err
+
+
+def test_runner_refuses_to_write_results_from_a_partial_run(tmp_path, capsys):
+    import bench.run as run
+
+    out = tmp_path / "results.json"
+    assert run.main(["--logs", str(tmp_path), "--json", str(out)]) == 1
+    assert not out.exists()
+    assert "pass --allow-partial" in capsys.readouterr().err
+
+    assert run.main(["--logs", str(tmp_path), "--json", str(out), "--allow-partial"]) == 0
+    summary = json.loads(out.read_text(encoding="utf-8"))["summary"]
+    assert summary["logs"] == 0
+    assert set(summary["measured_on"]) == {"version", "revision"}
+
+
+def test_bench_table_rejects_results_that_miss_logs(tmp_path, monkeypatch):
+    import scripts.gen_docs as gen
+
+    results = json.loads(gen.BENCH_RESULTS.read_text(encoding="utf-8"))
+    results["summary"]["logs"] -= 1
+    partial = tmp_path / "results.json"
+    partial.write_text(json.dumps(results), encoding="utf-8")
+    monkeypatch.setattr(gen, "BENCH_RESULTS", partial)
+    with pytest.raises(ValueError, match="re-run python -m bench.run"):
+        gen.render_bench()
 
 
 def test_title_routed_categories_cover_dead_reckoning_internal_error_and_brownout():

@@ -1,8 +1,8 @@
 """Docs-sync gate: documentation cannot drift from the code.
 
 Fails if an MCP tool isn't documented in the READMEs, a registered check has no test,
-a generated file (docs/reference.md, the plugin and registry manifests) is out of date,
-or a source file lacks its license identifier.
+a generated file or region (docs/reference.md, the manifests, the README example, counts
+and benchmark table) is out of date, or a source file lacks its license identifier.
 """
 
 from __future__ import annotations
@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
+
+import pytest
 
 from ardupilot_mcp.checks import get_checks
 from ardupilot_mcp.server import mcp
@@ -59,3 +61,29 @@ def test_every_check_has_id_title_and_description():
     # Each check must be self-describing for list_checks / the catalogue.
     bad = [c.id for c in get_checks() if not (c.id and c.title and c.description)]
     assert not bad, f"checks missing id/title/description: {bad}"
+
+
+def test_replace_region_rewrites_only_between_markers():
+    text = "a <!-- gen:n -->old<!-- /gen:n --> b"
+    assert gen_docs.replace_region(text, "n", "new") == "a <!-- gen:n -->new<!-- /gen:n --> b"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "no markers at all",
+        "<!-- gen:n -->only the start",
+        "<!-- gen:n -->x<!-- /gen:n --> <!-- gen:n -->y<!-- /gen:n -->",
+        "<!-- /gen:n -->end before start<!-- gen:n -->",
+    ],
+)
+def test_replace_region_fails_on_missing_duplicate_or_reversed_markers(text):
+    with pytest.raises(ValueError, match="gen:n"):
+        gen_docs.replace_region(text, "n", "new")
+
+
+def test_readme_example_is_real_demo_output():
+    example = gen_docs.render_example()
+    assert example.startswith("\n```text\nFirst anomaly")
+    for check_id in gen_docs.EXAMPLE_CHECKS:
+        assert f"[CRITICAL] {check_id}" in example
