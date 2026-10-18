@@ -147,7 +147,10 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
             events.append(TimelineEvent(time_s=t, source="event", label=ev_name(int(eid)), phase=""))
 
     ended_armed = log_ended_armed(log, armed)
-    if ended_armed and log.meta.duration_s is not None:
+    # A telemetry log that stops while armed is the radio link or the ground station
+    # stopping, so it is not taken as the impact (a caveat says so below).
+    telemetry_cut = ended_armed and log.meta.source == "tlog"
+    if ended_armed and not telemetry_cut and log.meta.duration_s is not None:
         impacts.append((float(log.meta.duration_s), "log ended while armed"))
 
     impact = min(impacts) if impacts else None
@@ -205,6 +208,11 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
         )
     if impact is not None and impact[1] == "log ended while armed":
         caveats.append("The impact time is the end of the recording; the real event may be slightly earlier.")
+    if telemetry_cut:
+        caveats.append(
+            "The telemetry stopped while the vehicle was armed; that is the radio link or the ground "
+            "station stopping, so it is not taken as the impact. The onboard .bin log shows what happened next."
+        )
 
     return IncidentTimeline(
         path=log.path,

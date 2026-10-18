@@ -80,6 +80,8 @@ class LogMeta:
     duration_s: float | None = None
     integrity: LogIntegrity = LogIntegrity.OK
     integrity_detail: str | None = None
+    #: "dataflash" (the onboard .bin log) or "tlog" (a ground station's MAVLink telemetry log).
+    source: str = "dataflash"
     flight_modes: list[str] = field(default_factory=list)
     max_altitude_m: float | None = None
 
@@ -494,15 +496,16 @@ class FlightLog:
         return t[keep], out
 
     def armed_window(self) -> tuple[float | None, float | None]:
-        """(first-armed, last-disarmed) times from EV events, or (None, None).
+        """(first-armed, last-disarmed) times, or (None, None) when arming is unknown.
 
         Lets checks ignore the pre-arm (e.g. GPS still acquiring) and post-land
-        phases, which otherwise look like in-flight faults.
+        phases, which otherwise look like in-flight faults. From ``armed_intervals``,
+        so EV and ARM records (and a telemetry log's heartbeats) all count.
         """
-        ev = self.get("EV")
-        arms = [float(r["timestamp"]) for r in ev if r.get("Id") == 10 and "timestamp" in r]
-        disarms = [float(r["timestamp"]) for r in ev if r.get("Id") == 11 and "timestamp" in r]
-        return (min(arms) if arms else None, max(disarms) if disarms else None)
+        ivs = self.armed_intervals()
+        if not ivs:
+            return None, None
+        return ivs[0][0], ivs[-1][1]
 
     def armed_intervals(self) -> list[tuple[float, float]]:
         """Each (arm, disarm) interval, in order. A log can hold several flights.
@@ -622,6 +625,7 @@ class FlightLog:
             max_altitude_m=self.meta.max_altitude_m,
             integrity=self.meta.integrity,
             integrity_detail=self.meta.integrity_detail,
+            source=self.meta.source,
         )
 
 

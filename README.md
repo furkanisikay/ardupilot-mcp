@@ -58,6 +58,8 @@ Uçuş kontrolcün her uçuş için bir `.bin` DataFlash logu kaydeder. Bilgisay
 
 Tam dosya yolunu not et — yapay zekâya vereceğin şey o. Detay: [ArduPilot — Downloading and Analyzing Data Logs](https://ardupilot.org/copter/docs/common-downloading-and-analyzing-data-logs-in-mission-planner.html).
 
+**`.bin` yok mu?** Yer istasyonunun kaydettiği `.tlog` dosyası da olur: Mission Planner her bağlantıda bir tane kaydeder, başka bir yer seçmediysen kurulum klasörünün `logs` alt klasörüne ([Telemetry Logs](https://ardupilot.org/planner/docs/mission-planner-telemetry-logs.html)). Bu, yer istasyonuna ulaşan telemetridir: saniyede birkaç örnek, yalnız birincil sensör ve telsizin koptuğu yerlerde boşluklar. Bu yüzden teşhis daha kabadır ve telsiz kopmasını araç arızası sanacak kontroller (log bütünlüğü, zamanlama) atlanır. Elinde `.bin` varsa onu kullan.
+
 ## AI istemcisi olmadan dene
 
 Bir AI uygulaması kurmadan, motorun çalıştığını görmek istersen kaynağı indir (örnek scriptler pip paketinde gelmez, repoyu klonlaman gerekir):
@@ -370,6 +372,7 @@ Kontroller sentetik in-memory loglarla (`tests/helpers.py`) test edilir; senteti
 - **Toilet-bowl / pusula-heading** arızaları henüz tespit edilmiyor — sadece alan-büyüklüğü stabilitesi değil, dairesel-pozisyon-drift analizi gerektiriyor (planlı).
 - **Gerçekten bozuk bir log** (ör. bit-flip'li mesaj formatı) kısmi-kurtarma yerine net bir hatayla başarısız olur.
 - 85 MB'lık, ~1,6 milyon kayıtlı bir log ~1,2 sn'de parse olur ve ~0,4 GB bellek kullanır; sunucu son iki logu path+mtime ile cache'ler.
+- `.tlog` onboard log değil telemetridir: `ERR` kaydı, batch sampler ya da yüksek hızlı IMU (notch spektrumu) yoktur, yalnız birincil EKF çekirdeği gelir ve mod değişikliğinin nedeni bulunmaz; firmware failsafe kararları yalnız durum metinlerinden çıkar.
 - 4.1 öncesi loglarda ayrı adla yazılan ikincil sensörler ve EKF çekirdekleri (`IMU2`, `GPS2`, `MAG2`, `BAR2`, `BAT2`, `CUR2`, `NKF6`-`NKF9`, ...) instance olarak birleştirilir. Tek istisna ESC telemetrisi (`ESC1`-`ESC8`): 4.0 öncesi firmware'de RPM alanı motorun gerçek devrini değil elektriksel devri tutar, bu yüzden bu mesajlar birleştirilmez.
 
 ## Yol haritası

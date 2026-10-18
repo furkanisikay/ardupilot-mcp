@@ -64,6 +64,8 @@ class TimingCheck(Check):
     title = "Scheduler timing & log gaps"
     category = "performance"
     requires: set[str] = set()  # multi-source; guarded inside run()
+    # Gaps in a telemetry log are radio dropouts, not the flight controller stalling.
+    sources = frozenset({"dataflash"})
     description = "Logging gaps / main-loop stalls (IMU/ATT/VIBE timing) and PM scheduler long-loop overruns."
 
     def run(self, log: FlightLog) -> list[Finding]:

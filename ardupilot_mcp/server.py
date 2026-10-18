@@ -1,7 +1,8 @@
 """FastMCP server exposing the ArduPilot log-diagnosis tools.
 
 Every tool is read-only (``readOnlyHint=True``): the server parses offline
-``.bin`` files and never connects to a vehicle, arms, or writes anything. That
+``.bin`` DataFlash logs and ``.tlog`` telemetry logs and never connects to a vehicle,
+arms, or writes anything. That
 is the whole safety story for this MVP — it physically cannot move a drone.
 
 Parsed logs are cached by (absolute path, mtime) so a conversation that calls
@@ -48,6 +49,7 @@ from .param_meta import catalog_for
 from .parser import parse_bin
 from .profile import build_profile
 from .timeline import build_timeline
+from .tlog import is_tlog, parse_tlog
 
 # A full ArduPilot config is ~800-1400 params; far fewer suggests an incomplete dump.
 _LOW_PARAM_COUNT = 150
@@ -88,7 +90,7 @@ def _entry(path: str) -> _Entry:
     _CACHE.pop(apath, None)
     while len(_CACHE) >= _CACHE_MAX:
         _CACHE.popitem(last=False)
-    entry = _Entry(key, parse_bin(apath))
+    entry = _Entry(key, parse_tlog(apath) if is_tlog(apath) else parse_bin(apath))
     _CACHE[apath] = entry
     return entry
 
@@ -122,7 +124,12 @@ def _in_window(t: float | None, start_s: float | None, end_s: float | None) -> b
 
 @mcp.tool(annotations=_READONLY)
 def analyze_log(path: str) -> DiagnosisReport:
-    """Run the full deterministic diagnostic suite over an ArduPilot .bin log.
+    """Run the full deterministic diagnostic suite over an ArduPilot .bin log (or a ground station's .tlog).
+
+    A .tlog is the telemetry the ground station received: a few Hz, the primary sensor
+    and EKF core only, and gaps where the radio link dropped. Checks that would read a
+    link dropout as a vehicle fault (log integrity, timing) are skipped on it; prefer
+    the onboard .bin when the user has it.
 
     Returns severity-ranked findings (each with concrete evidence AND official
     ArduPilot doc links), per-check results, a plain-language summary, and

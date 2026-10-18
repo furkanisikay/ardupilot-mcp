@@ -58,6 +58,8 @@ Your flight controller saves a `.bin` DataFlash log for every flight. To get it 
 
 Note the full path — that's what you give the AI. More detail: [ArduPilot — Downloading and Analyzing Data Logs](https://ardupilot.org/copter/docs/common-downloading-and-analyzing-data-logs-in-mission-planner.html).
 
+**No `.bin`?** The `.tlog` your ground station saved works too: Mission Planner records one each time you connect, in the `logs` subfolder of its installation folder unless you chose another location ([Telemetry Logs](https://ardupilot.org/planner/docs/mission-planner-telemetry-logs.html)). It is the telemetry the ground station received — a few samples a second, the primary sensor only, gaps where the radio dropped — so the diagnosis is coarser, and checks that would mistake a radio dropout for a vehicle fault (log integrity, timing) are skipped. Use the `.bin` when you have it.
+
 ## Try it with no AI app
 
 To see the engine work without setting up an AI app, get the source (the example scripts aren't in the pip package — you need a clone):
@@ -370,6 +372,7 @@ Checks are tested against synthetic in-memory logs (`tests/helpers.py`) and a sy
 - **Toilet-bowl / compass-heading faults** aren't detected yet — they need circular-position-drift analysis (planned), not just field-magnitude stability.
 - A **genuinely corrupt log** (e.g. a bit-flipped message format) fails to parse with a clear error rather than partial recovery.
 - An 85 MB log with ~1.6 M records parses in ~1.2 s using ~0.4 GB; the server caches the last two parsed logs by path+mtime.
+- A `.tlog` carries telemetry, not the onboard log: no `ERR` records, no batch sampler or high-rate IMU (no notch spectrum), the primary EKF core only, and no mode-change reasons, so firmware failsafe verdicts come from status text alone.
 - In pre-4.1 logs, separately named secondary sensors and EKF cores (`IMU2`, `GPS2`, `MAG2`, `BAR2`, `BAT2`, `CUR2`, `NKF6`-`NKF9`, ...) are merged as instances. ESC telemetry (`ESC1`-`ESC8`) is the exception: before 4.0 its RPM field holds the electrical rather than the mechanical speed, so it is not merged.
 
 ## Roadmap
