@@ -31,6 +31,10 @@ from ..model import Finding, Severity
 from .base import Check, register_check
 from .util import make_finding
 
+# ArduCopter/ekf_check.cpp: LOGGER_WRITE_ERROR(LogErrorSubsystem::EKF_PRIMARY,
+# LogErrorCode(ekf_primary_core)) -- the ECode is the new primary core, not an error code.
+ERR_EKF_PRIMARY = 24
+
 # EV names that mark the key lifecycle of a flight (decoded via ev_name).
 # Verified against ArduPilot's LogEvent enum (AP_Logger.h, Copter-4.5.7): there is
 # no TAKEOFF event id, so it is intentionally not listed here.
@@ -69,6 +73,9 @@ class EventsCheck(Check):
                 continue
             subsys = int(rec["Subsys"])
             ecode = int(rec["ECode"])
+            if subsys == ERR_EKF_PRIMARY:
+                out.append(self._lane_switch(rec, ecode))
+                continue
             if ecode == 0:
                 # ECode 0 clears a previously raised error -- not a finding.
                 continue
@@ -102,6 +109,21 @@ class EventsCheck(Check):
                 )
             )
         return out
+
+    def _lane_switch(self, rec: dict, core: int) -> Finding:
+        ts = float(rec["timestamp"]) if "timestamp" in rec else None
+        return make_finding(
+            self.id,
+            Severity.INFO,
+            f"EKF primary core changed to {core}",
+            "ERR EKF_PRIMARY records which EKF core became primary"
+            + (f" at {ts:.1f}s" if ts is not None else "")
+            + ": its ECode is the new core number, not an error. A switch follows the healthier "
+            "core; repeated switches are worth reading next to the EKF findings.",
+            time_start_s=ts,
+            message_types=["ERR"],
+            samples={"Subsys": ERR_EKF_PRIMARY, "core": core},
+        )
 
     # -- MODE: one INFO finding summarising the mode timeline -----------------
 

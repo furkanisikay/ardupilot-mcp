@@ -53,8 +53,8 @@ Current `main`; the changelog notes how each change moved these numbers.
 
 | Scorable logs | Top-1 | Top-3 | Logs with a false critical | False criticals |
 |---|---|---|---|---|
-| 41 | 10 | 21 | 35 / 49 | 113 |
+| 41 | 11 | 22 | 35 / 49 | 101 |
 
-False criticals by check: vibration 29, attitude 25, EKF 25, events 17, GPS 6, power 4,
-RC input 4, firmware 2, compass 1. 109 of the 113 start before the impact, so they reach the
-top of the report rather than the after-impact tail.
+False criticals by check: vibration 29, attitude 25, EKF 25, events 6, GPS 6, power 5,
+RC input 4, compass 1. 99 of the 101 start before the impact, so they reach the top of the
+report rather than the after-impact tail.

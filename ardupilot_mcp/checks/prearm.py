@@ -27,7 +27,7 @@ from .util import make_finding
 # Substrings (case-insensitive) that mark a line as worth surfacing. Order does
 # not matter for detection; severity is decided separately below.
 NOTABLE_TOKENS: tuple[str, ...] = (
-    "prearm",
+    "prearm:",
     "arm:",
     "not calibrated",
     "inconsistent",
@@ -46,7 +46,7 @@ NOTABLE_TOKENS: tuple[str, ...] = (
 # problem the firmware refused to ignore). Everything else notable is INFO
 # (anomaly auto-corrected, re-alignment, reset, informational failsafe).
 WARN_TOKENS: tuple[str, ...] = (
-    "prearm",
+    "prearm:",
     "error",
     "failed",
     "bad ",

@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- ERR EKF_PRIMARY was reported as an error. Its ECode is the new primary EKF core
+  (ArduCopter/ekf_check.cpp), so ECode 1 or 2 is a lane switch and ECode 0 a switch to core 0,
+  not a cleared error. It is now INFO "EKF primary core changed to N" (38 WARNs on the benchmark).
+- A status line that merely contained the word "prearm" (a script's own message) was reported
+  as a pre-arm failure. Only the firmware's "PreArm:" prefix counts now.
 - **Multi-instance sensors were interleaved.** Firmware 4.x logs every IMU, GPS, compass,
   battery and EKF core under one message name (told apart by an instance field). Checks now
   judge each instance on its own samples, using the log's own FMTU `#` declarations. This
@@ -98,6 +103,14 @@ All notable changes to this project are documented here. The format is based on
   pipeline; a clean flight that raises a single warning fails CI.
 
 ### Changed
+- **One event, one finding.** A radio failsafe used to appear as ERR FAILSAFE_RADIO, ERR RADIO,
+  a "radio failsafe" mode change and the RC-loss finding, each on its own line. ERR, failsafe
+  mode-change and firmware echoes now join the finding that measured the event (RC, battery,
+  GPS, EKF, vibration, thrust loss) when they start within 5 s of it. The merged finding keeps
+  the higher severity and lists the echoes in `Finding.related`. Echoes with nothing to join
+  (a crash recorded three ways) collapse into the first. On the real-crash benchmark: WARN
+  findings 262 -> 183, CRITICAL 199 -> 169, false criticals 113 -> 101, top-1 10 -> 11,
+  top-3 21 -> 22.
 - `compass`: field-strength peak-to-peak spread no longer raises a warning on its own (it is
   kept as evidence). One glitched sample sets it; on 100 forum logs it fired on 36 % of compass
   instances, none of them a compass fault among the labelled flights. The coefficient of

@@ -77,6 +77,11 @@ class Finding(BaseModel):
         description="True when the evidence starts at or after the crash/impact the log records: "
         "likely a consequence of the crash, not its cause. Listed after the other findings.",
     )
+    related: list[str] = Field(
+        default_factory=list,
+        description="Other findings that recorded the same event (an ERR, a failsafe mode change, a "
+        "firmware message), folded into this one so the event is reported once.",
+    )
 
 
 class CheckStatus(str, Enum):
