@@ -33,21 +33,28 @@ jobs:
             exit 1
           fi
       - name: Label from the title
+        # The title owns these labels: the one it implies is added, the others removed.
         run: |
           type="${TITLE%%[(:!]*}"
           case "$type" in
-            feat) label=enhancement ;;
-            fix) label=bug ;;
-            docs) label=documentation ;;
-            refactor|perf) label=refactor ;;
-            test) label=tests ;;
-            ci|build) label=ci ;;
-            *) label="" ;;
+            feat) want=enhancement ;;
+            fix) want=bug ;;
+            docs) want=documentation ;;
+            refactor|perf) want=refactor ;;
+            test) want=tests ;;
+            ci|build) want=ci ;;
+            *) want="" ;;
           esac
-          [ -n "$label" ] && gh pr edit "$NUMBER" --repo "$REPO" --add-label "$label" || true
-          if [[ "$TITLE" =~ ^[a-z]+(\([^\)]*\))?!: ]]; then
-            gh pr edit "$NUMBER" --repo "$REPO" --add-label breaking || true
-          fi
+          breaking=""
+          if [[ "$TITLE" =~ ^[a-z]+(\([^\)]*\))?!: ]]; then breaking=breaking; fi
+          have=$(gh pr view "$NUMBER" --repo "$REPO" --json labels -q '.labels[].name')
+          for label in enhancement bug documentation refactor tests ci breaking; do
+            if [ "$label" = "$want" ] || [ "$label" = "$breaking" ]; then
+              grep -qx "$label" <<<"$have" || gh pr edit "$NUMBER" --repo "$REPO" --add-label "$label"
+            elif grep -qx "$label" <<<"$have"; then
+              gh pr edit "$NUMBER" --repo "$REPO" --remove-label "$label"
+            fi
+          done
 
   changelog:
     name: Changelog entry

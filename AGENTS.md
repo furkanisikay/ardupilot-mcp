@@ -25,11 +25,12 @@ engine. Licensed AGPL-3.0-only.
    URL in a comment next to the constant. If it's a judgement call we chose, label it a
    *design choice*, not a fact.
 4. **Keep docs in sync.** Run `python scripts/gen_docs.py` after changing a tool, a check
-   or the version: it regenerates `docs/reference.md` and the version/license fields of
-   `server.json` and `.claude-plugin/*.json`. A new or renamed tool also needs a row in
-   the tools table of `README.md` and `README.en.md`; a user-visible change needs a
-   `CHANGELOG.md` entry; a new threshold needs `docs/SOURCES.md`. `tests/test_docs_sync.py`
-   fails on any of the first three, and the PR workflow fails without the changelog.
+   or the version: it regenerates `docs/reference.md`, the version in `server.json` and
+   `.claude-plugin/*.json`, and the license in `.claude-plugin/plugin.json`.
+   `tests/test_docs_sync.py` fails when those are stale or when a tool is missing from the
+   tools table of `README.md` or `README.en.md`. A user-visible change needs a
+   `CHANGELOG.md` entry (the PR workflow fails without one) and a new threshold an entry
+   in `docs/SOURCES.md` (reviewers check that).
 5. **Tests gate everything.** `ruff`, `mypy` and `pytest` must all pass. New behaviour
    needs tests. CI runs these on every PR and protects `main`.
 

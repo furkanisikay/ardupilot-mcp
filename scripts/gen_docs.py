@@ -23,6 +23,8 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+import tomllib
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +36,7 @@ from ardupilot_mcp import __version__  # noqa: E402
 from ardupilot_mcp.checks import get_checks  # noqa: E402
 from ardupilot_mcp.server import mcp  # noqa: E402
 
-LICENSE = "AGPL-3.0-only"
+LICENSE = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["license"]
 REFERENCE = ROOT / "docs" / "reference.md"
 PLUGIN = ROOT / ".claude-plugin" / "plugin.json"
 MARKETPLACE = ROOT / ".claude-plugin" / "marketplace.json"
@@ -102,7 +104,7 @@ def render_reference() -> str:
     return "\n".join(out)
 
 
-def _manifest(path: Path, update) -> str:
+def _manifest(path: Path, update: Callable[[dict[str, Any]], None]) -> str:
     data = json.loads(path.read_text(encoding="utf-8"))
     update(data)
     return json.dumps(data, indent=2, ensure_ascii=False) + "\n"

@@ -93,6 +93,6 @@ Motor, forumdaki 49 gerçek kaza logu üzerinde ölçülür; logların sebebini 
 
 ## Lisans
 
-[GNU AGPL-3.0](LICENSE). Kodu değiştirip ağ üzerinden hizmet olarak sunan, değiştirdiği kaynak kodu o hizmetin kullanıcılarına açmak zorundadır. AGPL koşulları işine uymuyorsa ticari lisans için contact@furkanisikay.com adresine yaz. 0.1.3 ve önceki sürümler MIT lisansıyla yayımlandı ve öyle kalır.
+[GNU AGPL-3.0](LICENSE). Kodu değiştirip ağ üzerinden hizmet olarak sunan, değiştirdiği kaynak kodu o hizmetin kullanıcılarına açmak zorundadır. AGPL koşulları işine uymuyorsa ticari lisans için contact@furkanisikay.com adresine yaz. PyPI'da yayımlanan 0.1.3 ve önceki paketler MIT lisanslıdır ve öyle kalır; bu değişiklikten sonraki kaynak kod ve sonraki sürümler AGPL-3.0 lisanslıdır.
 
 `ardupilot_mcp/data/params/` altındaki veri, ArduPilot'un GPLv3 lisanslı parametre tanımlarından (`apm.pdef.xml`) çıkarılmış olgulardan oluşur: aralık, birim, değer kodları ve bitmask bitleri. Açıklama metni kopyalanmaz.

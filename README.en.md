@@ -93,6 +93,6 @@ The engine is measured on 49 real crash logs from the ArduPilot forum, each labe
 
 ## License
 
-[GNU AGPL-3.0](LICENSE). If you modify the code and offer it as a network service, you must give the users of that service your modified source. If the AGPL terms do not work for you, write to contact@furkanisikay.com for a commercial license. Releases 0.1.3 and earlier were published under the MIT license and stay under it.
+[GNU AGPL-3.0](LICENSE). If you modify the code and offer it as a network service, you must give the users of that service your modified source. If the AGPL terms do not work for you, write to contact@furkanisikay.com for a commercial license. The packages published on PyPI up to 0.1.3 are MIT licensed and stay so; the source from this change on, and every later release, is AGPL-3.0.
 
 The data in `ardupilot_mcp/data/params/` consists of facts extracted from ArduPilot's GPLv3 parameter definitions (`apm.pdef.xml`): ranges, units, value codes and bitmask bits. No description text is copied.

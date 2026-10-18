@@ -183,8 +183,9 @@ All notable changes to this project are documented here. The format is based on
   pipeline; a clean flight that raises a single warning fails CI.
 
 ### Changed
-- **License: AGPL-3.0-only** from this release, with a commercial license available
-  (contact@furkanisikay.com). Releases 0.1.3 and earlier remain under the MIT license.
+- **License: AGPL-3.0-only** from this change on, with a commercial license available
+  (contact@furkanisikay.com). The packages published on PyPI up to 0.1.3 remain under the
+  MIT license.
   Contributions need the [Contributor License Agreement](.github/CLA.md).
 - README (Turkish and English) cut to what a new user needs; client setup and
   troubleshooting moved to `docs/clients.md`. Community files (contributing, security,
