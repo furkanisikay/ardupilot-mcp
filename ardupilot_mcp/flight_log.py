@@ -16,6 +16,7 @@ the small, event-like message types checks iterate over (ERR/EV/MODE/MSG/...).
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -59,6 +60,25 @@ class LogMeta:
     integrity_detail: str | None = None
     flight_modes: list[str] = field(default_factory=list)
     max_altitude_m: float | None = None
+
+
+@dataclass
+class ImuBatch:
+    """One batch-sampler capture (ISBH header + its ISBD blocks): raw IMU at full rate.
+
+    AP_InertialSensor's BatchSampler logs ``smp_cnt`` consecutive samples of one sensor
+    as int16 scaled by ``mul`` (BatchSampler.cpp). ``post_filter`` is True for samples taken
+    after the filters, False for raw ones, None when the log cannot tell (INS_LOG_BAT_OPT).
+    """
+
+    time_s: float  # when the header was written (ISBH.TimeUS), on the log's rebased clock
+    sensor: str  # "gyro" or "accel"
+    instance: int
+    post_filter: bool | None
+    rate_hz: float
+    x: np.ndarray
+    y: np.ndarray
+    z: np.ndarray
 
 
 class _Table:
@@ -164,6 +184,10 @@ class FlightLog:
         # mtype -> {instance: record indices}; built lazily per type.
         self._instance_index: dict[str, dict[int, np.ndarray]] = {}
         self._tables: dict[str, _Table] = {}
+        # Batch-sampler captures (ISBH/ISBD), kept apart from the per-record tables and
+        # decoded on first use (only the notch advice reads them; see ``batches``).
+        self._batches: list[ImuBatch] = []
+        self._batch_loader: Callable[[FlightLog], list[ImuBatch]] | None = None
         for mtype, records in (messages or {}).items():
             self._tables[mtype] = _Table.from_records(records)
         for mtype, cols in (columns or {}).items():
@@ -244,6 +268,26 @@ class FlightLog:
         return best
 
     # -- access --------------------------------------------------------------
+
+    @property
+    def batches(self) -> list[ImuBatch]:
+        """Batch-sampler captures, decoded by the parser's loader the first time they are read.
+
+        Raw sensor-rate data can be most of a large log, so it is not held for tools that
+        never look at it. A loader that fails leaves no batches (they are optional data).
+        """
+        loader, self._batch_loader = self._batch_loader, None
+        if loader is not None:
+            try:
+                self._batches = loader(self)
+            except Exception:  # noqa: BLE001 - batch data is optional; never fail a tool over it
+                self._batches = []
+        return self._batches
+
+    @batches.setter
+    def batches(self, value: list[ImuBatch]) -> None:
+        self._batches = list(value)
+        self._batch_loader = None
 
     @property
     def available_messages(self) -> set[str]:

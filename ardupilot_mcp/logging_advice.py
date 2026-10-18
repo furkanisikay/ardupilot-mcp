@@ -18,6 +18,7 @@ from dataclasses import dataclass
 
 from .flight_log import FlightLog
 from .model import LoggingAdvice
+from .notch import NOTCH_MIN_FS_HZ
 
 
 @dataclass(frozen=True)
@@ -42,8 +43,8 @@ _COPTER_RULES: tuple[_Rule, ...] = (
     _Rule("MOTB", (17,), "MOTBATT (bit 17)", "motor/battery limits (thrust boost, lift max)"),
 )
 _COPTER_KINDS = {"copter", "heli"}
-# Below this IMU rate the gyro spectrum cannot show motor noise (tuning.NOTCH_MIN_FS_HZ).
-_FFT_MIN_HZ = 100.0
+# Below this IMU rate the gyro spectrum cannot show motor noise.
+_FFT_MIN_HZ = NOTCH_MIN_FS_HZ
 
 
 def logging_advice(log: FlightLog) -> list[LoggingAdvice]:

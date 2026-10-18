@@ -387,7 +387,7 @@ def load_param_file(path: str, name_glob: str | None = None) -> ParamResult:
 
 @mcp.tool(annotations=_READONLY)
 def recommend_tuning(path: str, area: str | None = None) -> TuningReport:
-    """Advisory tuning recommendations (harmonic notch from gyro FFT, PID, autotune). Recommendation ONLY — never applied."""
+    """Advisory tuning recommendations (harmonic notch from the batch sampler, a fast IMU, the in-flight FFT or ESC RPM; PID; autotune). Recommendation ONLY — never applied."""
     log = _load(path)
     notes: list[str] = []
     recs = []

@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- The parser left pymavlink's memory map of the log open until a garbage collection, so on
+  Windows a log the server had read could not be replaced or deleted. The reader is now closed
+  once the log is decoded.
+- Notch advice: the spectrum was taken over every IMU interleaved into one stream (4.x logs
+  all IMUs as one message), which mixes sensors and multiplies the apparent sample rate by the
+  IMU count. It also recommended a throttle notch with `INS_HNTCH_REF` 1.0, the value the
+  parameter documentation gives for RPM/ESC tracking; for a throttle notch REF is the throttle
+  FREQ was measured at. A throttle notch now gets the hover throttle as REF (or none, when it
+  is not known), a fixed-wing-only plane a fixed notch, and ESC RPM telemetry the ESC notch.
+  A peak must stand out from its local noise floor, so the rising low-frequency end of the
+  spectrum no longer passes for motor noise.
 - `power`: a battery-threshold finding now spans the run below the threshold that the failsafe
   timer counts (the first one lasting BATT_LOW_TIMER, AP_BattMonitor), up to the lowest voltage.
   It used to be a single point at the minimum, often after the failsafe had already acted; a
@@ -62,6 +73,18 @@ All notable changes to this project are documented here. The format is based on
   we never use. The reader now skips that scan (15 MB forum log: 6.9 s -> 0.15 s).
 
 ### Added
+- Notch advice from the data that can show motor noise: the batch sampler (`ISBH`/`ISBD`,
+  raw gyro at the sensor rate, decoded into `FlightLog.batches`), else the primary IMU when it
+  is logged fast enough, else the in-flight FFT (`FTN1.PkAvg`). With pre- and post-filter
+  batches the energy left after the filters is reported, and the in-flight FFT is quoted when
+  it agrees or disagrees. With ESC RPM telemetry the advice is the ESC notch, FREQ set below
+  the hover motor frequency and above `INS_GYRO_FILTER` as the wiki asks, and the gyro line is
+  matched to the motors' harmonics: a line on no harmonic is called out as not motor noise,
+  and a harmonic outside `INS_HNTCH_HMNCS` is added to it. A notch that already follows an
+  RPM sensor or the in-flight FFT is kept, with a warning when its FREQ floor sits above the
+  measured line. On 100 forum logs, 53 of the 61
+  with such data get advice; where ESC RPM and gyro data meet (20 logs) the line is the
+  fundamental on 11, a harmonic on 6 and no motor harmonic on 3.
 - `forum_report(path)` tool: a Markdown reply for a discuss.ardupilot.org thread — vehicle and
   firmware, what went wrong first, up to six findings with their corroborating records, and a
   text sparkline of the data behind each (vibration axis, demanded vs actual attitude, pack

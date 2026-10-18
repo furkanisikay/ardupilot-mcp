@@ -78,8 +78,10 @@ def test_notch_detects_80hz_tone():
     # Bandwidth is half the detected frequency.
     assert abs(rec.suggested_params["INS_HNTCH_BW"] - round(freq / 2.0, 0)) < 1e-6
     assert rec.suggested_params["INS_HNTCH_ENABLE"] == 1.0
+    # Copter without ESC RPM -> throttle-based notch. No hover throttle is known here,
+    # so REF is left for the user to set rather than guessed.
     assert rec.suggested_params["INS_HNTCH_MODE"] == 1.0
-    assert rec.suggested_params["INS_HNTCH_REF"] == 1.0
+    assert "INS_HNTCH_REF" not in rec.suggested_params
     assert rec.confidence == "medium"
     assert abs(rec.evidence.samples["peak_hz"] - 80.0) <= 5.0
 

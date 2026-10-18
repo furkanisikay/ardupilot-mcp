@@ -9,13 +9,14 @@ exception.
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
 import os
 
 import numpy as np
 
 from . import ardupilot_meta as meta
-from .flight_log import FlightLog, LogMeta
+from .flight_log import FlightLog, ImuBatch, LogMeta
 from .model import LogIntegrity
 
 # Pure structural/metadata messages we don't keep as data rows, plus the raw
@@ -72,7 +73,38 @@ def parse_bin(path: str) -> FlightLog:
     log.meta.firmware_version = fw
     log.meta.flight_modes = _extract_modes(log, kind)
     log.meta.max_altitude_m = _extract_max_alt(log)
+    _close(reader)
+    if columns is not None:
+        # Decoded on first use: re-reading the file then costs one index pass, which only
+        # the notch advice pays, instead of every tool holding the raw batches in memory.
+        log._batch_loader = functools.partial(_load_batches, path)
     return log
+
+
+def _load_batches(path: str, log: FlightLog) -> list[ImuBatch]:
+    """Re-open ``path`` and decode its batch-sampler captures for ``log``."""
+    from pymavlink import DFReader
+
+    with contextlib.redirect_stderr(io.StringIO()):
+        reader = _open_reader(DFReader, path)
+        try:
+            return _decode_batches(reader, log)
+        finally:
+            _close(reader)
+
+
+def _close(reader) -> None:
+    """Release the log's file handle and memory map now.
+
+    pymavlink's reader sits in reference cycles, so without this the map stays open until
+    a garbage collection, and on Windows the user cannot replace or delete the log while
+    the server holds it. Every decoded column is a copy, so nothing still views the map;
+    if something did, mmap refuses to close (BufferError) and the collector frees it later.
+    """
+    try:
+        reader.close()
+    except (BufferError, OSError, AttributeError):
+        pass
 
 
 def _open_reader(DFReader, path: str):
@@ -101,6 +133,14 @@ _NP_DTYPES = {
 _NP_SCALE = {"c": 0.01, "C": 0.01, "e": 0.01, "E": 0.01, "L": 1e-7}
 # Bound the temporary (rows x bytes) gather index to ~32 MB per chunk.
 _GATHER_BYTES = 4_000_000
+
+
+def _gather(buf: np.ndarray, offs: np.ndarray, length: int, dtype: np.dtype) -> np.ndarray:
+    """The records of ``length`` bytes at ``offs`` (header skipped), viewed as ``dtype``."""
+    body = np.arange(3, length, dtype=np.int64)
+    step = max(1, _GATHER_BYTES // max(1, body.size))
+    parts = [buf[offs[i : i + step, None] + body] for i in range(0, offs.size, step)]
+    return np.ascontiguousarray(np.concatenate(parts)).view(dtype).reshape(-1)
 
 
 def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
@@ -134,10 +174,7 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
         if dtype is None or dtype.itemsize != fmt.len - 3:
             out[fmt.name] = _columns_via_pymavlink(reader, fmt, offs)
             continue
-        body = np.arange(3, fmt.len, dtype=np.int64)
-        step = max(1, _GATHER_BYTES // max(1, body.size))
-        parts = [buf[offs[i : i + step, None] + body] for i in range(0, offs.size, step)]
-        arr = np.ascontiguousarray(np.concatenate(parts)).view(dtype).reshape(-1)
+        arr = _gather(buf, offs, fmt.len, dtype)
         cols: dict[str, np.ndarray] = {}
         for col, ch in zip(fmt.columns, fmt.format, strict=True):
             v = arr[col]
@@ -150,6 +187,138 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
             cols[col] = v
         out[fmt.name] = cols
     return out, cut
+
+
+# INS_LOG_BAT_OPT bits (AP_InertialSensor.h BatchSampler): 0 sensor-rate, 1 post-filter,
+# 2 pre- and post-filter. The sampler alternates pre- and post-filter passes; with pre+post,
+# or post-filter at sensor rate, a post-filter batch is logged with instance + gyro count
+# (Write_ISBH, AP_InertialSensor_Logging.cpp; doing_post_filter_logging, AP_InertialSensor.h).
+_BAT_OPT_SENSOR_RATE, _BAT_OPT_POST, _BAT_OPT_PRE_POST = 1, 2, 4
+# ISBH.type: IMU_SENSOR_TYPE_ACCEL = 0, IMU_SENSOR_TYPE_GYRO = 1 (AP_InertialSensor.h).
+_BATCH_SENSOR = {0: "accel", 1: "gyro"}
+_ISBD_ARRAY = ("<i2", (32,))  # ISBD x/y/z: int16[32] (LogStructure.h log_ISBD)
+
+
+def _view_records(reader, buf: np.ndarray, name: str) -> tuple[np.ndarray, np.ndarray] | None:
+    """(file offsets, structured records) of one type, ``a`` arrays as int16[32] sub-arrays."""
+    found = [(tid, f) for tid, f in reader.formats.items() if f.name == name]
+    if not found:
+        return None
+    tid, fmt = found[0]
+    if tid >= len(reader.offsets):
+        return None
+    offs = np.asarray(reader.offsets[tid], dtype=np.int64)
+    offs = offs[offs + fmt.len <= buf.size]
+    if offs.size == 0 or len(fmt.columns) != len(fmt.format):
+        return None
+    fields: list[tuple] = []
+    for col, ch in zip(fmt.columns, fmt.format, strict=True):
+        if ch == "a":
+            fields.append((col, *_ISBD_ARRAY))
+        elif ch in _NP_DTYPES:
+            fields.append((col, _NP_DTYPES[ch]))
+        else:
+            return None
+    dtype = np.dtype(fields)
+    if dtype.itemsize != fmt.len - 3:
+        return None
+    return offs, _gather(buf, offs, fmt.len, dtype)
+
+
+def _decode_batches(reader, log: FlightLog) -> list[ImuBatch]:
+    """Batch-sampler captures: each ISBH header joined to the ISBD blocks that follow it."""
+    buf = np.frombuffer(reader.data_map, dtype=np.uint8)
+    head, data = _view_records(reader, buf, "ISBH"), _view_records(reader, buf, "ISBD")
+    if head is None or data is None:
+        return []
+    h_off, h = head
+    d_off, d = data
+    order = np.argsort(h_off)
+    h_off, h = h_off[order], h[order]
+    # Each ISBD belongs to the latest ISBH before it in the file with the same sequence
+    # number (N is a uint16 and wraps on long logs).
+    owner = np.searchsorted(h_off, d_off, side="right") - 1
+    ok = owner >= 0
+    ok[ok] = d["N"][ok] == h["N"][owner[ok]]
+    if not np.any(ok):
+        return []
+    origin = log.meta.start_time_s or 0.0
+    opt = int(log.params.get("INS_LOG_BAT_OPT", 0))
+    n_imu = _imu_count(log)
+    # Whether a post-filter batch carries the instance offset (see Write_ISBH).
+    offset = bool(opt & _BAT_OPT_PRE_POST) or (bool(opt & _BAT_OPT_POST) and bool(opt & _BAT_OPT_SENSOR_RATE))
+    seen = {(int(t), int(i)) for t, i in zip(h["type"], h["instance"], strict=True)}
+    batches: list[ImuBatch] = []
+    # Group the blocks by batch once (sorted by owner, then seqno) instead of masking per batch.
+    d, owner = d[ok], owner[ok]
+    by_batch = np.lexsort((d["seqno"], owner))
+    d, owner = d[by_batch], owner[by_batch]
+    keys, starts = np.unique(owner, return_index=True)
+    for k, rows in zip(keys, np.split(d, starts[1:]), strict=True):
+        # Keep the contiguous run of blocks from seqno 0 (a dropped block ends the batch).
+        expect = np.arange(rows.size)
+        run = int(np.argmax(rows["seqno"] != expect)) if np.any(rows["seqno"] != expect) else rows.size
+        rows = rows[:run]
+        hdr = h[k]
+        sensor = _BATCH_SENSOR.get(int(hdr["type"]))
+        mul = float(hdr["mul"]) or 1.0
+        rate = float(hdr["smp_rate"])
+        if rows.size == 0 or sensor is None or not rate > 0:
+            continue
+        inst = int(hdr["instance"])
+        post: bool | None
+        if offset and n_imu is None:
+            # Without the gyro count the offset post-filter instances cannot be told apart.
+            post = None
+        else:
+            n = n_imu or 1
+            shifted = offset and inst >= n
+            if shifted:
+                inst -= n
+            post = _batch_is_post(opt, shifted, (int(hdr["type"]), inst + n) in seen)
+        batches.append(
+            ImuBatch(
+                time_s=float(hdr["TimeUS"]) / 1e6 - origin,
+                sensor=sensor,
+                instance=inst,
+                post_filter=post,
+                rate_hz=rate,
+                x=rows["x"].reshape(-1).astype(np.float32) / mul,
+                y=rows["y"].reshape(-1).astype(np.float32) / mul,
+                z=rows["z"].reshape(-1).astype(np.float32) / mul,
+            )
+        )
+    return batches
+
+
+def _batch_is_post(opt: int, shifted: bool, sibling_shifted: bool) -> bool | None:
+    """Whether a batch holds filtered samples (None when the log cannot tell).
+
+    A pass flagged post-filter takes filtered samples only when sensor-rate sampling is
+    off for that IMU: at sensor rate the backend always feeds the sampler raw samples
+    (_notify_new_gyro/accel_sensor_rate_sample, AP_InertialSensor_Backend.cpp), though
+    Write_ISBH still offsets the instance. ``shifted``: this batch carries the offset;
+    ``sibling_shifted``: the same sensor's offset batches exist in the log.
+    """
+    sensor_rate = bool(opt & _BAT_OPT_SENSOR_RATE)
+    if opt & _BAT_OPT_PRE_POST:
+        if not shifted:
+            return False
+        # Offset either way; filtered only if this IMU was not sampled at sensor rate.
+        return None if sensor_rate else True
+    if opt & _BAT_OPT_POST:
+        # With sensor rate, the offset appears only when sensor-rate sampling is on, and
+        # then every pass is raw; without it every pass is filtered.
+        return not (sensor_rate and (shifted or sibling_shifted))
+    return False
+
+
+def _imu_count(log: FlightLog) -> int | None:
+    """Gyros on the board: the IMU instances logged, else the detected gyro IDs (None if unknown)."""
+    n = len(log.instances("IMU"))
+    if n == 0:
+        n = sum(1 for k in ("INS_GYR_ID", "INS_GYR2_ID", "INS_GYR3_ID") if log.params.get(k))
+    return n or None
 
 
 def _cstr(raw: bytes) -> str:

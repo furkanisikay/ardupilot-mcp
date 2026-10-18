@@ -46,7 +46,10 @@ ardupilot_mcp/
                    finding that measured the event (`Finding.related`)
   timeline.py      incident timeline: onset (first anomaly while armed) vs impact; flags
                    findings that start after the crash (`after_impact`). Time order, never cause
-  tuning.py        advisory tuning (notch FFT, PID, autotune) — not a check
+  tuning.py        advisory tuning (notch, PID, autotune) — not a check
+  notch.py         harmonic-notch advice from the batch sampler (ISBH/ISBD), a fast IMU
+                   stream, the in-flight FFT (FTN1) or ESC RPM, with the mode and REF for the
+                   vehicle; ESC RPM also tells a motor harmonic from a frame resonance
   profile.py       VehicleProfile (frame, motors, battery cells, power margin)
   param_file.py    parse a user-exported .param / .params file
   ardupilot_meta.py  ArduPilot reference data (modes, ERR/EV enums, frame classes)

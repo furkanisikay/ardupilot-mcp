@@ -34,6 +34,7 @@ _FMT_CHAR_TO_STRUCT: dict[str, str] = {
     "Z": "64s",
     "Q": "Q",
     "q": "q",
+    "a": "32h",  # int16[32] (batch-sampler ISBD blocks)
 }
 
 # Synthetic format table: name -> (type_id, format_chars, columns).
@@ -55,6 +56,9 @@ FORMATS: dict[str, tuple[int, str, list[str]]] = {
     "IMU": (75, "Qffffff", ["TimeUS", "GyrX", "GyrY", "GyrZ", "AccX", "AccY", "AccZ"]),
     "POS": (76, "Qfff", ["TimeUS", "Lat", "Lng", "Alt"]),
     "XKF4": (77, "Qfffff", ["TimeUS", "SV", "SP", "SH", "SM", "SVT"]),
+    # Batch sampler (LogStructure.h log_ISBH / log_ISBD).
+    "ISBH": (78, "QHBBHHQf", ["TimeUS", "N", "type", "instance", "mul", "smp_cnt", "SampleUS", "smp_rate"]),
+    "ISBD": (79, "QHHaaa", ["TimeUS", "N", "seqno", "x", "y", "z"]),
 }
 
 
@@ -81,12 +85,17 @@ def _pack_value(char: str, value: object) -> object:
         return _pack_str(str(value), width)
     if char in ("f", "d"):
         return float(value)  # type: ignore[arg-type]
+    if char == "a":
+        return [int(v) for v in value]  # type: ignore[attr-defined]
     return int(value)  # type: ignore[arg-type]
 
 
 def _pack_message(name: str, fields: dict[str, object]) -> bytes:
     tid, fmt_chars, cols = FORMATS[name]
-    values = [_pack_value(fmt_chars[i], fields.get(cols[i], 0)) for i in range(len(cols))]
+    values: list[object] = []
+    for i, col in enumerate(cols):
+        v = _pack_value(fmt_chars[i], fields.get(col, [0] * 32 if fmt_chars[i] == "a" else 0))
+        values.extend(v if isinstance(v, list) else [v])
     body = struct.pack(_body_struct(fmt_chars), *values)
     return struct.pack("<BBB", HEAD1, HEAD2, tid) + body
 
