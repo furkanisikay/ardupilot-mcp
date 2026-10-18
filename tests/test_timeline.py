@@ -75,3 +75,18 @@ def test_log_ending_armed_is_the_impact():
     assert tl.log_ended_armed
     assert tl.impact_basis == "log ended while armed"
     assert tl.impact_s is not None and abs(tl.impact_s - 29.9) < 1e-6
+
+
+def test_flight_long_conditions_are_not_the_onset():
+    from ardupilot_mcp.checks.util import make_finding
+    from ardupilot_mcp.model import Finding, Severity
+
+    log = _crash_log()
+    findings = diagnose(log).findings + [
+        make_finding("gps", Severity.WARN, "High GPS HDOP, peak 3.0", "x", time_start_s=5.0, time_end_s=89.0),
+        make_finding("compass", Severity.WARN, "Unstable compass field strength", "x", time_start_s=0.0),
+    ]
+    assert all(isinstance(f, Finding) for f in findings)
+    tl = build_timeline(log, findings)
+    assert tl.onset_s == 40.0  # the vibration, not the flight-long HDOP or compass statistic
+    assert set(tl.conditions) >= {"High GPS HDOP, peak 3.0", "Unstable compass field strength"}

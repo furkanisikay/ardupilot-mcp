@@ -139,6 +139,9 @@ MCP spec) on 2026-06-14. Generated from a fan-out verification pass over **198 a
 
 | `ardupilot_mcp/logging_advice.py` · _COPTER_RULES | Copter LOG_BITMASK bits: ATTITUDE_FAST 0, ATTITUDE_MED 1, GPS 2, PM 3, CTUN 4, RCIN 6, IMU 7, RCOUT 10, COMPASS 13, MOTBATT 17, IMU_FAST 18, IMU_RAW 19; VIBE is written when IMU, IMU_FAST or IMU_RAW is set; GPS/compass/baro use the GPS, COMPASS and IMU bits; the batch sampler is INS_LOG_BAT_MASK | [ArduCopter/defines.h](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/ArduCopter/defines.h), [ArduCopter/Copter.cpp](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/ArduCopter/Copter.cpp), [ArduCopter/system.cpp](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/ArduCopter/system.cpp), [AP_InertialSensor/BatchSampler.cpp](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/libraries/AP_InertialSensor/BatchSampler.cpp) |
 
+| `ardupilot_mcp/checks/attitude.py` · plane yaw skip | ArduPlane writes ATT with a 0 yaw target: "Plane does not have the concept of navyaw. This is a placeholder." | [ArduPlane/Log.cpp Log_Write_Attitude](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/ArduPlane/Log.cpp) |
+| `ardupilot_mcp/flight_log.py` · flying_mask | Copter's land detector logs EV LAND_COMPLETE (18) and NOT_LANDED (28) | [ArduCopter/land_detector.cpp](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/ArduCopter/land_detector.cpp), [AP_Logger/AP_Logger.h LogEvent](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/libraries/AP_Logger/AP_Logger.h) |
+
 ## Heuristic thresholds (our conservative choices)
 
 | File · location | Claim | Source |
@@ -269,3 +272,4 @@ MCP spec) on 2026-06-14. Generated from a fan-out verification pass over **198 a
 | `ardupilot_mcp/checks/sensors.py` · GPS silence | INFO when GPS1_TYPE is AUTO and no GPS mode was flown, WARN otherwise |
 | `ardupilot_mcp/compare.py` · learned parameters | STAT_*, MOT_THST_HOVER, INS_GYR*OFFS*, INS_*_ID, COMPASS_DEV_ID*, BARO*_GND_PRESS, COMPASS_DEC and *_CALTEMP are values the autopilot writes itself, so they are listed apart from configuration changes; differences below 1e-6 relative are float32 noise |
 | `ardupilot_mcp/logging_advice.py` · scope | Advice only for Copter/Heli (other vehicles number LOG_BITMASK bits differently); a missing message whose bit is on is left to the sensors check |
+| `ardupilot_mcp/checks/timing.py` · disarmed gaps | Gaps that start outside every armed interval are skipped (LOG_DISARMED=0 pauses logging between flights); a gap that starts in flight is still a WARN |

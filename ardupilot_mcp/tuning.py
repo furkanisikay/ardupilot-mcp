@@ -198,6 +198,11 @@ def _analyze_pid(log: FlightLog) -> list[TuningRecommendation]:
             continue
         # Records carry both fields aligned, so equal-length slices are aligned.
         err = act[:n] - des[:n]
+        flying = log.flying_mask(t_act[:n])  # ground time is not tracking performance
+        if flying is not None:
+            err = err[flying]
+            if err.size == 0:
+                continue
         rms = float(np.sqrt(np.mean(err**2)))
         peak = float(np.max(np.abs(err)))
         if rms <= PID_RMS_WARN_DEG:

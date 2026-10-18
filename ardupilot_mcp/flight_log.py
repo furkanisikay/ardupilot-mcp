@@ -445,6 +445,43 @@ class FlightLog:
             mask |= (times >= t0) & (times <= t1)
         return mask
 
+    def flying_mask(self, times: np.ndarray) -> np.ndarray | None:
+        """``times`` that are armed AND not on the ground (None if arming is unknown).
+
+        Plane logs ``STAT.isFlying`` (ArduPlane/Log.cpp), which is used when present.
+        Copter's land detector logs EV LAND_COMPLETE (18) and NOT_LANDED (28)
+        (ArduCopter/land_detector.cpp). When the log has them, armed time before a
+        NOT_LANDED and after a LAND_COMPLETE is ground time: spool-up, touch-down and
+        a crashed airframe lying on its side are not flight. Without them this is the
+        armed mask.
+        """
+        armed = self.armed_mask(times)
+        if armed is None:
+            return None
+        # ArduPlane: STAT.isFlying ("True if aircraft is probably flying", ArduPlane/Log.cpp).
+        st, is_flying = self.series("STAT", "isFlying")
+        if is_flying.size:
+            idx = np.searchsorted(st, times, side="right") - 1
+            known = idx >= 0
+            flying_now = np.zeros(times.shape, dtype=bool)
+            flying_now[known] = is_flying[idx[known]] > 0
+            return armed & flying_now
+        edges = sorted(
+            (float(r["timestamp"]), r.get("Id") == 28)
+            for r in self.get("EV")
+            if r.get("Id") in (18, 28) and "timestamp" in r
+        )
+        if not any(airborne for _, airborne in edges):
+            return armed
+        flying = np.zeros(times.shape, dtype=bool)
+        state = False
+        last = -np.inf
+        for t, airborne in edges + [(np.inf, False)]:
+            if state:
+                flying |= (times >= last) & (times < t)
+            state, last = airborne, t
+        return armed & flying
+
     def clip_to_window(
         self, times: np.ndarray, values: np.ndarray, window: tuple[float | None, float | None]
     ) -> tuple[np.ndarray, np.ndarray]:

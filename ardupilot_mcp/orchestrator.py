@@ -57,7 +57,7 @@ def diagnose(log: FlightLog, checks: list[Check] | None = None) -> DiagnosisRepo
     timeline = build_timeline(log, findings)
     findings.sort(key=_finding_sort_key)
     incident = None
-    if timeline.onset_s is not None or timeline.impact_s is not None:
+    if timeline.onset_s is not None or timeline.impact_s is not None or timeline.conditions:
         incident = timeline.model_copy(update={"events": []})
 
     # Attach authoritative ArduPilot doc references to each finding (vehicle-aware).
@@ -134,6 +134,14 @@ def _build_summary(
     if incident is not None:
         if incident.onset_s is not None:
             lines.append(f"First anomaly while armed: {incident.onset_basis} @ {incident.onset_s:.0f}s.")
+        if incident.conditions:
+            more = f" (+{len(incident.conditions) - 3} more)" if len(incident.conditions) > 3 else ""
+            lines.append(
+                "Present throughout (context, not the onset): "
+                + "; ".join(incident.conditions[:3])
+                + more
+                + "."
+            )
         if incident.impact_s is not None:
             n_after = sum(1 for f in findings if f.after_impact)
             tail = f"; {n_after} finding(s) start after it and are listed last" if n_after else ""

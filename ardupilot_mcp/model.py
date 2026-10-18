@@ -157,6 +157,11 @@ class IncidentTimeline(BaseModel):
         default=None, description="Check (or 'firmware'/'err'/'mode') of the onset event."
     )
     events: list[TimelineEvent] = Field(default_factory=list)
+    conditions: list[str] = Field(
+        default_factory=list,
+        description="WARN+ findings that describe the whole flight or configuration (compass statistics, "
+        "parameters, boot messages, flight-long windows): context, never the onset.",
+    )
     caveats: list[str] = Field(default_factory=list)
 
 

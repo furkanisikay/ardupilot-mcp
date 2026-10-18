@@ -95,11 +95,17 @@ class TimingCheck(Check):
 
         threshold = max(GAP_ABS_FLOOR_S, GAP_REL_FACTOR * median_dt)
 
-        # Collect every anomalous gap with the timestamp it starts at.
+        # Collect every anomalous gap with the timestamp it starts at. With
+        # LOG_DISARMED=0 logging pauses at disarm and resumes at the next arm in the
+        # same file, so a gap that starts while disarmed is expected, not a stall.
+        armed = log.armed_intervals()
         gaps: list[tuple[float, float, float]] = []  # (gap_s, start_s, end_s)
         for i in range(dt.size):
             if dt[i] > threshold:
-                gaps.append((float(dt[i]), float(times[i]), float(times[i + 1])))
+                start = float(times[i])
+                if armed and not any(a <= start < b for a, b in armed):
+                    continue
+                gaps.append((float(dt[i]), start, float(times[i + 1])))
         if not gaps:
             return []
 

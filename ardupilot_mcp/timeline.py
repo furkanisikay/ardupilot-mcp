@@ -41,6 +41,26 @@ def _in_armed(t: float, armed: list[tuple[float, float]]) -> bool:
     return not armed or any(a <= t <= b for a, b in armed)
 
 
+# Checks whose findings describe the whole log (a statistic, a parameter, a boot-time
+# message), not a moment in the flight. They are reported as conditions, never as onset.
+_CONDITION_CHECKS = {"compass", "calibration", "config", "param_audit", "sensors", "prearm"}
+# Design choice: a finding present from the start of the flight (window opening
+# within the first CONDITION_START_SHARE of armed time) and covering at least
+# CONDITION_SHARE of it is a flight-long condition, not an event.
+CONDITION_SHARE = 0.5
+CONDITION_START_SHARE = 0.05
+
+
+def _is_condition(f: Finding, armed: list[tuple[float, float]], total: float) -> bool:
+    if f.check_id in _CONDITION_CHECKS:
+        return True
+    t0, t1 = f.evidence.time_start_s, f.evidence.time_end_s
+    if total <= 0 or t0 is None or t1 is None:
+        return False
+    first = armed[0][0] if armed else 0.0
+    return t0 <= first + CONDITION_START_SHARE * total and (t1 - t0) >= CONDITION_SHARE * total
+
+
 def log_ended_armed(log: FlightLog, armed: list[tuple[float, float]] | None = None) -> bool:
     """True when the last armed interval has no disarm: the recording stops mid-flight."""
     armed = log.armed_intervals() if armed is None else armed
@@ -117,12 +137,17 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
     impact = min(impacts) if impacts else None
     impact_s = impact[0] if impact else None
 
+    armed_total = sum(b - a for a, b in armed) if armed else (log.meta.duration_s or 0.0)
+    conditions: list[str] = []
     for f in findings:
         t = f.evidence.time_start_s
         if t is None or f.severity == Severity.INFO:
             continue
         if impact_s is not None and t >= impact_s - IMPACT_SLACK_S and f.check_id != "integrity":
             f.after_impact = True
+        if f.check_id != "integrity" and _is_condition(f, armed, armed_total):
+            conditions.append(f.title)
+            continue
         events.append(
             TimelineEvent(
                 time_s=t, source=f"finding:{f.check_id}", label=f.title, severity=f.severity, phase=""
@@ -167,6 +192,7 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
 
     return IncidentTimeline(
         path=log.path,
+        conditions=list(dict.fromkeys(conditions)),
         onset_s=onset_s,
         onset_basis=onset[2] if onset else None,
         impact_s=impact_s,

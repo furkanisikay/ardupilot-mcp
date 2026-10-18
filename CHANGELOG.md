@@ -40,6 +40,14 @@ All notable changes to this project are documented here. The format is based on
   landing likely OK); 100+ stays CRITICAL.
 - `sensors`: "GPS configured but no data" is INFO when `GPS1_TYPE` is the default AUTO and no GPS
   mode was flown (indoor/optical-flow craft), WARN otherwise.
+- `attitude`: judged in flight only (armed, and between Copter's NOT_LANDED and LAND_COMPLETE
+  events when logged), and Plane yaw is skipped (ArduPlane logs `ATT.DesYaw` as a 0 placeholder).
+  On 100 forum logs this was the most common CRITICAL: an upside-down crashed or carried
+  airframe, and every Plane's heading, read as "attitude tracking failure". The PID tuning advice
+  uses the same flight window.
+- `timing`: a logging gap that starts while disarmed is expected with `LOG_DISARMED=0` (logging
+  pauses between flights in the same file) and is no longer a "main-loop stall"; half of the gap
+  warnings on the forum corpus were this.
 - Logs without GPS parsed ~40x slower than the rest: pymavlink scans the whole log for a GPS clock
   we never use. The reader now skips that scan (15 MB forum log: 6.9 s -> 0.15 s).
 
@@ -47,8 +55,9 @@ All notable changes to this project are documented here. The format is based on
 - `incident_timeline` tool and `DiagnosisReport.incident`: the onset (first anomaly while armed)
   and the impact (ERR CRASH_CHECK, "Crash: Disarming", or the log ending while armed). Findings
   that start at or after the impact are flagged `after_impact` and listed last, so a crash's
-  consequences (vibration spikes, attitude error, GPS loss) no longer top the report. Time order
-  only; no causal claims.
+  consequences (vibration spikes, attitude error, GPS loss) no longer top the report. Flight-long
+  conditions (compass statistics, parameters, boot messages, windows covering most of the flight)
+  are listed as context and never chosen as the onset. Time order only; no causal claims.
 - `compare_logs(path_a, path_b)` tool: what changed between two flights — configuration
   parameter differences (kept apart from STAT_* counters, learned hover throttle, gyro offsets,
   calibration temperatures and other values the autopilot writes itself), parameters only in one

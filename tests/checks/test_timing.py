@@ -152,3 +152,20 @@ def test_check_is_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("timing") is not None
+
+
+def test_gap_between_flights_while_disarmed_is_expected():
+    # LOG_DISARMED=0: disarm at t=3, logging stops shortly after (t=5), resumes at the next arm (t=20).
+    seg1 = build_series(0.0, 50.0, Roll=[0.0] * 250)  # 0..5 s
+    seg2 = build_series(20.0, 50.0, Roll=[0.0] * 250)  # 20..25 s
+    ev = [{"TimeUS": 0, "Id": 10}, {"TimeUS": 3_000_000, "Id": 11}, {"TimeUS": 20_000_000, "Id": 10}]
+    findings = TimingCheck().run(make_flight_log({"ATT": seg1 + seg2, "EV": ev}))
+    assert [f for f in findings if "gap" in f.title.lower()] == []
+
+
+def test_gap_starting_in_flight_is_still_flagged():
+    seg1 = build_series(0.0, 50.0, Roll=[0.0] * 250)
+    seg2 = build_series(20.0, 50.0, Roll=[0.0] * 250)
+    ev = [{"TimeUS": 0, "Id": 10}]  # armed throughout
+    findings = TimingCheck().run(make_flight_log({"ATT": seg1 + seg2, "EV": ev}))
+    assert [f for f in findings if "gap" in f.title.lower()]

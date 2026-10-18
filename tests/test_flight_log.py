@@ -128,3 +128,15 @@ def test_no_arm_edges_with_log_disarmed_off_means_whole_log_armed():
     log = make_flight_log({"ATT": att}, params={"LOG_DISARMED": 0})
     assert log.armed_intervals() == [(0.0, pytest.approx(29.9))]
     assert make_flight_log({"ATT": att}, params={"LOG_DISARMED": 1}).armed_intervals() == []
+
+
+def test_flying_mask_uses_plane_is_flying():
+    att = build_series(0.0, 10.0, Roll=[0.0] * 100)
+    stat = [
+        {"TimeUS": 0, "isFlying": 0},
+        {"TimeUS": 4_000_000, "isFlying": 1},
+        {"TimeUS": 8_000_000, "isFlying": 0},
+    ]
+    log = make_flight_log({"ATT": att, "STAT": stat, "EV": [{"TimeUS": 0, "Id": 10}]})
+    t = np.array([1.0, 5.0, 9.0])
+    assert list(log.flying_mask(t)) == [False, True, False]
