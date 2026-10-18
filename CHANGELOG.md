@@ -7,6 +7,31 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- Arming refusals were dropped as boot chatter when they contained "calibrated" or
+  " ready" ("PreArm: Compass calibrated requires reboot", "Arm: GPS not ready"), and an
+  "Arm:" refusal was rated INFO. Both prefixes now always count, as WARN.
+- Fields compared sample by sample (ATT demand vs actual, GPS HDop vs Status, MAG X/Y/Z,
+  BAT Volt vs Curr, the RCIN primary channels) were read one by one and paired by index,
+  so one missing or NaN value shifted every later pair. A record with a NaN demand turned
+  perfect roll tracking into a "Poor roll tracking (25.8 deg RMS)" advice and a tracking
+  spike. `FlightLog.series_many` keeps the fields of one record together.
+- The battery thresholds counted samples taken before arming (a monitor reads 0 V before
+  the pack is connected) and any momentary sag. A threshold now counts only while armed and
+  when the voltage stays below it for `BATT_LOW_TIMER`, as the firmware's failsafe does, or
+  until the armed data ends.
+- "Sudden voltage drop" kept only the largest step; when that was a glitch that recovered,
+  a smaller drop that persisted went unreported. The largest persistent step is reported,
+  judged while armed.
+- An EV, MODE or MSG record written before the first IMU sample got a negative time; the
+  time origin now includes them.
+- A motor held exactly at 1950 us did not count as saturated; the attitude check judged
+  motor saturation over the whole flight instead of the divergence window; RC loss reported
+  the lowest PWM of the whole log instead of the loss window.
+- Compass offsets were judged for a compass with `COMPASS_USE{n} = 0`.
+- An ERR FLIGHT_MODE record now names the mode the vehicle could not switch to; corrupt
+  ERR, MODE and EV records no longer break `list_events`; `recommend_tuning` accepts an
+  area with surrounding spaces.
+- Real-crash benchmark: top-1 11, top-3 22 (unchanged), false criticals 101 -> 98.
 - Checks that skip the pre-arm phase (GPS acquisition) read arming from EV records only; the
   armed window now comes from every arm/disarm record, ARM included.
 - Pre-4.1 logs were judged on their primary sensor and EKF core only. Firmware before 4.1

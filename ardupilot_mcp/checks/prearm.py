@@ -80,6 +80,10 @@ _HEX8 = re.compile(r"\b[0-9a-fA-F]{8}\b")
 
 def _is_routine(low: str) -> bool:
     """True if a (lowercased) line is routine boot chatter to ignore."""
+    if _is_arming_failure(low):
+        # "PreArm: Compass calibrated requires reboot", "Arm: GPS not ready": the
+        # routine tokens below would otherwise swallow a refusal to arm.
+        return False
     for tok in ROUTINE_TOKENS:
         if tok in low:
             return True
@@ -101,13 +105,19 @@ def _is_notable(low: str) -> bool:
     return any(tok in low for tok in NOTABLE_TOKENS)
 
 
-# Arming-check failures are sent as "PreArm: <reason>" (AP_Arming.cpp); only that prefix,
-# not the word anywhere in a line, marks one.
-PREARM_PREFIX = "prearm:"
+# Arming-check failures are sent as "PreArm: <reason>" while the checks run before
+# arming and "Arm: <reason>" when an arm attempt is refused, both at MAV_SEVERITY_CRITICAL
+# (AP_Arming::check_failed, libraries/AP_Arming/AP_Arming.cpp). Only the prefix, not the
+# word anywhere in a line, marks one.
+ARMING_FAILURE_PREFIXES = ("prearm:", "arm:")
+
+
+def _is_arming_failure(low: str) -> bool:
+    return low.lstrip().startswith(ARMING_FAILURE_PREFIXES)
 
 
 def _severity(low: str) -> Severity:
-    if low.startswith(PREARM_PREFIX):
+    if _is_arming_failure(low):
         return Severity.WARN
     return Severity.WARN if any(tok in low for tok in WARN_TOKENS) else Severity.INFO
 

@@ -162,3 +162,11 @@ def test_check_is_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("motors") is not None
+
+
+def test_a_motor_held_exactly_at_the_saturation_pwm_counts():
+    n = 300
+    findings = MotorsCheck().run(
+        _log(build_series(0.0, 10.0, C1=[1950.0] * n, C2=[1500.0] * n, C3=[1500.0] * n, C4=[1500.0] * n))
+    )
+    assert any(f.title == "Motor saturation (C1)" for f in findings)

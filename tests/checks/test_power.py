@@ -242,3 +242,46 @@ def test_a_momentary_sag_does_not_start_the_low_voltage_window():
     )
     [f] = [x for x in PowerCheck().run(log) if x.title == "Battery reached low-voltage threshold"]
     assert f.evidence.time_start_s == 16.0
+
+
+def test_a_persistent_drop_is_found_behind_a_larger_glitch():
+    volts = [16.0] * 400
+    volts[100] = 11.0  # a one-sample glitch that recovers
+    volts[250:] = [13.0] * 150  # a 3 V drop that stays
+    findings = PowerCheck().run(_log(build_series(0.0, 10.0, Volt=volts, Curr=[10.0] * 400)))
+    drop = [f for f in findings if f.title == "Sudden voltage drop"]
+    assert len(drop) == 1
+    assert drop[0].evidence.samples["drop_volt"] == 3.0
+    assert drop[0].evidence.time_start_s == 24.9
+
+
+def test_zero_volts_before_arming_is_not_a_critical_battery():
+    volts = [0.0] * 50 + [16.4] * 500
+    log = make_flight_log(
+        {
+            "BAT": build_series(0.0, 10.0, Volt=volts, Curr=[5.0] * 550),
+            "EV": [{"TimeUS": 5_000_000, "Id": 10}, {"TimeUS": 54_000_000, "Id": 11}],
+        },
+        params={"BATT_LOW_VOLT": 14.0, "BATT_CRT_VOLT": 13.0},
+    )
+    assert PowerCheck().run(log) == []
+
+
+def test_a_sag_shorter_than_the_failsafe_timer_is_not_a_threshold_finding():
+    volts = [16.0] * 300
+    volts[100:120] = [12.5] * 20  # 2 s below the 13 V critical level, then recovers
+    params = {"BATT_LOW_VOLT": 14.0, "BATT_CRT_VOLT": 13.0, "BATT_LOW_TIMER": 10.0}
+    findings = PowerCheck().run(_log(build_series(0.0, 10.0, Volt=volts, Curr=[40.0] * 300), params=params))
+    assert not [
+        f
+        for f in findings
+        if "voltage" in f.title and "threshold" in f.title or "critical voltage" in f.title
+    ]
+
+
+def test_a_pack_that_collapses_at_the_end_is_critical_before_the_timer_expires():
+    volts = [16.0] * 300 + [12.0] * 30  # 3 s below critical until the log ends
+    params = {"BATT_LOW_VOLT": 14.0, "BATT_CRT_VOLT": 13.0, "BATT_LOW_TIMER": 10.0}
+    findings = PowerCheck().run(_log(build_series(0.0, 10.0, Volt=volts, Curr=[40.0] * 330), params=params))
+    crit = [f for f in findings if f.title == "Battery reached critical voltage"]
+    assert len(crit) == 1 and crit[0].evidence.time_start_s == 30.0

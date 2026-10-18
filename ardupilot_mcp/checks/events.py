@@ -21,9 +21,12 @@ returns ``[]`` when the log carries none of ERR/MODE/EV.
 
 from __future__ import annotations
 
+import math
+
 from ..ardupilot_meta import (
     CRITICAL_ERR_SUBSYSTEMS,
     ERR_EKF_PRIMARY,
+    ERR_FLIGHT_MODE,
     err_subsystem_name,
     ev_name,
     mode_name,
@@ -67,7 +70,7 @@ class EventsCheck(Check):
         if not log.has("ERR"):
             return out
         for rec in log.get("ERR"):
-            if "Subsys" not in rec or "ECode" not in rec:
+            if not (_is_finite(rec.get("Subsys")) and _is_finite(rec.get("ECode"))):
                 continue
             subsys = int(rec["Subsys"])
             ecode = int(rec["ECode"])
@@ -82,6 +85,11 @@ class EventsCheck(Check):
             sev = Severity.CRITICAL if critical else Severity.WARN
             ts = float(rec["timestamp"]) if "timestamp" in rec else None
             kind = "failsafe/critical fault" if critical else "subsystem error"
+            detail = (
+                f" The vehicle could not switch to {mode_name(ecode, log.meta.vehicle_kind)}."
+                if subsys == ERR_FLIGHT_MODE
+                else ""
+            )
             out.append(
                 make_finding(
                     self.id,
@@ -90,6 +98,7 @@ class EventsCheck(Check):
                     f"ERR logged a {kind} on subsystem {name} (Subsys {subsys}) with "
                     f"ECode {ecode}"
                     + (f" at {ts:.1f}s." if ts is not None else ".")
+                    + detail
                     + (
                         " This is a safety-critical failsafe/fault that directly affects flight safety."
                         if critical
@@ -224,3 +233,7 @@ class EventsCheck(Check):
 
 def _is_number(v: object) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def _is_finite(v: object) -> bool:
+    return _is_number(v) and math.isfinite(float(v))  # type: ignore[arg-type]

@@ -190,3 +190,12 @@ def test_area_filter_isolates_single_analysis():
     recs = analyze_tuning(log, area="notch")
     assert all(r.area == TuningArea.NOTCH for r in recs)
     assert recs, "expected the notch recommendation"
+
+
+def test_pid_advice_ignores_a_missing_demand_sample():
+    n = 600
+    roll = [30.0 if (i // 5) % 2 == 0 else -30.0 for i in range(n)]
+    des = list(roll)
+    des[40] = float("nan")
+    att = build_series(0.0, 50.0, Roll=roll, DesRoll=des, Pitch=[0.0] * n, DesPitch=[0.0] * n)
+    assert analyze_tuning(make_flight_log({"ATT": att}), area="pid") == []

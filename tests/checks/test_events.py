@@ -142,3 +142,14 @@ def test_ekf_primary_is_a_lane_switch_not_an_error():
     findings = [f for f in EventsCheck().run(make_flight_log({"ERR": errs})) if "EKF primary" in f.title]
     assert [f.title for f in findings] == ["EKF primary core changed to 1", "EKF primary core changed to 0"]
     assert all(f.severity == Severity.INFO for f in findings)
+
+
+def test_a_flight_mode_error_names_the_mode_it_could_not_enter():
+    log = make_flight_log({"ERR": [{"TimeUS": 1_000_000, "Subsys": 10, "ECode": 6}]})
+    (finding,) = EventsCheck().run(log)
+    assert "could not switch to RTL" in finding.explanation
+
+
+def test_a_corrupt_err_record_is_skipped():
+    log = make_flight_log({"ERR": [{"TimeUS": 1_000_000, "Subsys": float("nan"), "ECode": float("nan")}]})
+    assert EventsCheck().run(log) == []

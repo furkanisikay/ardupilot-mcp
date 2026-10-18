@@ -227,8 +227,10 @@ class GpsCheck(Check):
         # HDOP only means something when there's a fix. Drop no-fix sentinel
         # readings (~99.99) so we don't mislabel "no signal" as "poor geometry"
         # (the fix/sats findings already cover the no-fix case).
-        _, status = log.clip_to_window(*log.series("GPS", "Status", inst), window)
-        if status.size == hdop.size:
+        t_both, (hdop_s, status) = log.series_many("GPS", ["HDop", "Status"], inst)
+        if status.size:
+            times, hdop = log.clip_to_window(t_both, hdop_s, window)
+            _, status = log.clip_to_window(t_both, status, window)
             valid = (status >= FIX_3D) & (hdop < HDOP_SENTINEL)
         else:
             valid = hdop < HDOP_SENTINEL

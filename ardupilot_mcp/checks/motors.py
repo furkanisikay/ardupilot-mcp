@@ -30,7 +30,7 @@ from .. import ardupilot_meta as meta
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
-from .util import fraction_above, make_finding
+from .util import fraction_at_or_above, make_finding
 
 # Channels RCOU may carry; we only inspect the ones present and active.
 MOTOR_CHANNELS = ("C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8")
@@ -152,13 +152,13 @@ class MotorsCheck(Check):
         out: list[Finding] = []
         for ch in sorted(active):
             times, vals = active[ch]
-            frac = fraction_above(vals, SATURATION_PWM)
+            frac = fraction_at_or_above(vals, SATURATION_PWM)
             if frac <= SATURATION_WARN_FRACTION:
                 continue
             sev = Severity.CRITICAL if frac > SATURATION_CRIT_FRACTION else Severity.WARN
             msg = (
                 f"motor {ch} spent {frac * 100:.0f}% of the flight near maximum "
-                f"(>{SATURATION_PWM:.0f} PWM, threshold {SATURATION_WARN_FRACTION * 100:.0f}%) "
+                f"(>={SATURATION_PWM:.0f} PWM, threshold {SATURATION_WARN_FRACTION * 100:.0f}%) "
                 "— the craft may be underpowered/overweight."
             )
             out.append(

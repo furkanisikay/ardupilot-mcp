@@ -13,7 +13,7 @@ underpowered/overweight craft. A brief spike is far less alarming (a gust or a
 single aggressive stick input) than a multi-second divergence.
 
 Enrichment: if ``RCOU`` motor outputs were saturated (any of C1..C4 averaging
-above ~1950 us) during the divergence window, the craft was likely simply
+above ~1950 us) during the worst divergence window, the craft was likely simply
 underpowered for the demand, and we say so. This is deterministic and additive.
 """
 
@@ -59,14 +59,13 @@ class AttitudeTrackingCheck(Check):
 
     def run(self, log: FlightLog) -> list[Finding]:
         findings: list[Finding] = []
-        motors_saturated = self._motors_saturated(log)
         for des_field, act_field, axis, is_yaw in _AXES:
             # ArduPlane logs DesYaw as a constant 0 placeholder ("Plane does not have
             # the concept of navyaw", ArduPlane/Log.cpp), so its yaw "error" is just
             # the heading.
             if is_yaw and log.meta.vehicle_kind == "plane":
                 continue
-            finding = self._axis_finding(log, des_field, act_field, axis, is_yaw, motors_saturated)
+            finding = self._axis_finding(log, des_field, act_field, axis, is_yaw)
             if finding is not None:
                 findings.append(finding)
         return findings
@@ -78,17 +77,12 @@ class AttitudeTrackingCheck(Check):
         act_field: str,
         axis: str,
         is_yaw: bool,
-        motors_saturated: bool,
     ) -> Finding | None:
-        # Both fields live on the same ATT records; read each as an aligned
-        # series and intersect on the common length so they line up by index.
-        des_t, des_v = log.series("ATT", des_field)
-        act_t, act_v = log.series("ATT", act_field)
-        n = min(des_v.size, act_v.size)
-        if n == 0:
+        # Both fields from the same ATT records, so demand and actual stay paired.
+        times, (des_v, act_v) = log.series_many("ATT", [des_field, act_field])
+        if times.size == 0:
             return None
-        times = act_t[:n]
-        err = act_v[:n] - des_v[:n]
+        err = act_v - des_v
         if is_yaw:
             # Yaw is circular: wrap error into [-180, 180].
             err = ((err + 180.0) % 360.0) - 180.0
@@ -159,11 +153,12 @@ class AttitudeTrackingCheck(Check):
         t1 = worst.end_s if worst is not None else None
         worst_dur = round(worst.duration_s, 2) if worst is not None else 0.0
 
-        # Enrichment: if motors were maxed out, the craft was likely underpowered.
+        # Enrichment: if motors were maxed out while it diverged, the craft was likely underpowered.
+        motors_saturated = self._motors_saturated(log, t0, t1)
         if sev == Severity.CRITICAL and motors_saturated:
             msg += (
-                " Motor outputs (RCOU C1-C4) were saturated near maximum during the flight, so the "
-                "craft was likely underpowered/overweight for the demand."
+                " Motor outputs (RCOU C1-C4) were saturated near maximum while the attitude diverged, "
+                "so the craft was likely underpowered/overweight for the demand."
             )
 
         samples: dict[str, float] = {
@@ -185,12 +180,13 @@ class AttitudeTrackingCheck(Check):
             samples=samples,
         )
 
-    def _motors_saturated(self, log: FlightLog) -> bool:
-        """True if any RCOU motor channel (C1..C4) averaged above saturation."""
-        if not log.has("RCOU"):
+    def _motors_saturated(self, log: FlightLog, t0: float | None, t1: float | None) -> bool:
+        """True if any RCOU motor channel (C1..C4) averaged above saturation in [t0, t1]."""
+        if t0 is None or t1 is None or not log.has("RCOU"):
             return False
         for chan in ("C1", "C2", "C3", "C4"):
-            vals = log.field("RCOU", chan)
+            times, vals = log.series("RCOU", chan)
+            vals = vals[(times >= t0) & (times <= t1)]
             if vals.size and float(np.mean(vals)) > MOTOR_SATURATION_US:
                 return True
         return False

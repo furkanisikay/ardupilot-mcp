@@ -241,3 +241,19 @@ def test_accel_partial_params_no_finding():
         }
     )
     assert findings == []
+
+
+def test_an_unused_compass_is_not_judged():
+    findings = _run(
+        {
+            "COMPASS_USE": 1,
+            "COMPASS_OFS_X": 10.0,
+            "COMPASS_OFS_Y": 10.0,
+            "COMPASS_OFS_Z": 10.0,
+            "COMPASS_USE2": 0,
+            "COMPASS_OFS2_X": 900.0,
+            "COMPASS_OFS2_Y": 0.0,
+            "COMPASS_OFS2_Z": 0.0,
+        }
+    )
+    assert findings == []

@@ -84,3 +84,13 @@ def test_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("rcin") is not None
+
+
+def test_the_loss_reports_the_minimum_inside_the_loss_window():
+    # 800 us at boot (before arming), the loss itself sits at 990 us.
+    c = [800.0] * 20 + [1500.0] * 180 + [990.0] * 100 + [1500.0] * 100
+    log = make_flight_log(
+        {"RCIN": build_series(0.0, 10.0, C1=c, C2=c, C3=c, C4=c), "EV": [{"TimeUS": 3_000_000, "Id": 10}]}
+    )
+    findings = RCInputCheck().run(log)
+    assert [f.evidence.samples["min_pwm_us"] for f in findings] == [990.0]

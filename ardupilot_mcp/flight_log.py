@@ -266,6 +266,9 @@ class FlightLog:
     #: Used to anchor the flight duration so a message family on a *different*
     #: clock (e.g. old GPS-week time in pre-2015 logs) can't distort it.
     _CLOCK_REFERENCE_MSGS = ("IMU", "IMU2", "ATT", "CTUN", "RATE", "NKF1", "XKF1", "BARO", "RCOU")
+    # Records that carry the same boot clock and may precede the reference stream.
+    _EVENT_CLOCK_MSGS = ("EV", "ARM", "MODE", "MSG", "ERR")
+    _MAX_EVENT_LEAD_S = 3600.0
 
     def _rebase_times(self) -> None:
         """Shift timestamps to be flight-relative (start at 0).
@@ -288,6 +291,18 @@ class FlightLog:
         ref = self._reference_span()
         if ref is not None:
             lo, hi = ref  # robust FC-stream span (origin + duration)
+            # Event records share the flight controller's clock and can come before the
+            # first reference sample (logging that starts at arming writes EV ARM first),
+            # so the origin moves back to them. GPS-family records stay out: some old
+            # logs time them by GPS time of week. A value more than an hour before the
+            # stream is a corrupt timestamp, not an earlier event.
+            for name in self._EVENT_CLOCK_MSGS:
+                tb = self._tables.get(name)
+                if tb is None or not tb.n:
+                    continue
+                ts = tb.t[np.isfinite(tb.t) & (tb.t >= lo - self._MAX_EVENT_LEAD_S)]
+                if ts.size:
+                    lo = min(lo, float(ts.min()))
         else:
             lo = min(float(f.min()) for f in finite)
             hi = max(float(f.max()) for f in finite)
@@ -479,6 +494,23 @@ class FlightLog:
         v = self._numeric(tb.cols[name][idx])
         ok = np.isfinite(t) & np.isfinite(v)
         return t[ok], v[ok]
+
+    def series_many(
+        self, mtype: str, names: list[str], instance: int | None = None
+    ) -> tuple[np.ndarray, list[np.ndarray]]:
+        """(timestamps, [values per field]) from the records that have every field.
+
+        Use this, not several :meth:`series` calls, when fields are compared sample by
+        sample: :meth:`series` drops a record's NaN for that field alone, so two of its
+        arrays can be offset from each other after the first missing value.
+        """
+        t, cols = self.aligned(mtype, names, instance)
+        if t.size == 0:
+            return t, [cols[n] for n in names]
+        ok = np.isfinite(t)
+        for n in names:
+            ok &= np.isfinite(cols[n])
+        return t[ok], [cols[n][ok] for n in names]
 
     def aligned(
         self, mtype: str, names: list[str], instance: int | None = None

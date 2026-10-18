@@ -150,3 +150,21 @@ def test_records_with_an_int_field_missing_from_some_records():
     assert [r["Id"] for r in recs] == [10, 11]
     assert "Extra" not in recs[0] and recs[1]["Extra"] == 3
     assert isinstance(recs[1]["Extra"], int)
+
+
+def test_series_many_keeps_fields_of_one_record_together():
+    recs = build_series(0.0, 10.0, A=[1.0, 2.0, 3.0, 4.0], B=[10.0, float("nan"), 30.0, 40.0])
+    log = make_flight_log({"X": recs})
+    t, (a, b) = log.series_many("X", ["A", "B"])
+    assert a.tolist() == [1.0, 3.0, 4.0]
+    assert b.tolist() == [10.0, 30.0, 40.0]
+    assert t.tolist() == pytest.approx([0.0, 0.2, 0.3])
+
+
+def test_an_event_before_the_first_imu_sample_sets_the_time_origin():
+    log = make_flight_log(
+        {"IMU": build_series(100.0, 50.0, AccX=[0.0] * 500), "EV": [{"TimeUS": 50_000_000, "Id": 10}]}
+    )
+    assert log.times("EV").tolist() == [0.0]
+    assert log.times("IMU")[0] == pytest.approx(50.0)
+    assert log.armed_window()[0] == 0.0

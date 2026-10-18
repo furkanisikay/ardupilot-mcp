@@ -172,38 +172,44 @@ class PowerCheck(Check):
 
     def _min_voltage_findings(self, log: FlightLog, src: str, inst: int = 0) -> list[Finding]:
         times, volts = log.series(src, "Volt", inst)
+        all_volts = volts  # the resting peak, for the cell-count estimate
+        # While armed only: a monitor reads 0 V before the pack is connected, and the
+        # battery failsafe acts on flight, not on the bench.
+        armed = log.armed_mask(times)
+        if armed is not None:
+            times, volts = times[armed], volts[armed]
         if volts.size == 0:
             return []
-        vmin = safe_min(volts)
-        if vmin is None:
-            return []
-        # Time of the minimum-voltage sample (first occurrence).
-        idx = int(np.argmin(volts))
-        t_at_min = float(times[idx]) if idx < times.size else None
 
-        crt, low, source = self._thresholds(log, volts, inst)
-
+        crt, low, source = self._thresholds(log, all_volts, inst)
         timer = float(log.params.get("BATT_LOW_TIMER" if inst == 0 else f"BATT{inst + 1}_LOW_TIMER", 10.0))
+        t_end = float(times[-1])
 
-        def first_at_or_below(level: float) -> float | None:
-            """Start of the run below ``level`` that the failsafe timer counts.
+        def held_run(level: float) -> tuple[float, float, float] | None:
+            """(start, time of the minimum, minimum) of the first run the failsafe would act on.
 
-            AP_BattMonitor fires only when the voltage stays below the threshold continuously
-            for BATT_LOW_TIMER seconds, so a momentary sag under load does not start it: the
-            first run that lasts that long, else the run holding the minimum.
+            AP_BattMonitor triggers when the voltage stays at or below a threshold for
+            BATT_LOW_TIMER seconds (AP_BattMonitor_Backend::update_failsafes), so a sag under
+            load that recovers sooner does not count. A run still below the threshold when
+            the armed data ends counts too: the pack gave out before the timer could expire.
             """
-            runs = intervals_above(times, -volts, -level - 1e-9)
-            if not runs:
-                return t_at_min
-            held = next((r for r in runs if r.duration_s >= timer), None)
-            if held is None:
-                held = next(
-                    (r for r in runs if t_at_min is not None and r.start_s <= t_at_min <= r.end_s), runs[-1]
-                )
-            return held.start_s
+            for run in intervals_above(times, -volts, -level - 1e-9):
+                if run.duration_s >= timer or t_end - run.end_s < 1.0:
+                    inside = (times >= run.start_s) & (times <= run.end_s)
+                    i = int(np.argmin(np.where(inside, volts, np.inf)))
+                    return run.start_s, float(times[i]), float(volts[i])
+            return None
+
+        crt_run = held_run(float(crt)) if crt is not None else None
+        low_run = held_run(float(low)) if low is not None and crt_run is None else None
+        held = crt_run or low_run
+        if held is None:
+            return []
+        t_start, t_at_min, vmin = held
 
         # Critical takes precedence over low.
-        if crt is not None and vmin <= crt:
+        if crt_run is not None:
+            assert crt is not None
             return [
                 make_finding(
                     self.id,
@@ -215,13 +221,14 @@ class PowerCheck(Check):
                     recommendation="Land/recover immediately on this threshold; recharge and inspect the pack before flying again.",
                     # From the first sample at the threshold (what the failsafe timer counts
                     # from) to the lowest voltage.
-                    time_start_s=first_at_or_below(float(crt)),
+                    time_start_s=t_start,
                     time_end_s=t_at_min,
                     message_types=[src],
                     samples={"min_volt": round(vmin, 2), "crit_volt": round(float(crt), 2)},
                 )
             ]
-        if low is not None and vmin <= low:
+        if low_run is not None:
+            assert low is not None
             return [
                 make_finding(
                     self.id,
@@ -231,7 +238,7 @@ class PowerCheck(Check):
                     f"({low:.2f} V, {source}). This is the low-battery warning point; the pack was "
                     "nearing depletion.",
                     recommendation="Shorten flights or land sooner; verify pack capacity/health and the BATT_LOW_VOLT setting.",
-                    time_start_s=first_at_or_below(float(low)),
+                    time_start_s=t_start,
                     time_end_s=t_at_min,
                     message_types=[src],
                     samples={"min_volt": round(vmin, 2), "low_volt": round(float(low), 2)},
@@ -266,38 +273,37 @@ class PowerCheck(Check):
 
     def _sudden_drop_findings(self, log: FlightLog, src: str, inst: int = 0) -> list[Finding]:
         times, volts = log.series(src, "Volt", inst)
+        armed = log.armed_mask(times)
+        if armed is not None:
+            times, volts = times[armed], volts[armed]
         if volts.size < 2:
             return []
-        # Largest fast drop: most-negative delta over a short dt.
-        worst_drop = 0.0  # magnitude (volts lost), positive number
-        worst_i = -1
-        worst_t0 = None
-        worst_t1 = None
-        worst_dt = None
-        for i in range(1, volts.size):
-            dt = float(times[i] - times[i - 1])
-            if dt <= 0.0 or dt >= DROP_MAX_DT_S:
-                continue
-            drop = float(volts[i - 1] - volts[i])  # >0 means voltage fell
-            if drop > worst_drop:
-                worst_drop = drop
-                worst_i = i
-                worst_t0 = float(times[i - 1])
-                worst_t1 = float(times[i])
-                worst_dt = dt
-
-        if worst_drop <= DROP_WARN_V or worst_i < 1:
-            return []
+        # Fast steps: a voltage fall larger than DROP_WARN_V between samples closer than
+        # DROP_MAX_DT_S apart.
+        dts = np.diff(times)
+        drops = volts[:-1] - volts[1:]  # >0 means voltage fell
+        steps = np.flatnonzero((dts > 0.0) & (dts < DROP_MAX_DT_S) & (drops > DROP_WARN_V)) + 1
 
         # Require the drop to PERSIST: a real brown-out stays depressed, whereas a
         # single-sample sensor glitch snaps back. If voltage recovers to near the
-        # pre-drop level within ~1 s, treat it as noise, not a power event.
-        assert worst_t1 is not None  # guaranteed once worst_i >= 1 (set together)
-        pre_drop = float(volts[worst_i - 1])
-        post_mask = (times > worst_t1) & (times <= worst_t1 + 1.0)
-        if np.any(post_mask):
-            if float(np.max(volts[post_mask])) >= pre_drop - worst_drop / 2.0:
-                return []
+        # pre-drop level within ~1 s, it is noise. The largest step that persists is
+        # reported, so a bigger glitch elsewhere does not hide a real drop.
+        worst_i = -1
+        for i in sorted(steps, key=lambda j: float(drops[j - 1]), reverse=True):
+            post_mask = (times > times[i]) & (times <= times[i] + 1.0)
+            if (
+                np.any(post_mask)
+                and float(np.max(volts[post_mask])) >= float(volts[i - 1]) - drops[i - 1] / 2.0
+            ):
+                continue
+            worst_i = int(i)
+            break
+        if worst_i < 1:
+            return []
+        worst_drop = float(drops[worst_i - 1])
+        worst_t0 = float(times[worst_i - 1])
+        worst_t1 = float(times[worst_i])
+        worst_dt: float | None = float(dts[worst_i - 1])
 
         sev = Severity.CRITICAL if worst_drop > DROP_CRIT_V else Severity.WARN
         dt_txt = f"{worst_dt * 1000:.0f} ms" if worst_dt is not None else "one sample"
@@ -328,18 +334,9 @@ class PowerCheck(Check):
         # Need both voltage and current to talk about sag "under load".
         if not log.has(src):
             return []
-        v_times, volts = log.series(src, "Volt", inst)
-        c_times, curr = log.series(src, "Curr", inst)
-        if volts.size == 0 or curr.size == 0:
+        t, (v, c) = log.series_many(src, ["Volt", "Curr"], inst)
+        if v.size == 0:
             return []
-        # Volt and Curr come from the same BAT records, so align by the shorter
-        # length (both are produced in record order).
-        n = min(volts.size, curr.size)
-        if n == 0:
-            return []
-        v = volts[:n]
-        c = curr[:n]
-        t = v_times[:n] if v_times.size >= n else v_times
 
         high = c >= HIGH_CURRENT_A
         if not bool(np.any(high)):

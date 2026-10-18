@@ -211,8 +211,10 @@ def list_events(
 
     if wanted is None or "ERR" in wanted:
         for r in log.get("ERR"):
-            subsys = int(r.get("Subsys", 0))
-            ecode = int(r.get("ECode", 0))
+            try:
+                subsys, ecode = int(r.get("Subsys", 0)), int(r.get("ECode", 0))
+            except (TypeError, ValueError):  # a corrupt record (NaN / non-numeric fields)
+                continue
             name = meta.err_subsystem_name(subsys)
             label = f"{name} cleared" if ecode == 0 else f"{name} error (ECode {ecode})"
             events.append(
@@ -226,7 +228,7 @@ def list_events(
             raw: dict[str, float | int | str]
             if isinstance(num, str):
                 name, raw = meta.mode_name(num), {"Mode": num}
-            elif isinstance(num, (int, float)):
+            elif isinstance(num, (int, float)) and math.isfinite(num):
                 name, raw = meta.mode_name(int(num), log.meta.vehicle_kind), {"Mode": int(num)}
             else:
                 continue
@@ -234,7 +236,7 @@ def list_events(
     if wanted is None or "EV" in wanted:
         for r in log.get("EV"):
             eid = r.get("Id")
-            if eid is None:
+            if not isinstance(eid, (int, float)) or not math.isfinite(eid):
                 continue
             events.append(
                 EventRecord(time_s=_rec_time(r), kind="EV", name=meta.ev_name(int(eid)), raw={"Id": int(eid)})
@@ -444,7 +446,7 @@ def recommend_tuning(path: str, area: str | None = None) -> TuningReport:
     sel: TuningArea | None = None
     if area:
         try:
-            sel = TuningArea(area.lower())
+            sel = TuningArea(area.strip().lower())
         except ValueError:
             notes.append(f"unknown tuning area {area!r}; valid: notch, pid, autotune. Running all.")
     recs = analyze_tuning(log, sel.value if sel else None)

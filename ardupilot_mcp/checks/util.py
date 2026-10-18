@@ -61,6 +61,13 @@ def intervals_above(
     return out
 
 
+def fraction_at_or_above(values: np.ndarray, threshold: float) -> float:
+    """Fraction of samples at or above threshold (0..1)."""
+    if values.size == 0:
+        return 0.0
+    return float(np.count_nonzero(values >= threshold)) / float(values.size)
+
+
 def fraction_above(values: np.ndarray, threshold: float) -> float:
     """Fraction of samples strictly above threshold (0..1)."""
     if values.size == 0:

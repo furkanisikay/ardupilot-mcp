@@ -176,3 +176,22 @@ def test_a_message_that_only_mentions_prearm_is_not_a_prearm_failure():
 def test_prearm_mid_line_is_not_a_prearm_failure():
     log = make_flight_log({"MSG": [{"TimeUS": 1_000_000, "Message": "Lua: prearm: ok"}]})
     assert all(f.severity != Severity.WARN for f in StartupMessagesCheck().run(log))
+
+
+def test_arming_failures_are_never_routine_boot_chatter():
+    # "calibrated" and " ready" mark routine lines, but not inside a refusal to arm.
+    texts = [
+        "PreArm: Compass calibrated requires reboot",
+        "PreArm: Accels calibrated requires reboot",
+        "Arm: GPS not ready",
+    ]
+    findings = StartupMessagesCheck().run(_msg_log([(1_000_000 * i, t) for i, t in enumerate(texts, 1)]))
+    assert len(findings) == 3
+    assert {f.severity for f in findings} == {Severity.WARN}
+
+
+def test_an_arm_refusal_is_a_warning():
+    findings = StartupMessagesCheck().run(
+        _msg_log([(1_000_000, "Arm: Battery below minimum arming voltage")])
+    )
+    assert [f.severity for f in findings] == [Severity.WARN]

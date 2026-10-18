@@ -68,14 +68,12 @@ def _analyze_pid(log: FlightLog) -> list[TuningRecommendation]:
         ("Pitch", "DesPitch", "pitch", "ATC_RAT_PIT"),
     )
     for actual_f, des_f, label, fam in axes:
-        t_act, act = log.series("ATT", actual_f)
-        t_des, des = log.series("ATT", des_f)
-        n = min(act.size, des.size)
+        t_act, (act, des) = log.series_many("ATT", [actual_f, des_f])
+        n = act.size
         if n == 0:
             continue
-        # Records carry both fields aligned, so equal-length slices are aligned.
-        err = act[:n] - des[:n]
-        flying = log.flying_mask(t_act[:n])  # ground time is not tracking performance
+        err = act - des
+        flying = log.flying_mask(t_act)  # ground time is not tracking performance
         if flying is not None:
             err = err[flying]
             if err.size == 0:
