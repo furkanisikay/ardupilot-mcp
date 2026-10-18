@@ -55,6 +55,8 @@ The changelog notes how each change moved these numbers. CI checks this table ag
 which renders this table from `bench/results.json`.
 
 <!-- gen:results -->
+Measured on ardupilot-mcp 1.0.0 (428556d).
+
 | Scorable logs | Top-1 | Top-3 | Logs with a false critical | False criticals |
 |---|---|---|---|---|
 | 41 | 11 | 22 | 35 / 49 | 97 |

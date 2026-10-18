@@ -16,7 +16,11 @@
    "power": 2,
    "compass": 1
   },
-  "false_criticals_before_impact": 95
+  "false_criticals_before_impact": 95,
+  "measured_on": {
+   "version": "1.0.0",
+   "revision": "428556d"
+  }
  },
  "scores": [
   {
