@@ -82,3 +82,41 @@ def test_summary_counts():
     out = summarize(scores)
     assert out["scored"] == 2 and out["top1_hits"] == 1
     assert out["false_criticals_by_check"] == {"vibration": 1}
+
+
+def test_crash_impact_markers_are_not_false_criticals():
+    entry = {"id": "x", "category": "thrust_loss_motor_esc", "secondary": []}
+    s = score_report(
+        entry,
+        _report(
+            _f("events", Severity.CRITICAL, "Error: CRASH_CHECK (ECode 1)"),
+            _f("firmware", Severity.CRITICAL, "Firmware detected a crash and disarmed"),
+            _f("firmware", Severity.CRITICAL, "Mode changed by crash failsafe"),
+        ),
+    )
+    assert s.false_criticals == []
+
+
+def test_runner_skips_an_unreadable_log(tmp_path, monkeypatch, capsys):
+    import bench.run as run
+
+    with open(_MANIFEST, encoding="utf-8") as fh:
+        first = json.load(fh)["entries"][0]
+    (tmp_path / f"{first['id']}.bin").write_bytes(b"not a log")
+    monkeypatch.setattr(run, "_sha256", lambda _p: first["sha256"])
+
+    def _boom(path):
+        raise ValueError(f"could not open DataFlash log {path!r}")
+
+    monkeypatch.setattr(run, "parse_bin", _boom)
+    assert run.main(["--logs", str(tmp_path)]) == 0
+    assert f"skipped {first['id']}: could not analyse" in capsys.readouterr().err
+
+
+def test_title_routed_categories_cover_dead_reckoning_internal_error_and_brownout():
+    assert finding_categories("firmware", "Firmware fell back to dead reckoning") == {"ekf", "gps"}
+    assert finding_categories("firmware", "Mode changed by dead-reckoning failsafe") == {"ekf", "gps"}
+    assert finding_categories("events", "Error: FAILSAFE_DEADRECKON (ECode 1)") == {"ekf", "gps"}
+    assert finding_categories("events", "Error: INTERNAL_ERROR (ECode 1)") == {"firmware_bug"}
+    assert finding_categories("integrity", "Recording ended while armed") == {"power_brownout"}
+    assert finding_categories("integrity", "Log truncated") == set()

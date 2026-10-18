@@ -4,8 +4,9 @@ Each label category maps to the checks whose findings would point a reader at th
 cause. A report *hits* when its first WARN/CRITICAL finding (report order: before the
 impact, most severe first) comes from one of those checks; *top-3* counts a hit in the
 first three. A CRITICAL finding from any other check is a *false critical*: on a flight
-whose cause was something else, it would send the reader down the wrong path. For
-``not_a_fault`` flights every CRITICAL is false. ``pilot_error`` and ``firmware_bug``
+whose cause was something else, it would send the reader down the wrong path. Findings
+that only record the crash itself (ERR CRASH_CHECK, the crash-check disarm) name no
+cause and are never false. For ``not_a_fault`` flights every other CRITICAL is false. ``pilot_error`` and ``firmware_bug``
 have no check that could name them; they only count towards false criticals.
 """
 
@@ -23,10 +24,10 @@ CATEGORY_CHECKS: dict[str, set[str]] = {
     "thrust_loss_motor_esc": {"thrust_loss", "motors"},
     "compass_interference": {"compass", "calibration"},
     "gps": {"gps", "sensors"},
-    "ekf": {"ekf", "firmware"},
-    "rc_failsafe_link": {"rcin", "firmware"},
+    "ekf": {"ekf"},
+    "rc_failsafe_link": {"rcin"},
     "tuning_oscillation": {"attitude"},
-    "mechanical_frame": {"motors", "firmware", "attitude"},
+    "mechanical_frame": {"motors", "attitude"},
     "configuration": {"config", "param_audit", "calibration", "prearm", "sensors"},
     "not_a_fault": set(),
     "pilot_error": set(),
@@ -35,8 +36,8 @@ CATEGORY_CHECKS: dict[str, set[str]] = {
 # Categories where no check can name the cause: scored for false criticals only.
 UNSCORABLE = {"not_a_fault", "pilot_error", "firmware_bug"}
 
-# The events and firmware checks report many subsystems; their title says which one.
-# ERR subsystem names: ardupilot_mcp/ardupilot_meta.ERR_SUBSYSTEMS.
+# The events, firmware and integrity checks report many subsystems; their title says
+# which one. ERR subsystem names: ardupilot_mcp/ardupilot_meta.ERR_SUBSYSTEMS.
 _TITLE_CATEGORIES: tuple[tuple[str, str], ...] = (
     ("EKF", "ekf"),
     ("FAILSAFE_RADIO", "rc_failsafe_link"),
@@ -46,20 +47,38 @@ _TITLE_CATEGORIES: tuple[tuple[str, str], ...] = (
     ("battery failsafe", "power_brownout"),
     ("GPS", "gps"),
     ("COMPASS", "compass_interference"),
-    ("Compass", "compass_interference"),
     ("THRUST_LOSS", "thrust_loss_motor_esc"),
     ("thrust loss", "thrust_loss_motor_esc"),
     ("Yaw imbalance", "mechanical_frame"),
     ("vibration", "vibration"),
     ("VIBE", "vibration"),
+    # The EKF lost its position source (GPS): dead-reckoning verdict, ERR and ModeReason 50.
+    ("dead reckoning", "ekf"),
+    ("dead reckoning", "gps"),
+    ("dead-reckoning", "ekf"),
+    ("dead-reckoning", "gps"),
+    ("DEADRECKON", "ekf"),
+    ("DEADRECKON", "gps"),
+    ("INTERNAL_ERROR", "firmware_bug"),
+    # A recording that stops mid-flight is the brown-out signature (integrity check).
+    ("ended while armed", "power_brownout"),
 )
+_TITLE_ROUTED = ("events", "firmware", "integrity")
+# Events/firmware titles that mark the crash itself (ERR CRASH_CHECK, the crash-check
+# disarm, ModeReason 19). They name no cause, so they are never a false critical.
+_IMPACT_TITLES: tuple[str, ...] = ("CRASH_CHECK", "crash and disarmed", "crash failsafe")
 
 
 def finding_categories(check_id: str, title: str) -> set[str]:
     """Label categories a finding points at."""
-    if check_id in ("events", "firmware"):
+    if check_id in _TITLE_ROUTED:
         return {cat for key, cat in _TITLE_CATEGORIES if key.lower() in title.lower()}
     return {cat for cat, checks in CATEGORY_CHECKS.items() if check_id in checks}
+
+
+def is_impact_marker(check_id: str, title: str) -> bool:
+    """True for a finding that records the crash itself rather than a cause."""
+    return check_id in ("events", "firmware") and any(k.lower() in title.lower() for k in _IMPACT_TITLES)
 
 
 @dataclass
@@ -89,7 +108,9 @@ def score_report(entry: dict, report: DiagnosisReport) -> Score:
     false_crit = [
         f.check_id
         for f in report.findings
-        if f.severity == Severity.CRITICAL and not (finding_categories(f.check_id, f.title) & accepted)
+        if f.severity == Severity.CRITICAL
+        and not (finding_categories(f.check_id, f.title) & accepted)
+        and not is_impact_marker(f.check_id, f.title)
     ]
     primary = CATEGORY_CHECKS.get(cat, set())
     onset = report.incident.first_anomaly_check_id if report.incident else None

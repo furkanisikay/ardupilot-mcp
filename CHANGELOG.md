@@ -91,7 +91,7 @@ All notable changes to this project are documented here. The format is based on
 - `compass`: field-strength peak-to-peak spread no longer raises a warning on its own (it is
   kept as evidence). One glitched sample sets it; on 100 forum logs it fired on 36 % of compass
   instances, none of them a compass fault among the labelled flights. The coefficient of
-  variation still grades the field. Real-crash benchmark: top-1 7 -> 8, top-3 19 -> 20.
+  variation still grades the field. Real-crash benchmark: top-1 8 -> 9, top-3 20 -> 21.
 - **Parsing is ~20x faster and uses ~4x less memory.** Messages are decoded into numpy
   columns straight from pymavlink's own index instead of one Python object per record (a
   20-minute log with 400 Hz IMU: 26 s / 1.6 GB -> 1.2 s / 0.4 GB). The decoder is checked

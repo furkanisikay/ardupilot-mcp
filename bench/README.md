@@ -36,13 +36,16 @@ impact first, then the most severe.
 - **top-1**: the first WARN/CRITICAL finding points at the labelled cause.
 - **top-3**: one of the first three does.
 - **false critical**: a CRITICAL finding that points at neither the cause nor a listed
-  secondary cause. On a `not_a_fault` flight, every CRITICAL finding is false.
+  secondary cause. Findings that only record the crash itself (ERR `CRASH_CHECK`, the
+  crash-check disarm, a crash-failsafe mode change) name no cause and are never false. On a
+  `not_a_fault` flight, every other CRITICAL finding is false.
 - `pilot_error`, `firmware_bug` and `not_a_fault` have no check that could name them, so they
   count only towards false criticals.
 
-A finding points at a cause through its check (`CATEGORY_CHECKS`). For the `events` and
-`firmware` checks, which report many subsystems, the ERR subsystem or verdict named in the
-title decides it.
+A finding points at a cause through its check (`CATEGORY_CHECKS`). For the `events`,
+`firmware` and `integrity` checks, which report many subsystems, the ERR subsystem, verdict
+or symptom named in the title decides it (a recording that ends mid-flight is the brown-out
+signature).
 
 ## Results
 
@@ -50,8 +53,8 @@ Current `main`; the changelog notes how each change moved these numbers.
 
 | Scorable logs | Top-1 | Top-3 | Logs with a false critical | False criticals |
 |---|---|---|---|---|
-| 41 | 8 | 20 | 35 / 49 | 119 |
+| 41 | 9 | 21 | 35 / 49 | 113 |
 
-False criticals by check: vibration 29, attitude 25, EKF 25, events 20, GPS 6, firmware 5,
-power 4, RC input 4, compass 1. 109 of the 119 start before the impact, so they reach the
+False criticals by check: vibration 29, attitude 25, EKF 25, events 17, GPS 6, power 4,
+RC input 4, firmware 2, compass 1. 109 of the 113 start before the impact, so they reach the
 top of the report rather than the after-impact tail.

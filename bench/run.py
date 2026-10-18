@@ -40,6 +40,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--logs", required=True, help="directory with <id>.bin files")
     ap.add_argument("--json", help="write per-log scores and the summary here")
     args = ap.parse_args(argv)
+    if not os.path.isdir(args.logs):
+        ap.error(f"--logs {args.logs!r} is not a directory")
 
     with open(MANIFEST, encoding="utf-8") as fh:
         entries = json.load(fh)["entries"]
@@ -52,8 +54,12 @@ def main(argv: list[str] | None = None) -> int:
         if _sha256(path) != e["sha256"]:
             skipped.append((e["id"], "sha256 mismatch"))
             continue
-        with contextlib.redirect_stdout(io.StringIO()):  # pymavlink prints on corrupt bytes
-            report = diagnose(parse_bin(path))
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):  # pymavlink prints on corrupt bytes
+                report = diagnose(parse_bin(path))
+        except Exception as exc:  # noqa: BLE001 - one unreadable log must not abort the run
+            skipped.append((e["id"], f"could not analyse: {exc}"))
+            continue
         s = score_report(e, report)
         scores.append(s)
         mark = {True: "HIT ", False: "miss", None: "  - "}[s.hit]

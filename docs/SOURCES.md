@@ -193,7 +193,7 @@ MCP spec) on 2026-06-14. Generated from a fan-out verification pass over **198 a
 | `ardupilot_mcp/checks/compass.py` · MIN_SAMPLES | Need at least 10 samples for compass statistics to be meaningful |
 | `ardupilot_mcp/checks/compass.py` · line 27-28, WARN_CV and CRIT_CV | Compass coefficient of variation: clean <0.1, warn >0.30, critical >0.60 (interference) |
 | `ardupilot_mcp/checks/compass.py` · peak-to-peak spread | Evidence only, never a trigger: on 154 compass instances from 100 forum logs (max-min)/mean > 0.60 fired on 55 (36 %), CV > 0.30 on 10 (6 %), and none of the labelled flights among the 55 was a compass fault (bench/real_crashes.json) |
-| `ardupilot_mcp/checks/compass.py` · line 33, MIN_SAMPLES | Need minimum 10 samples before compass statistics are meaningful |
+| `ardupilot_mcp/checks/compass.py` · line 34, MIN_SAMPLES | Need minimum 10 samples before compass statistics are meaningful |
 | `ardupilot_mcp/checks/ekf.py` · WARN_RATIO | EKF test ratio > 0.8 means sensor variance is high |
 | `ardupilot_mcp/checks/ekf.py` · line 32, WARN_RATIO | EKF variance test ratio > 0.8 means filter is straining (approaching rejection) |
 | `ardupilot_mcp/checks/gps.py` · HDOP_WARN | HDOP above 2.0 means geometry is getting poor |

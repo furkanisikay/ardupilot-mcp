@@ -8,8 +8,8 @@ throttle — the classic "compass interference" failure that corrupts the EKF's
 yaw estimate and causes toilet-bowling / fly-aways.
 
 We quantify that swing with the magnitude of ``mag = sqrt(MagX^2+MagY^2+MagZ^2)``:
-its coefficient of variation (std/mean) and its peak-to-peak spread relative to
-the mean. Large variation -> interference. We also flag implausibly large
+its coefficient of variation (std/mean) grades the field; the peak-to-peak spread
+relative to the mean is reported as evidence only (one glitched sample sets it). We also flag implausibly large
 hard-iron offsets from COMPASS_OFS_X/Y/Z when those params are present.
 """
 
