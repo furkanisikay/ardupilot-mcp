@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- Checks that skip the pre-arm phase (GPS acquisition) read arming from EV records only; the
+  armed window now comes from every arm/disarm record, ARM included.
 - Pre-4.1 logs were judged on their primary sensor and EKF core only. Firmware before 4.1
   logged a second or third IMU, GPS, compass, barometer and battery, and EKF cores 1 and 2,
   under their own names (`IMU2`, `MAG2`, `BAR2`, `BAT2`, `CUR2`, `NKF6`-`NKF9`, `NK11`-`NK14`,
@@ -86,6 +88,18 @@ All notable changes to this project are documented here. The format is based on
   we never use. The reader now skips that scan (15 MB forum log: 6.9 s -> 0.15 s).
 
 ### Added
+- MAVLink telemetry logs (`.tlog`): every tool accepts the log a ground station records,
+  mapped onto the DataFlash messages the checks read (ATT with the demand interpolated at
+  each attitude sample, VIBE, XKF4, BAT, GPS, IMU, MAG, RCIN, RCOU, CTUN, POS, MODE, ARM,
+  MSG and the parameters), reading only the vehicle's autopilot. Checks that would mistake
+  a radio dropout for a vehicle fault (log integrity, timing gaps, configured-but-silent
+  sensors) do not run on it, and a telemetry log that stops while armed is not taken as the
+  impact. On seven SITL flights recorded both ways the WARN/CRITICAL findings match the
+  onboard log's, except a fast voltage drop the 2 Hz battery stream cannot show; fifteen
+  forum tlogs (3.1-4.5; Copter, Plane and Rover) parse in under 4 s each.
+- Firmware verdicts for the failsafes Copter announces ("Radio Failsafe - ...", "Battery
+  Failsafe", "GCS Failsafe"), the only record of them in a telemetry log; in an onboard log
+  they merge into the RC and battery findings.
 - Documented parameter metadata, offline: `get_params` (and `load_param_file` given a
   `firmware`) returns each parameter's documented range, units, listed values and bitmask
   bits for the log's firmware release, and lists the names that release does not document

@@ -131,6 +131,10 @@ class LogSummary(BaseModel):
     )
     integrity: LogIntegrity = LogIntegrity.OK
     integrity_detail: str | None = None
+    source: str = Field(
+        default="dataflash",
+        description="'dataflash' (the onboard .bin log) or 'tlog' (a ground station's MAVLink telemetry log).",
+    )
 
 
 class SkippedCheck(BaseModel):

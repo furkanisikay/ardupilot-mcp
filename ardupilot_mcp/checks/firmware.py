@@ -41,6 +41,9 @@ class Verdict:
     # Check that reports this verdict instead of this one (it adds evidence the
     # message alone lacks); the message still feeds the timeline and prearm dedupe.
     reported_by: str | None = None
+    # Counted only while armed: Copter also announces it on the bench, disarmed, where it
+    # changes nothing (a radio failsafe once RC input was seen; ArduCopter/radio.cpp).
+    armed_only: bool = False
 
 
 # Matched against the start of each MSG line (case-sensitive, as the firmware writes it).
@@ -65,6 +68,33 @@ VERDICTS: tuple[Verdict, ...] = (
         Severity.CRITICAL,
         "EKF failsafe changed the flight mode",
         "the EKF check judged the position estimate unusable and forced a non-GPS mode",
+    ),
+    # Copter::announce_failsafe (ArduCopter/events.cpp): "<type> Failsafe[ - <action>]". The
+    # ERR and mode-change records say the same in an onboard log (and are merged with it);
+    # in a telemetry log this line is the only record of the failsafe.
+    Verdict(
+        re.compile(r"Radio(?: \+ Battery)? Failsafe(?! Cleared)"),
+        Severity.CRITICAL,
+        "Firmware triggered a radio failsafe",
+        "the autopilot lost valid RC input for longer than the failsafe timeout and took the action "
+        "after the dash (FS_THR_ENABLE)",
+        armed_only=True,
+    ),
+    Verdict(
+        re.compile(r"Battery Failsafe"),
+        Severity.CRITICAL,
+        "Firmware triggered a battery failsafe",
+        "a battery stayed below its low or critical threshold for BATT_LOW_TIMER and the autopilot "
+        "took the action after the dash (BATT_FS_LOW_ACT / BATT_FS_CRT_ACT)",
+        armed_only=True,
+    ),
+    Verdict(
+        re.compile(r"GCS(?: \+ Battery)? Failsafe(?! Cleared)"),
+        Severity.WARN,
+        "Firmware triggered a GCS failsafe",
+        "the autopilot stopped hearing the ground station's heartbeat for FS_GCS_TIMEOUT and took the "
+        "action after the dash (FS_GCS_ENABLE)",
+        armed_only=True,
     ),
     Verdict(
         re.compile(r"Yaw Imbalance (\d+)%"),
@@ -148,6 +178,8 @@ class FirmwareVerdictsCheck(Check):
             v = verdict_for(text)
             if v is not None:
                 ts = rec.get("timestamp")
+                if v.armed_only and isinstance(ts, (int, float)) and not log.was_armed_at(float(ts)):
+                    continue
                 hits.setdefault(v, []).append(
                     (float(ts) if isinstance(ts, (int, float)) else None, text.strip())
                 )

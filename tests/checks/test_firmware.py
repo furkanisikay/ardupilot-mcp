@@ -60,3 +60,21 @@ def test_pilot_mode_changes_are_not_findings():
         {"TimeUS": 1_000_000, "Mode": 2, "ModeNum": 2, "Rsn": 2},
     ]
     assert FirmwareVerdictsCheck().run(make_flight_log({"MODE": modes})) == []
+
+
+def test_announced_failsafes_are_verdicts_and_cleared_lines_are_not():
+    log = make_flight_log(
+        {
+            "MSG": _msgs(
+                (0, "boot"),
+                (40, "Radio Failsafe - Continuing Landing"),
+                (45, "Radio Failsafe Cleared"),
+                (60, "Battery Failsafe"),
+                (70, "GCS Failsafe Cleared"),
+            )
+        }
+    )
+    found = {f.title: f for f in FirmwareVerdictsCheck().run(log)}
+    assert set(found) == {"Firmware triggered a radio failsafe", "Firmware triggered a battery failsafe"}
+    radio = found["Firmware triggered a radio failsafe"]
+    assert radio.severity == Severity.CRITICAL and radio.evidence.samples["occurrences"] == 1

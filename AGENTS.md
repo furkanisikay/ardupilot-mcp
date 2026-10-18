@@ -51,6 +51,8 @@ ardupilot_mcp/
                    stream, the in-flight FFT (FTN1) or ESC RPM, with the mode and REF for the
                    vehicle; ESC RPM also tells a motor harmonic from a frame resonance
   profile.py       VehicleProfile (frame, motors, battery cells, power margin)
+  tlog.py          MAVLink telemetry log (.tlog) -> FlightLog, mapped onto the DataFlash
+                   names the checks read (ATT, VIBE, XKF4, BAT, GPS, RCIN/RCOU, ...)
   param_file.py    parse a user-exported .param / .params file
   param_meta.py    documented parameter metadata per firmware release, bundled in
                    data/params/ (facts only; regenerate with scripts/gen_param_meta.py)

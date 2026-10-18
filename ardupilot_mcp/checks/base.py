@@ -31,6 +31,10 @@ class Check(ABC):
     #: ``None`` means all vehicles. A check is skipped on a *known* vehicle kind
     #: outside this set (unknown kinds always run, to avoid false negatives).
     vehicles: set[str] | None = None
+    #: Log sources this check is valid for: "dataflash" (onboard .bin) and "tlog" (MAVLink
+    #: telemetry). A check whose evidence means something else in telemetry (the stream
+    #: stopping is the radio link, not the vehicle) is limited to "dataflash".
+    sources: frozenset[str] = frozenset({"dataflash", "tlog"})
     #: One-line description for ``list_checks``.
     description: str = ""
 
@@ -42,6 +46,8 @@ class Check(ABC):
 
     def applicable(self, log: FlightLog) -> tuple[bool, str | None]:
         kind = log.meta.vehicle_kind
+        if log.meta.source not in self.sources:
+            return False, f"not applicable to a {log.meta.source} log"
         if self.vehicles is not None and kind and kind not in self.vehicles:
             return False, f"not applicable to vehicle kind '{kind}'"
         missing = sorted(m for m in self.requires if not log.has(m))

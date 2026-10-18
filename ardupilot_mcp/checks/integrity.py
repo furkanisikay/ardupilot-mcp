@@ -40,6 +40,9 @@ class IntegrityCheck(Check):
     # Meta-check on the parse result itself - no message stream is required, so
     # it always runs (even on an otherwise empty/garbage log).
     requires: set[str] = set()
+    # A telemetry log that ends while armed is the radio link or the ground station
+    # stopping, not the vehicle losing power.
+    sources = frozenset({"dataflash"})
     description = "Reports whether the log parsed cleanly, was truncated/partial, or stopped while armed."
 
     def run(self, log: FlightLog) -> list[Finding]:
