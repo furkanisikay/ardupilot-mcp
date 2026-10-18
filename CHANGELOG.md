@@ -45,7 +45,7 @@ All notable changes to this project are documented here. The format is based on
   an in-flight power loss or crash.
 - `query_timeseries(..., instance=)` and `available_instances` for multi-instance messages.
 - `FlightLog.instances()`, `series(..., instance=)`, `armed_intervals()`, `armed_mask()`.
-- `tests/test_scenarios.py`: 24 labelled fault-injection flights written in Copter-4.6.3's
+- `tests/test_scenarios.py`: 23 labelled fault-injection flights written in Copter-4.6.3's
   exact log format (dual GPS, dual compass, three IMUs, two EKF cores) run through the full
   pipeline; a clean flight that raises a single warning fails CI.
 
