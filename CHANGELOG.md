@@ -95,8 +95,8 @@ All notable changes to this project are documented here. The format is based on
   a radio dropout for a vehicle fault (log integrity, timing gaps, configured-but-silent
   sensors) do not run on it, and a telemetry log that stops while armed is not taken as the
   impact. On seven SITL flights recorded both ways the WARN/CRITICAL findings match the
-  onboard log's, except a fast voltage drop the 2 Hz battery stream cannot show; twelve
-  forum tlogs (3.3-4.5, Copter and Plane) parse in under 4 s each.
+  onboard log's, except a fast voltage drop the 2 Hz battery stream cannot show; fifteen
+  forum tlogs (3.1-4.5; Copter, Plane and Rover) parse in under 4 s each.
 - Firmware verdicts for the failsafes Copter announces ("Radio Failsafe - ...", "Battery
   Failsafe", "GCS Failsafe"), the only record of them in a telemetry log; in an onboard log
   they merge into the RC and battery findings.
