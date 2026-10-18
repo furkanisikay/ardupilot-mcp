@@ -78,7 +78,8 @@ class TimingCheck(Check):
         mtype = next((m for m in GAP_SOURCES if log.has(m)), None)
         if mtype is None:
             return []
-        times = log.times(mtype)
+        # One instance's stream: interleaved IMUs would hide one sensor's logging stopping.
+        times = log.times(mtype, log.instances(mtype)[0])
         if times.size < 3:
             # Need a few samples to establish a nominal spacing.
             return []

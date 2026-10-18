@@ -516,7 +516,9 @@ _REL_ALT_SOURCES = (("POS", "RelHomeAlt"), ("CTUN", "Alt"), ("BARO", "Alt"))
 def _extract_max_alt(log: FlightLog) -> float | None:
     """Maximum altitude above home (m), from the first relative source the log has."""
     for mtype, field in _REL_ALT_SOURCES:
-        _, vals = log.series(mtype, field)
+        # First instance only: a second barometer is never mixed into the primary's altitude.
+        insts = log.instances(mtype)
+        _, vals = log.series(mtype, field, insts[0] if insts else None)
         if vals.size:
             return float(np.max(vals))
     return None

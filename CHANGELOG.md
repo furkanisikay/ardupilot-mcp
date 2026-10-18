@@ -13,7 +13,11 @@ All notable changes to this project are documented here. The format is based on
   ...). These are now folded into the base message with the modern instance field when their
   fields match, so every check judges them per instance as on 4.1+ logs. On 40 forum logs from
   3.2-3.6, 31 had such messages (IMU 29, compass 24, EKF cores 24, barometer 2, battery 1) and
-  the findings changed on 18; the benchmark (all 4.x) is unchanged.
+  the findings changed on 20; the benchmark (all 4.x) is unchanged.
+- The vehicle profile's cell count, the summary's barometric max altitude and the timing
+  check's log-gap analysis read every battery / barometer / IMU as one interleaved series.
+  They now read the first instance, so a second pack no longer sets the cell count and a
+  primary IMU that stops logging is no longer hidden by a second one that keeps going.
 - `metadata_url` was described as giving parameter defaults; `apm.pdef.xml` carries ranges,
   values and bitmasks but no defaults.
 - The parser left pymavlink's memory map of the log open until a garbage collection, so on

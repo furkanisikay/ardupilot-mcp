@@ -234,18 +234,22 @@ class FlightLog:
             if len(present) < 2 or present[0][1] != base:
                 continue
             names = set(self._tables[base].cols)
-            if field_name in names or any(set(self._tables[m].cols) != names for _, m in present):
+            declared = self._instance_fields.get(base)
+            if field_name in names or (declared is not None and declared in names):
+                continue
+            if any(set(self._tables[m].cols) != names for _, m in present):
                 continue
             tables = [self._tables[m] for _, m in present]
-            cols = {k: np.concatenate([t.cols[k] for t in tables]) for k in self._tables[base].cols}
             inst = np.concatenate(
                 [np.full(t.n, i, dtype=np.int64) for (i, _), t in zip(present, tables, strict=True)]
             )
             # Interleave by time, as 4.1+ logs them (stable: equal stamps keep member order).
+            # Reordered column by column so only one concatenated temporary is alive at a time.
             order = np.argsort(np.concatenate([t.t for t in tables]), kind="stable")
-            cols = {k: v[order] for k, v in cols.items()}
+            cols = {k: np.concatenate([t.cols[k] for t in tables])[order] for k in self._tables[base].cols}
             cols[field_name] = inst[order]
-            int_cols = set().union(*(t.int_cols for t in tables)) | {field_name}
+            # A field is integer only if it is integer in every member (else int() truncates).
+            int_cols = set.intersection(*(t.int_cols for t in tables)) | {field_name}
             self._tables[base] = _Table(cols, int(inst.size), int_cols)
             self._instance_fields[base] = field_name
             merged[base] = [m for _, m in present]
@@ -381,7 +385,9 @@ class FlightLog:
         return tb.n if tb is not None else 0
 
     def message_counts(self) -> dict[str, int]:
-        return {m: tb.n for m, tb in sorted(self._tables.items())}
+        """Records per message type; a folded pre-4.1 member (IMU2) counts only under its base."""
+        folded = {m for base, members in self.merged_legacy.items() for m in members if m != base}
+        return {m: tb.n for m, tb in sorted(self._tables.items()) if m not in folded}
 
     def instance_field(self, mtype: str) -> str | None:
         """Name of the field that carries the instance for ``mtype``, if it has one in this log."""

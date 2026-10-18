@@ -33,7 +33,8 @@ def _max_voltage(log: FlightLog) -> float | None:
     src = _battery_source(log)
     if not src:
         return None
-    _, v = log.series(src, "Volt")
+    # The main pack (first battery monitor): a second pack must not set the cell count.
+    _, v = log.series(src, "Volt", log.instances(src)[0])
     if v.size == 0:
         return None
     mx = float(np.max(v))
