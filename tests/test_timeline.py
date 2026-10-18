@@ -108,3 +108,14 @@ def test_crash_check_loss_of_control_is_an_anomaly_not_the_impact():
     tl = build_timeline(make_flight_log({"ATT": att, "ERR": err, "EV": ev}), [])
     assert tl.impact_s is None
     assert tl.onset_s == 20.0 and tl.first_anomaly_check_id == "err"
+
+
+def test_ekf_primary_lane_switch_is_context_not_onset():
+    # ERR EKF_PRIMARY's ECode is the new primary core (ArduCopter/ekf_check.cpp), not an error.
+    log = make_flight_log(
+        {"EV": ARMED, "ERR": [{"TimeUS": 20_000_000, "Subsys": 24, "ECode": 1}]},
+        vehicle_kind="copter",
+    )
+    tl = build_timeline(log, [])
+    assert tl.onset_s is None
+    assert [e.label for e in tl.events if e.source == "err"] == ["EKF primary core changed to 1"]

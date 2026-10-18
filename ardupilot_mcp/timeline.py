@@ -20,7 +20,7 @@ libraries/AP_Logger/AP_Logger.h (LogErrorSubsystem CRASH_CHECK = 12), Copter-4.6
 
 from __future__ import annotations
 
-from .ardupilot_meta import err_subsystem_name, ev_name, mode_name
+from .ardupilot_meta import ERR_EKF_PRIMARY, err_subsystem_name, ev_name, mode_name
 from .checks.firmware import FAILSAFE_REASONS, verdict_for
 from .flight_log import FlightLog
 from .model import Finding, IncidentTimeline, Severity, TimelineEvent
@@ -102,7 +102,15 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
 
     for rec in log.get("ERR"):
         sub, code, t = _num(rec.get("Subsys")), _num(rec.get("ECode")), _num(rec.get("timestamp"))
-        if sub is None or code is None or t is None or code == 0:
+        if sub is None or t is None or code is None:
+            continue
+        if int(sub) == ERR_EKF_PRIMARY:
+            # Its ECode is the new primary core (a lane switch, core 0 included), not an
+            # error onset: context on the timeline, never the onset.
+            label = f"EKF primary core changed to {int(code)}"
+            events.append(TimelineEvent(time_s=t, source="err", label=label, phase=""))
+            continue
+        if code == 0:
             continue
         label = f"ERR {err_subsystem_name(int(sub))} (ECode {int(code)})"
         events.append(TimelineEvent(time_s=t, source="err", label=label, severity=Severity.WARN, phase=""))

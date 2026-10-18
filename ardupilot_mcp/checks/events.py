@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from ..ardupilot_meta import (
     CRITICAL_ERR_SUBSYSTEMS,
+    ERR_EKF_PRIMARY,
     err_subsystem_name,
     ev_name,
     mode_name,
@@ -69,6 +70,9 @@ class EventsCheck(Check):
                 continue
             subsys = int(rec["Subsys"])
             ecode = int(rec["ECode"])
+            if subsys == ERR_EKF_PRIMARY:
+                out.append(self._lane_switch(rec, ecode))
+                continue
             if ecode == 0:
                 # ECode 0 clears a previously raised error -- not a finding.
                 continue
@@ -102,6 +106,21 @@ class EventsCheck(Check):
                 )
             )
         return out
+
+    def _lane_switch(self, rec: dict, core: int) -> Finding:
+        ts = float(rec["timestamp"]) if "timestamp" in rec else None
+        return make_finding(
+            self.id,
+            Severity.INFO,
+            f"EKF primary core changed to {core}",
+            "ERR EKF_PRIMARY records which EKF core became primary"
+            + (f" at {ts:.1f}s" if ts is not None else "")
+            + ": its ECode is the new core number, not an error. A switch follows the healthier "
+            "core; repeated switches are worth reading next to the EKF findings.",
+            time_start_s=ts,
+            message_types=["ERR"],
+            samples={"Subsys": ERR_EKF_PRIMARY, "core": core},
+        )
 
     # -- MODE: one INFO finding summarising the mode timeline -----------------
 

@@ -41,6 +41,8 @@ ardupilot_mcp/
     base.py        Check ABC + registry (id, requires, vehicles, run())
     util.py        shared numeric helpers (intervals_above, make_finding, ...)
   orchestrator.py  runs all checks -> DiagnosisReport (+ attaches doc references)
+  dedupe.py        one event, one finding: ERR / failsafe-mode / firmware echoes join the
+                   finding that measured the event (`Finding.related`)
   timeline.py      incident timeline: onset (first anomaly while armed) vs impact; flags
                    findings that start after the crash (`after_impact`). Time order, never cause
   tuning.py        advisory tuning (notch FFT, PID, autotune) — not a check

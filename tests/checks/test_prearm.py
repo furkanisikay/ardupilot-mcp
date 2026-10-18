@@ -155,3 +155,24 @@ def test_check_is_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("prearm") is not None
+
+
+def test_a_message_that_only_mentions_prearm_is_not_a_prearm_failure():
+    # The firmware writes "PreArm: <reason>" (AP_Arming.cpp); a script's own status line that
+    # merely contains the word is not a pre-arm failure.
+    log = make_flight_log(
+        {
+            "MSG": [
+                {"TimeUS": 1_000_000, "Message": "Meteor bridge FINAL: RX48 + prearm 5Hz started"},
+                {"TimeUS": 2_000_000, "Message": "PreArm: Compass not calibrated"},
+            ]
+        }
+    )
+    titles = [f.title for f in StartupMessagesCheck().run(log)]
+    assert any("PreArm: Compass not calibrated" in t for t in titles)
+    assert not any("Meteor" in t for t in titles)
+
+
+def test_prearm_mid_line_is_not_a_prearm_failure():
+    log = make_flight_log({"MSG": [{"TimeUS": 1_000_000, "Message": "Lua: prearm: ok"}]})
+    assert all(f.severity != Severity.WARN for f in StartupMessagesCheck().run(log))

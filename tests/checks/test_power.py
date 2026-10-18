@@ -220,3 +220,25 @@ def test_check_is_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("power") is not None
+
+
+def test_low_voltage_window_starts_at_the_first_crossing():
+    # The failsafe timer counts from the first sample at the threshold, not the minimum.
+    from ardupilot_mcp.checks.power import PowerCheck
+
+    volts = [12.0] * 10 + [10.9] * 10 + [10.5] * 10
+    log = make_flight_log(
+        {"BAT": build_series(0.0, 1.0, Volt=volts, Curr=[5.0] * 30)}, params={"BATT_LOW_VOLT": 11.0}
+    )
+    [f] = [x for x in PowerCheck().run(log) if x.title == "Battery reached low-voltage threshold"]
+    assert f.evidence.time_start_s == 10.0 and f.evidence.time_end_s == 20.0
+
+
+def test_a_momentary_sag_does_not_start_the_low_voltage_window():
+    # A dip under load at takeoff, recovery, then a sustained fall (BATT_LOW_TIMER 10 s).
+    volts = [12.0] * 5 + [10.8] + [12.0] * 10 + [10.9] * 15
+    log = make_flight_log(
+        {"BAT": build_series(0.0, 1.0, Volt=volts, Curr=[5.0] * len(volts))}, params={"BATT_LOW_VOLT": 11.0}
+    )
+    [f] = [x for x in PowerCheck().run(log) if x.title == "Battery reached low-voltage threshold"]
+    assert f.evidence.time_start_s == 16.0

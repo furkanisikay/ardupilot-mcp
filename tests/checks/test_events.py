@@ -133,3 +133,12 @@ def test_check_is_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("events") is not None
+
+
+def test_ekf_primary_is_a_lane_switch_not_an_error():
+    # ArduCopter/ekf_check.cpp logs ERR EKF_PRIMARY with the new primary core as ECode:
+    # core 0 is a switch too, not a "cleared" error.
+    errs = [{"TimeUS": 5_000_000, "Subsys": 24, "ECode": 1}, {"TimeUS": 9_000_000, "Subsys": 24, "ECode": 0}]
+    findings = [f for f in EventsCheck().run(make_flight_log({"ERR": errs})) if "EKF primary" in f.title]
+    assert [f.title for f in findings] == ["EKF primary core changed to 1", "EKF primary core changed to 0"]
+    assert all(f.severity == Severity.INFO for f in findings)

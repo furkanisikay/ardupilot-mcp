@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from . import ardupilot_docs as docs
 from .checks.base import Check, get_checks
+from .dedupe import merge_duplicates
 from .flight_log import FlightLog
 from .logging_advice import logging_advice
 from .model import (
@@ -30,7 +31,9 @@ _GUIDANCE = (
     "margin) and weave in any real-world details the user gives (weight, prop/motor size, wind). "
     "Report only what the deterministic findings show; cite the doc links rather than inventing causes. "
     "When `incident` is set, start from its onset (what went wrong first) and treat findings flagged "
-    "after_impact as consequences of the crash; say what preceded what, not what caused what."
+    "after_impact as consequences of the crash; say what preceded what, not what caused what. "
+    "A finding's `related` list names the other log records of the same event (ERR, failsafe mode "
+    "change, firmware message): they corroborate it, they are not separate problems."
 )
 
 
@@ -53,6 +56,8 @@ def diagnose(log: FlightLog, checks: list[Check] | None = None) -> DiagnosisRepo
         # Each finding is reported once, in the top-level list: duplicating it in
         # results[] doubled the payload (and the LLM's token bill) for no information.
         r.findings = []
+    # One event, one finding: ERR/MODE/firmware echoes join the finding that measured it.
+    findings = merge_duplicates(findings, log.params)
     # Flags after-impact findings (it must run before sorting).
     timeline = build_timeline(log, findings)
     findings.sort(key=_finding_sort_key)

@@ -72,6 +72,10 @@ ERR_SUBSYSTEMS: dict[int, str] = {
     31: "FAILSAFE_DEADRECKON",
 }
 
+# ERR EKF_PRIMARY carries the new primary core as its ECode, not an error code
+# (ArduCopter/ekf_check.cpp: LOGGER_WRITE_ERROR(LogErrorSubsystem::EKF_PRIMARY, LogErrorCode(ekf_primary_core))).
+ERR_EKF_PRIMARY = 24
+
 # Subsystems whose non-zero ECode is a hard, safety-relevant failure.
 CRITICAL_ERR_SUBSYSTEMS: set[int] = {
     5,  # FAILSAFE_RADIO
