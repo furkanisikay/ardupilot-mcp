@@ -36,6 +36,9 @@ class Verdict:
     severity: Severity
     title: str
     meaning: str
+    # Check that reports this verdict instead of this one (it adds evidence the
+    # message alone lacks); the message still feeds the timeline and prearm dedupe.
+    reported_by: str | None = None
 
 
 # Matched against the start of each MSG line (case-sensitive, as the firmware writes it).
@@ -46,6 +49,7 @@ VERDICTS: tuple[Verdict, ...] = (
         "Firmware detected thrust loss",
         "the crash check saw a motor at full output while the vehicle still could not hold attitude "
         "or altitude; the number is the motor the firmware suspects (motor index + 1)",
+        reported_by="thrust_loss",
     ),
     Verdict(
         re.compile(r"Crash: Disarming"),
@@ -148,7 +152,7 @@ class FirmwareVerdictsCheck(Check):
         out: list[Finding] = []
         for v in VERDICTS:  # stable, severity-ordered output
             seen = hits.get(v)
-            if not seen:
+            if not seen or v.reported_by is not None:
                 continue
             times = [t for t, _ in seen if t is not None]
             first_text = seen[0][1]
