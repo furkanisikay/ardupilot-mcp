@@ -49,7 +49,8 @@ signature).
 
 ## Results
 
-Current `main`; the changelog notes how each change moved these numbers. To refresh them, run
+The changelog notes how each change moved these numbers. CI checks this table against
+`bench/results.json`, not against the code, so refresh both when a change moves the scores: run
 `python -m bench.run --logs DIR --json bench/results.json` and then `python scripts/gen_docs.py`,
 which renders this table from `bench/results.json`.
 

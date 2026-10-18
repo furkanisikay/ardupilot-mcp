@@ -12,10 +12,11 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 - `scripts/gen_docs.py` now generates the README example output, the check and
-  benchmark-log counts and the benchmark table in `bench/README.md` (from the new
-  `bench/results.json`), so CI fails when they drift. The README example had shown
-  13.22 V for a battery the demo log records at 13.32 V, and the benchmark table still
-  showed 101 false criticals after 1.0.0 brought them to 97.
+  benchmark-log counts, and the benchmark table in `bench/README.md` (from the new
+  `bench/results.json`). CI fails when these sections drift from the code and
+  `bench/results.json`.
+- `python -m bench.run --json` refuses to write when a log was skipped, unless
+  `--allow-partial` is given, and records the version and revision it measured.
 
 ## [1.0.0] — 2026-10-18
 

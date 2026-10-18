@@ -168,10 +168,19 @@ def render_example() -> str:
 
 def render_bench() -> str:
     s = json.loads(BENCH_RESULTS.read_text(encoding="utf-8"))["summary"]
+    entries = len(json.loads(BENCH_MANIFEST.read_text(encoding="utf-8"))["entries"])
+    if s["logs"] != entries:
+        raise ValueError(
+            f"bench/results.json covers {s['logs']} of the {entries} logs in the manifest; "
+            "re-run python -m bench.run with every log"
+        )
+    measured = s.get("measured_on") or {}
+    rev = f" ({measured['revision']})" if measured.get("revision") else ""
     by_check = ", ".join(f"`{c}` {n}" for c, n in s["false_criticals_by_check"].items())
     total = s["false_criticals_total"]
     return (
-        "\n| Scorable logs | Top-1 | Top-3 | Logs with a false critical | False criticals |\n"
+        f"\nMeasured on ardupilot-mcp {measured.get('version', '?')}{rev}.\n\n"
+        "| Scorable logs | Top-1 | Top-3 | Logs with a false critical | False criticals |\n"
         "|---|---|---|---|---|\n"
         f"| {s['scored']} | {s['top1_hits']} | {s['top3_hits']} | "
         f"{s['logs_with_false_critical']} / {s['logs']} | {total} |\n\n"
