@@ -1,3 +1,5 @@
+# Needs the repository's Dependency graph (Settings → Advanced Security). Once it is on,
+# set the repository variable DEPENDENCY_REVIEW to "true" to run this check.
 name: Dependency review
 
 on:
@@ -10,6 +12,7 @@ permissions:
 jobs:
   review:
     name: Dependency review
+    if: vars.DEPENDENCY_REVIEW == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
