@@ -41,6 +41,7 @@ ardupilot_mcp/
     base.py        Check ABC + registry (id, requires, vehicles, run())
     util.py        shared numeric helpers (intervals_above, make_finding, ...)
   orchestrator.py  runs all checks -> DiagnosisReport (+ attaches doc references)
+  forum_report.py  forum_report tool: paste-ready Markdown reply with text plots, no positions
   dedupe.py        one event, one finding: ERR / failsafe-mode / firmware echoes join the
                    finding that measured the event (`Finding.related`)
   timeline.py      incident timeline: onset (first anomaly while armed) vs impact; flags

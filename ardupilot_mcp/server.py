@@ -24,12 +24,14 @@ from . import ardupilot_meta as meta
 from .checks import get_checks
 from .compare import compare_logs as compare_logs_impl
 from .flight_log import FlightLog
+from .forum_report import build_forum_report
 from .model import (
     CheckCatalog,
     CheckInfo,
     DiagnosisReport,
     EventRecord,
     EventTimeline,
+    ForumReport,
     IncidentTimeline,
     LogComparison,
     LogIntegrity,
@@ -139,6 +141,19 @@ def incident_timeline(path: str) -> IncidentTimeline:
     if entry.timeline is None:
         entry.timeline = build_timeline(entry.log, _report(entry).findings)
     return entry.timeline
+
+
+@mcp.tool(annotations=_READONLY)
+def forum_report(path: str) -> ForumReport:
+    """A Markdown reply to paste into a discuss.ardupilot.org thread: vehicle and firmware, what went
+    wrong first (onset and impact), the findings with their corroborating log records, and a small text
+    plot of the data behind each one. It contains no GPS positions and is returned as text (nothing is
+    written to disk). Review it with the user and add what they saw before they post it.
+    """
+    entry = _entry(path)
+    if entry.timeline is None:
+        entry.timeline = build_timeline(entry.log, _report(entry).findings)
+    return ForumReport(path=path, markdown=build_forum_report(entry.log, _report(entry), entry.timeline))
 
 
 @mcp.tool(annotations=_READONLY)

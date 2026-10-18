@@ -62,6 +62,12 @@ All notable changes to this project are documented here. The format is based on
   we never use. The reader now skips that scan (15 MB forum log: 6.9 s -> 0.15 s).
 
 ### Added
+- `forum_report(path)` tool: a Markdown reply for a discuss.ardupilot.org thread — vehicle and
+  firmware, what went wrong first, up to six findings with their corroborating records, and a
+  text sparkline of the data behind each (vibration axis, demanded vs actual attitude, pack
+  voltage and current, satellites and HDOP, the EKF test ratio, the lost motor's output and
+  throttle). It never reads a position (no GPS latitude/longitude), keeps only the file name,
+  and returns text without writing anything.
 - Real-crash benchmark (`bench/`): 49 forum flight logs whose cause a developer or experienced
   helper stated after analysing the log, stored as source URL + sha256 + label (logs are not
   redistributed), and an offline scorer (`python -m bench.run --logs DIR`) for top-1/top-3 cause
