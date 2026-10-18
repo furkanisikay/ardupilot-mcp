@@ -136,6 +136,13 @@ class CompassCheck(Check):
         times = tx[:n] if tx.size >= n else tx
 
         mag = np.sqrt(mx * mx + my * my + mz * mz)
+        # In flight only: on the ground the craft is carried, set down next to cars and
+        # metal, or powered up; none of that is in-flight compass behaviour.
+        flying = log.flying_mask(times)
+        if flying is not None:
+            times, mag = times[flying], mag[flying]
+            if mag.size < MIN_SAMPLES:
+                return []
         mean = float(np.mean(mag))
         if mean <= 0.0:
             # Degenerate (all-zero / no field): can't form a ratio. Nothing to say.

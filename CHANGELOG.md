@@ -44,7 +44,7 @@ All notable changes to this project are documented here. The format is based on
   events when logged), and Plane yaw is skipped (ArduPlane logs `ATT.DesYaw` as a 0 placeholder).
   On 100 forum logs this was the most common CRITICAL: an upside-down crashed or carried
   airframe, and every Plane's heading, read as "attitude tracking failure". The PID tuning advice
-  uses the same flight window.
+  uses the same flight window. Compass field-strength stability uses it too.
 - `timing`: a logging gap that starts while disarmed is expected with `LOG_DISARMED=0` (logging
   pauses between flights in the same file) and is no longer a "main-loop stall"; half of the gap
   warnings on the forum corpus were this.
