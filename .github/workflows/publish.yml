@@ -6,7 +6,7 @@ name: Release
 # (Trusted Publishing), publishes server.json to the MCP Registry (GitHub OIDC), then
 # tags vX.Y.Z and creates a GitHub release with notes grouped by label.
 #
-# Run it from the Actions tab with "registry" ticked to publish a version that is
+# Run it on main from the Actions tab with "registry" ticked to publish a version that is
 # already released to the MCP Registry only, for example after the registry step failed.
 on:
   push:
@@ -82,11 +82,12 @@ jobs:
   mcp-registry:
     name: Publish to the MCP Registry
     needs: [check, publish]
-    # After a new PyPI release, or on a manual run with "registry" ticked.
+    # After a new PyPI release, or on a manual run from main with "registry" ticked.
     if: >-
       !cancelled() && needs.check.result == 'success' &&
       (needs.publish.result == 'success' ||
-       (needs.check.outputs.is_new == 'false' && inputs.registry))
+       (needs.check.outputs.is_new == 'false' && inputs.registry &&
+        github.ref == 'refs/heads/main'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -114,7 +115,11 @@ jobs:
         # PyPI can take a minute to serve a new upload; the registry checks the package.
         run: |
           for attempt in 1 2 3 4 5; do
-            ./mcp-publisher publish && exit 0
+            if out=$(./mcp-publisher publish 2>&1); then echo "$out"; exit 0; fi
+            echo "$out"
+            if grep -q "duplicate version" <<<"$out"; then
+              echo "This version is already in the registry."; exit 1
+            fi
             echo "attempt $attempt failed; retrying in 30 s"
             sleep 30
           done
