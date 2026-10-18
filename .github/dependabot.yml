@@ -4,6 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Widen a range only when a new release falls outside it; never raise a floor that
+    # still works (users install alongside other packages).
+    versioning-strategy: increase-if-necessary
     labels: ["dependencies", "skip-changelog"]
     commit-message:
       prefix: "chore(deps)"

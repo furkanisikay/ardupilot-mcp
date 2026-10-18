@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 """Core data model for the ArduPilot log-diagnosis MCP server.
 
-All types are Pydantic models so MCP tools can emit validated ``structuredContent``
-and auto-generate output schemas. The deterministic check engine is the single
-source of truth; the LLM only narrates these structures.
+All types are Pydantic models so MCP tools can emit validated structured content
+(``structuredContent`` on the wire) and auto-generate output schemas. The deterministic
+check engine is the single source of truth; the LLM only narrates these structures.
 """
 
 from __future__ import annotations

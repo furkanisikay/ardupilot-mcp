@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-18
+
+The first stable release: the tool set, the report schema and the check catalogue are now
+covered by semantic versioning.
+
 ### Fixed
 - Arming refusals were dropped as boot chatter when they contained "calibrated" or
   " ready" ("PreArm: Compass calibrated requires reboot", "Arm: GPS not ready"), and an
@@ -114,6 +119,8 @@ All notable changes to this project are documented here. The format is based on
   we never use. The reader now skips that scan (15 MB forum log: 6.9 s -> 0.15 s).
 
 ### Added
+- `tests/test_protocol.py`: an MCP client lists the tools and runs `analyze_log` against the
+  server in-process, over the initialize handshake and over 2026-07-28.
 - `ardupilot-mcp --version` prints the installed version without starting the server.
 - `docs/reference.md` lists every tool with its arguments and every check with the vehicles,
   log types and messages it needs. `scripts/gen_docs.py` generates it from the code and
@@ -209,7 +216,17 @@ All notable changes to this project are documented here. The format is based on
   pipeline; a clean flight that raises a single warning fails CI.
 
 ### Changed
-- **License: AGPL-3.0-only** from this change on, with a commercial license available
+- **MCP Python SDK 2** (`mcp>=2.0,<3`): the server is an `MCPServer` and speaks the
+  2026-07-28 protocol revision as well as the initialize handshake (2024-11-05 to
+  2025-11-25) that most desktop clients use today. It now tells clients its title, version,
+  website and how to use the tools (`instructions`), and marks every tool read-only,
+  idempotent and closed-world. The SDK runs the tools on worker threads, so the log cache is
+  locked. mcp 1.x is no longer supported; pin `ardupilot-mcp<1` to keep it.
+- `pydantic>=2.12` is declared (the models use it directly). The floors `mcp 2.0`,
+  `pymavlink 2.4.49`, `numpy 2.0` and `pydantic 2.12` are tested in CI, and a weekly job
+  tests the newest releases of those libraries, past our upper bounds and pre-releases
+  included, and opens an issue when one breaks the suite.
+- **License: AGPL-3.0-only** from this release on, with a commercial license available
   (contact@furkanisikay.com). The packages published on PyPI up to 0.1.3 remain under the
   MIT license.
   Contributions need the [Contributor License Agreement](.github/CLA.md).
@@ -309,7 +326,8 @@ findings.
 - [`docs/SOURCES.md`](docs/SOURCES.md): every threshold/enum/fact audited against
   authoritative sources.
 
-[Unreleased]: https://github.com/furkanisikay/ardupilot-mcp/commits/main
+[Unreleased]: https://github.com/furkanisikay/ardupilot-mcp/compare/v1.0.0...main
+[1.0.0]: https://pypi.org/project/ardupilot-mcp/1.0.0/
 [0.1.3]: https://pypi.org/project/ardupilot-mcp/0.1.3/
 [0.1.2]: https://pypi.org/project/ardupilot-mcp/0.1.2/
 [0.1.1]: https://pypi.org/project/ardupilot-mcp/0.1.1/

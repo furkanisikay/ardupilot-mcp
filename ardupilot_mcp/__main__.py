@@ -19,7 +19,7 @@ def main(argv: list[str] | None = None) -> None:
         return
     from .server import mcp
 
-    mcp.run()  # stdio transport by default
+    mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":

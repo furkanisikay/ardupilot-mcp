@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from ardupilot_mcp.model import (
@@ -232,3 +234,51 @@ def test_recommend_tuning_accepts_an_area_with_spaces(mem_log):
 
     report = recommend_tuning("x.bin", " notch ")
     assert not any("unknown tuning area" in n for n in report.notes)
+
+
+def test_a_log_that_fails_to_parse_evicts_no_cached_log(monkeypatch, tmp_path):
+    from ardupilot_mcp import server
+    from tests.helpers import make_flight_log
+
+    paths = {name: tmp_path / f"{name}.bin" for name in ("a", "b", "c")}
+    for p in paths.values():
+        p.write_bytes(b"x")
+
+    def parse(path):
+        if path.endswith("c.bin"):
+            raise ValueError("corrupt log")
+        return make_flight_log({})
+
+    monkeypatch.setattr(server, "parse_bin", parse)
+    monkeypatch.setattr(server, "_CACHE", server.OrderedDict())
+    server._entry(str(paths["a"]))
+    server._entry(str(paths["b"]))
+    with pytest.raises(ValueError):
+        server._entry(str(paths["c"]))
+    assert [os.path.basename(k) for k in server._CACHE] == ["a.bin", "b.bin"]
+
+
+def test_parallel_calls_on_one_log_parse_it_once(monkeypatch, tmp_path):
+    import threading
+    import time
+
+    from ardupilot_mcp import server
+    from tests.helpers import make_flight_log
+
+    path = tmp_path / "a.bin"
+    path.write_bytes(b"x")
+    calls = []
+
+    def parse(_path):
+        calls.append(1)
+        time.sleep(0.05)
+        return make_flight_log({})
+
+    monkeypatch.setattr(server, "parse_bin", parse)
+    monkeypatch.setattr(server, "_CACHE", server.OrderedDict())
+    threads = [threading.Thread(target=server._entry, args=(str(path),)) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert calls == [1]

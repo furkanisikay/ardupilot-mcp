@@ -180,3 +180,26 @@ def test_a_corrupt_zero_timestamp_does_not_move_the_time_origin():
     )
     assert log.times("IMU")[0] == 0.0
     assert log.meta.duration_s == pytest.approx(9.98)
+
+
+def test_batches_are_decoded_once_when_threads_read_them_together():
+    import threading
+    import time
+
+    calls = []
+
+    def loader(_log):
+        calls.append(1)
+        time.sleep(0.05)
+        return ["batch"]
+
+    log = make_flight_log({})
+    log._batch_loader = loader
+    seen = []
+    threads = [threading.Thread(target=lambda: seen.append(list(log.batches))) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert calls == [1]
+    assert seen == [["batch"]] * 4
