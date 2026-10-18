@@ -9,6 +9,7 @@ exception.
 from __future__ import annotations
 
 import contextlib
+import functools
 import io
 import os
 
@@ -73,11 +74,18 @@ def parse_bin(path: str) -> FlightLog:
     log.meta.flight_modes = _extract_modes(log, kind)
     log.meta.max_altitude_m = _extract_max_alt(log)
     if columns is not None:
-        try:
-            log.batches = _decode_batches(reader, log)
-        except Exception:  # noqa: BLE001 - batch data is optional; never fail the parse over it
-            log.batches = []
+        # Decoded on first use: re-reading the file then costs one index pass, which only
+        # the notch advice pays, instead of every tool holding the raw batches in memory.
+        log._batch_loader = functools.partial(_load_batches, path)
     return log
+
+
+def _load_batches(path: str, log: FlightLog) -> list[ImuBatch]:
+    """Re-open ``path`` and decode its batch-sampler captures for ``log``."""
+    from pymavlink import DFReader
+
+    with contextlib.redirect_stderr(io.StringIO()):
+        return _decode_batches(_open_reader(DFReader, path), log)
 
 
 def _open_reader(DFReader, path: str):
@@ -106,6 +114,14 @@ _NP_DTYPES = {
 _NP_SCALE = {"c": 0.01, "C": 0.01, "e": 0.01, "E": 0.01, "L": 1e-7}
 # Bound the temporary (rows x bytes) gather index to ~32 MB per chunk.
 _GATHER_BYTES = 4_000_000
+
+
+def _gather(buf: np.ndarray, offs: np.ndarray, length: int, dtype: np.dtype) -> np.ndarray:
+    """The records of ``length`` bytes at ``offs`` (header skipped), viewed as ``dtype``."""
+    body = np.arange(3, length, dtype=np.int64)
+    step = max(1, _GATHER_BYTES // max(1, body.size))
+    parts = [buf[offs[i : i + step, None] + body] for i in range(0, offs.size, step)]
+    return np.ascontiguousarray(np.concatenate(parts)).view(dtype).reshape(-1)
 
 
 def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
@@ -139,10 +155,7 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
         if dtype is None or dtype.itemsize != fmt.len - 3:
             out[fmt.name] = _columns_via_pymavlink(reader, fmt, offs)
             continue
-        body = np.arange(3, fmt.len, dtype=np.int64)
-        step = max(1, _GATHER_BYTES // max(1, body.size))
-        parts = [buf[offs[i : i + step, None] + body] for i in range(0, offs.size, step)]
-        arr = np.ascontiguousarray(np.concatenate(parts)).view(dtype).reshape(-1)
+        arr = _gather(buf, offs, fmt.len, dtype)
         cols: dict[str, np.ndarray] = {}
         for col, ch in zip(fmt.columns, fmt.format, strict=True):
             v = arr[col]
@@ -190,10 +203,7 @@ def _view_records(reader, buf: np.ndarray, name: str) -> tuple[np.ndarray, np.nd
     dtype = np.dtype(fields)
     if dtype.itemsize != fmt.len - 3:
         return None
-    body = np.arange(3, fmt.len, dtype=np.int64)
-    step = max(1, _GATHER_BYTES // max(1, body.size))
-    parts = [buf[offs[i : i + step, None] + body] for i in range(0, offs.size, step)]
-    return offs, np.ascontiguousarray(np.concatenate(parts)).view(dtype).reshape(-1)
+    return offs, _gather(buf, offs, fmt.len, dtype)
 
 
 def _decode_batches(reader, log: FlightLog) -> list[ImuBatch]:
@@ -237,10 +247,16 @@ def _decode_batches(reader, log: FlightLog) -> list[ImuBatch]:
         if rows.size == 0 or sensor is None or not rate > 0:
             continue
         inst = int(hdr["instance"])
-        shifted = offset and inst >= n_imu
-        if shifted:
-            inst -= n_imu
-        post = _batch_is_post(opt, shifted, (int(hdr["type"]), inst + n_imu) in seen)
+        post: bool | None
+        if offset and n_imu is None:
+            # Without the gyro count the offset post-filter instances cannot be told apart.
+            post = None
+        else:
+            n = n_imu or 1
+            shifted = offset and inst >= n
+            if shifted:
+                inst -= n
+            post = _batch_is_post(opt, shifted, (int(hdr["type"]), inst + n) in seen)
         batches.append(
             ImuBatch(
                 time_s=float(hdr["TimeUS"]) / 1e6 - origin,
@@ -278,12 +294,12 @@ def _batch_is_post(opt: int, shifted: bool, sibling_shifted: bool) -> bool | Non
     return False
 
 
-def _imu_count(log: FlightLog) -> int:
-    """Gyros on the board: the IMU instances logged, else the detected gyro IDs."""
+def _imu_count(log: FlightLog) -> int | None:
+    """Gyros on the board: the IMU instances logged, else the detected gyro IDs (None if unknown)."""
     n = len(log.instances("IMU"))
     if n == 0:
         n = sum(1 for k in ("INS_GYR_ID", "INS_GYR2_ID", "INS_GYR3_ID") if log.params.get(k))
-    return max(1, n)
+    return n or None
 
 
 def _cstr(raw: bytes) -> str:

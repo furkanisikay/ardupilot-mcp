@@ -77,7 +77,9 @@ All notable changes to this project are documented here. The format is based on
   it agrees or disagrees. With ESC RPM telemetry the advice is the ESC notch, FREQ set below
   the hover motor frequency and above `INS_GYRO_FILTER` as the wiki asks, and the gyro line is
   matched to the motors' harmonics: a line on no harmonic is called out as not motor noise,
-  and a harmonic outside `INS_HNTCH_HMNCS` is added to it. On 100 forum logs, 53 of the 61
+  and a harmonic outside `INS_HNTCH_HMNCS` is added to it. A notch that already follows an
+  RPM sensor or the in-flight FFT is kept, with a warning when its FREQ floor sits above the
+  measured line. On 100 forum logs, 53 of the 61
   with such data get advice; where ESC RPM and gyro data meet (20 logs) the line is the
   fundamental on 11, a harmonic on 6 and no motor harmonic on 3.
 - `forum_report(path)` tool: a Markdown reply for a discuss.ardupilot.org thread — vehicle and

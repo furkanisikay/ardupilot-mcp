@@ -25,6 +25,7 @@ cannot use the throttle mode.
 from __future__ import annotations
 
 import math
+from collections import Counter
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -48,6 +49,9 @@ NOTCH_MIN_FS_HZ = 100.0
 NOTCH_MIN_SAMPLES = 64
 # Welch segment length for the IMU fallback.
 WELCH_SEGMENT = 256
+# Design choice: in the IMU fallback, a step longer than this many sample periods is a
+# gap (dropout, or between flights); Welch segments never span one.
+GAP_FACTOR = 2.0
 # Design choice: a line counts only if its power is at least this multiple of its local
 # floor, the median power within a factor LOCAL_SPAN of its frequency (an octave either
 # side: wide enough that a broad motor hump does not raise its own floor).
@@ -80,7 +84,9 @@ HMNCS_DEFAULT = 3
 
 # INS_HNTCH_MODE values (HarmonicNotchFilter.cpp): 0 fixed, 1 throttle, 2 RPM sensor,
 # 3 ESC telemetry, 4 dynamic FFT.
-MODE_FIXED, MODE_THROTTLE, MODE_RPM, MODE_ESC = 0, 1, 2, 3
+MODE_FIXED, MODE_THROTTLE, MODE_RPM, MODE_ESC, MODE_FFT, MODE_RPM2 = 0, 1, 2, 3, 4, 5
+# Modes that follow a measured speed without ESC telemetry; a log already using one keeps it.
+_TRACKING = {MODE_RPM: "RPM sensor", MODE_FFT: "in-flight FFT", MODE_RPM2: "second RPM sensor"}
 
 
 @dataclass
@@ -170,7 +176,8 @@ def from_batches(log: FlightLog) -> NoisePeak | None:
 
     inst = primary_imu(log, sorted({b.instance for b in pre}))
     pre = [b for b in pre if b.instance == inst]
-    n = int(np.median([b.x.size for b in pre]))
+    # The most common batch length (a median of two lengths can match no batch at all).
+    n = Counter(b.x.size for b in pre).most_common(1)[0][0]
     pre = [b for b in pre if b.x.size == n]
     fs = float(np.median([b.rate_hz for b in pre]))
     freqs = np.fft.rfftfreq(n, d=1.0 / fs)
@@ -181,7 +188,15 @@ def from_batches(log: FlightLog) -> NoisePeak | None:
     hz, ratio = found
     samples = {"batches": float(len(pre)), "imu": float(inst), "sample_rate_hz": round(fs, 1)}
     # The second pass of a pre+post log at sensor rate may be raw too (post_filter None).
-    post = [b for b in gyro if b.post_filter is not False and b.instance == inst and b.x.size == n]
+    # Same length and rate, so its spectrum lines up with the pre-filter frequency axis.
+    post = [
+        b
+        for b in gyro
+        if b.post_filter is not False
+        and b.instance == inst
+        and b.x.size == n
+        and math.isclose(b.rate_hz, fs, rel_tol=1e-3)
+    ]
     unsure = any(b.post_filter is None for b in post)
     detail = f"Pre-filter gyro batches of IMU{inst}, {len(pre)} in flight, {n} samples each at {fs:.0f} Hz."
     if post:
@@ -227,23 +242,33 @@ def from_imu(log: FlightLog) -> NoisePeak | None:
     keep = _flying(log, t)
     for c in cols.values():
         keep &= np.isfinite(c)
-    if np.count_nonzero(keep) < NOTCH_MIN_SAMPLES:
+    idx = np.flatnonzero(keep)
+    if idx.size < NOTCH_MIN_SAMPLES:
         return None
-    seg = min(WELCH_SEGMENT, int(np.count_nonzero(keep)))
+    # Contiguous runs of usable samples: ground time, a dropout or a logging gap ends a
+    # run, so no Welch segment spans a step in the data (its spectrum would be broadband).
+    breaks = np.flatnonzero((np.diff(idx) > 1) | (np.diff(t[idx]) > GAP_FACTOR / fs)) + 1
+    runs = np.split(idx, breaks)
+    longest = max(r.size for r in runs)
+    if longest < NOTCH_MIN_SAMPLES:
+        return None
+    seg = min(WELCH_SEGMENT, longest)
     win = np.hanning(seg)
     power = np.zeros(seg // 2 + 1)
-    nseg = 0
-    for c in cols.values():
-        v = c[keep]
-        for s in range(0, v.size - seg + 1, seg // 2):
-            chunk = _ac(v[s : s + seg])
-            if chunk is not None:
-                power += np.abs(np.fft.rfft(chunk * win)) ** 2
-            nseg += 1
-    if nseg == 0:
+    windows = used = 0
+    for r in runs:
+        for s in range(0, r.size - seg + 1, seg // 2):
+            sel = r[s : s + seg]
+            windows += 1
+            for c in cols.values():
+                chunk = _ac(c[sel])
+                if chunk is not None:
+                    power += np.abs(np.fft.rfft(chunk * win)) ** 2
+                    used += 1
+    if used == 0:
         return None
     freqs = np.fft.rfftfreq(seg, d=1.0 / fs)
-    found = _peak(freqs, power / nseg, fs)
+    found = _peak(freqs, power / used, fs)
     if found is None:
         return None
     hz, ratio = found
@@ -254,7 +279,7 @@ def from_imu(log: FlightLog) -> NoisePeak | None:
         ratio=ratio,
         fs_hz=fs,
         samples={"sample_rate_hz": round(fs, 1), "imu": float(inst or 0)},
-        detail=f"{label} gyro at {fs:.0f} Hz in flight, {nseg} Welch segments of {seg} samples.",
+        detail=f"{label} gyro at {fs:.0f} Hz in flight, {windows} Welch segments of {seg} samples.",
     )
 
 
@@ -316,10 +341,11 @@ def _mode(log: FlightLog, speed: MotorSpeed | None) -> tuple[int, float | None, 
     kind = log.meta.vehicle_kind
     vtol = kind == "plane" and float(log.params.get("Q_ENABLE", 0)) > 0
     if kind in ("copter", "heli", None) or vtol:
-        hover, estimated = _hover_throttle(log)
         if vtol:
             q = log.params.get("Q_M_THST_HOVER")
-            hover, estimated = (float(q), False) if q is not None else (None, False)
+            hover, estimated = (float(q) if q is not None else None), False
+        else:
+            hover, estimated = _hover_throttle(log)
         if hover is not None:
             src = "the median flying throttle" if estimated else "the learned hover throttle"
             return (
@@ -373,7 +399,8 @@ def _esc_advice(
         parts.append("No gyro data in the log shows the noise itself (no batch sampler, fast IMU or FFT).")
         return freq, parts, "medium", extra
     k = _harmonic(peak.hz, speed)
-    seen = f"The strongest gyro line, {peak.hz:.0f} Hz ({peak.source})"
+    # peak.hz is the fundamental of the strongest line (its f/2 or f/3 when that is clear too).
+    seen = f"The gyro noise line, {peak.hz:.0f} Hz ({peak.source})"
     if k is None:
         parts.append(
             f"{seen}, matches no motor harmonic up to the {_ORDINAL[MAX_HARMONIC]}, so it is not "
@@ -388,11 +415,47 @@ def _esc_advice(
     return freq, parts, ("high" if peak.source == "batch sampler" else "medium"), extra
 
 
+def _keep_tracking(log: FlightLog, peak: NoisePeak, mode: int) -> TuningRecommendation:
+    """Advice for a notch that already follows an RPM sensor or the in-flight FFT.
+
+    Those modes measure the noise frequency in flight; a throttle estimate would be a step
+    back. Their FREQ is the lowest frequency the notch follows (HarmonicNotchFilter.cpp).
+    """
+    parts = [
+        f"Motor noise peaks at {peak.hz:.0f} Hz ({peak.source}). {peak.detail}",
+        f"The log's notch already follows the {_TRACKING[mode]} (mode {mode}), which measures the "
+        "noise in flight; keep it. In this mode FREQ is the lowest frequency the notch follows.",
+    ]
+    cf = log.params.get("INS_HNTCH_FREQ")
+    if cf is not None and float(cf) > peak.hz:
+        parts.append(
+            f"FREQ is {float(cf):.0f} Hz, above the measured line, so the notch cannot reach it: "
+            f"lower FREQ below {peak.hz:.0f} Hz."
+        )
+    parts.append("Recommendation only: verify with a post-filter batch log after the change.")
+    samples = {"peak_hz": round(peak.hz, 1), **peak.samples}
+    msg = {"batch sampler": ["ISBH", "ISBD"], "IMU": ["IMU"], "in-flight FFT": ["FTN1"]}[peak.source]
+    return TuningRecommendation(
+        area=TuningArea.NOTCH,
+        title=f"Harmonic notch: keep the {_TRACKING[mode]} tracking",
+        explanation=" ".join(parts),
+        suggested_params={},
+        evidence=Evidence(message_types=msg, samples=samples, detail=peak.detail),
+        confidence="medium",
+    )
+
+
 def analyze_notch(log: FlightLog) -> TuningRecommendation | None:
     peak = from_batches(log) or from_imu(log) or from_fft(log)
     speed = _motor_speed(log)
     if peak is None and speed is None:
         return None
+    configured = (
+        int(log.params.get("INS_HNTCH_MODE", -1)) if float(log.params.get("INS_HNTCH_ENABLE", 0)) > 0 else -1
+    )
+    if speed is None and configured in _TRACKING:
+        assert peak is not None
+        return _keep_tracking(log, peak, configured)
     mode, ref, why = _mode(log, speed)
     extra: dict[str, float] = {}
     if speed is not None:

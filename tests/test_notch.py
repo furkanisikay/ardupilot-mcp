@@ -70,11 +70,13 @@ def _batch(
     return msgs
 
 
-def _bin(tmp_path, batches, params=None):
+def _bin(tmp_path, batches, params=None, gyros=1):
     msgs = [("ATT", {"TimeUS": i * 100_000, "Roll": 0.0}) for i in range(50)]
     for m in batches:
         msgs.extend(m)
-    return parse_bin(build_bin(str(tmp_path / "batch.bin"), msgs, params=params))
+    # The detected gyro IDs give the gyro count the post-filter instance offset uses.
+    ids = {k: 1000 + i for i, k in enumerate(("INS_GYR_ID", "INS_GYR2_ID", "INS_GYR3_ID")[:gyros])}
+    return parse_bin(build_bin(str(tmp_path / "batch.bin"), msgs, params={**ids, **(params or {})}))
 
 
 # Strongest line at 240 Hz (2nd harmonic), fundamental at 120 Hz.
@@ -113,6 +115,15 @@ def test_post_filter_option_without_pre_post(tmp_path):
     # Bits 0+1 with no offset batch: that IMU is not sampled at sensor rate, so post-filter.
     log = _bin(tmp_path, [_batch(1, 1_000_000, 0, TONES, blocks=4)], params={"INS_LOG_BAT_OPT": 3})
     assert [b.post_filter for b in log.batches] == [True]
+
+
+def test_unknown_gyro_count_leaves_the_pass_undecided(tmp_path):
+    both = [_batch(1, 1_000_000, 0, TONES, blocks=4), _batch(2, 2_000_000, 1, TONES, blocks=4)]
+    log = _bin(tmp_path, both, params={"INS_LOG_BAT_OPT": 4}, gyros=0)
+    assert [b.post_filter for b in log.batches] == [None, None]
+    # Two gyros: instance 1 is the second IMU's raw pass, not IMU0's filtered one.
+    log = _bin(tmp_path, both, params={"INS_LOG_BAT_OPT": 4}, gyros=2)
+    assert sorted((b.instance, b.post_filter) for b in log.batches) == [(0, False), (1, False)]
 
 
 def test_a_dropped_block_ends_the_batch(tmp_path):
@@ -156,6 +167,15 @@ def test_second_pass_of_unknown_kind_is_compared_with_a_caveat(tmp_path):
     raw = [_batch(i, i * 1_000_000, 0, TONES) for i in range(1, 3)] + [_batch(9, 6_000_000, 1, TONES)]
     rec = analyze_notch(_bin(tmp_path, raw, params={"INS_LOG_BAT_OPT": 5}))
     assert rec is not None and "logged raw in both passes" in rec.explanation
+
+
+def test_batches_of_two_lengths_use_the_common_one(tmp_path):
+    # A dropped block shortens one batch; the median of two lengths matches neither.
+    batches = [_batch(1, 1_000_000, 0, {120.0: 0.5}), _batch(2, 2_000_000, 0, {120.0: 0.5}, skip=(31,))]
+    rec = analyze_notch(_bin(tmp_path, batches))
+    assert rec is not None
+    assert abs(rec.suggested_params["INS_HNTCH_FREQ"] - 120.0) <= 3.0
+    assert rec.evidence.samples["batches"] == 1.0
 
 
 def test_peaks_below_the_floor_are_ignored(tmp_path):
@@ -271,3 +291,14 @@ def test_rover_gets_a_throttle_notch_without_a_guessed_ref():
     assert rec is not None
     assert rec.suggested_params["INS_HNTCH_MODE"] == 1.0
     assert "INS_HNTCH_REF" not in rec.suggested_params
+
+
+def test_an_rpm_or_fft_notch_is_kept():
+    log = make_flight_log(
+        {"IMU": _imu(80.0)}, params={"INS_HNTCH_ENABLE": 1, "INS_HNTCH_MODE": 4, "INS_HNTCH_FREQ": 100}
+    )
+    rec = analyze_notch(log)
+    assert rec is not None
+    assert rec.suggested_params == {}  # no switch to a throttle estimate
+    assert "keep the in-flight FFT tracking" in rec.title
+    assert "lower FREQ below" in rec.explanation  # FREQ 100 Hz is above the ~80 Hz line
