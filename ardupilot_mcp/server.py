@@ -44,12 +44,16 @@ from .model import (
 )
 from .orchestrator import diagnose
 from .param_file import parse_param_file
+from .param_meta import catalog_for
 from .parser import parse_bin
 from .profile import build_profile
 from .timeline import build_timeline
 
 # A full ArduPilot config is ~800-1400 params; far fewer suggests an incomplete dump.
 _LOW_PARAM_COUNT = 150
+# Design choice: documented metadata is attached when a call returns at most this many
+# parameters (a full dump of ~1000 would bury the values; a name_glob narrows it).
+_DOC_LIMIT = 200
 
 mcp = FastMCP("ardupilot-mcp")
 
@@ -322,7 +326,10 @@ def get_params(path: str, name_glob: str | None = None) -> ParamResult:
 
     Includes `total` (full param count), `metadata_url` (version-specific definitions to interpret values), and a
     `note` if the snapshot looks incomplete (truncated log) — in which case ask the user for their exported .param
-    file and read it with `load_param_file`.
+    file and read it with `load_param_file`. `documented` gives each returned param's documented range, units,
+    listed values and bitmask bits for the log's firmware (bundled, offline); a value outside the documented range
+    or list is not necessarily wrong (some defaults, e.g. 0 = disabled, lie outside). `undocumented` names params
+    that release does not document.
     """
     log = _load(path)
     all_params = log.params
@@ -343,7 +350,7 @@ def get_params(path: str, name_glob: str | None = None) -> ParamResult:
             f"only {total} parameters were logged (a full ArduPilot config is ~800-1400); the PARM "
             "dump may be incomplete — consider load_param_file for the full config."
         )
-    return ParamResult(
+    result = ParamResult(
         path=path,
         params=dict(sorted(params.items())),
         matched=len(params),
@@ -352,14 +359,32 @@ def get_params(path: str, name_glob: str | None = None) -> ParamResult:
         metadata_url=docs.versioned_param_doc_url(log.meta.firmware_version, log.meta.vehicle_kind),
         note=note,
     )
+    return _document(result, log.meta.firmware_version, log.meta.vehicle_kind)
+
+
+def _document(result: ParamResult, firmware_version: str | None, vehicle_kind: str | None) -> ParamResult:
+    """Attach the bundled documented metadata of the returned params, when it fits."""
+    catalog = catalog_for(firmware_version, vehicle_kind)
+    if catalog is None:
+        return result
+    result.metadata_version = catalog.label
+    result.undocumented = [k for k in result.params if k not in catalog.params]
+    if result.matched <= _DOC_LIMIT:
+        result.documented = {k: d for k in result.params if (d := catalog.doc(k)) is not None}
+    else:
+        hint = f"documented metadata is attached for at most {_DOC_LIMIT} params; narrow with name_glob"
+        result.note = f"{result.note}; {hint}" if result.note else hint
+    return result
 
 
 @mcp.tool(annotations=_READONLY)
-def load_param_file(path: str, name_glob: str | None = None) -> ParamResult:
+def load_param_file(path: str, name_glob: str | None = None, firmware: str | None = None) -> ParamResult:
     """Load a user-exported ArduPilot parameter file (.param / .params).
 
     The authoritative *complete* configuration — use it when the log's PARM snapshot is truncated/incomplete,
     or to compare the flown config (get_params) against the user's current/intended config. ``name_glob`` filters.
+    ``firmware`` (e.g. 'ArduCopter V4.6.3', from the log's log_summary) attaches the documented metadata and
+    lists names that release does not document (typos, script or other-firmware params).
     """
     apath = os.path.abspath(os.path.expanduser(path))
     if not os.path.exists(apath):
@@ -375,7 +400,7 @@ def load_param_file(path: str, name_glob: str | None = None) -> ParamResult:
         if total
         else ("no parameters parsed — is this a Mission Planner .param or QGC .params file?")
     )
-    return ParamResult(
+    result = ParamResult(
         path=path,
         params=dict(sorted(params.items())),
         matched=len(params),
@@ -383,6 +408,18 @@ def load_param_file(path: str, name_glob: str | None = None) -> ParamResult:
         source="file",
         note=note,
     )
+    if not firmware:
+        return result
+    kind = meta.vehicle_kind(firmware, all_params.get("FRAME_CLASS"))
+    result.metadata_url = docs.versioned_param_doc_url(firmware, kind)
+    result = _document(result, firmware, kind)
+    if result.metadata_version is None:
+        hint = (
+            f"no bundled parameter metadata fits firmware {firmware!r} "
+            "(give the vehicle and version, e.g. 'ArduCopter V4.6.3')"
+        )
+        result.note = f"{result.note}; {hint}" if result.note else hint
+    return result
 
 
 @mcp.tool(annotations=_READONLY)
