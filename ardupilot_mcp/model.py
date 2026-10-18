@@ -263,6 +263,21 @@ class TimeseriesResult(BaseModel):
     note: str | None = None
 
 
+class ParamDoc(BaseModel):
+    """A parameter's documented metadata for the firmware release (apm.pdef.xml facts).
+
+    Documentation, not a firmware-enforced limit: some defaults (0 = disabled) lie outside
+    the Range, and a values list often names only the common choices.
+    """
+
+    range: list[float] | None = Field(default=None, description="Documented [min, max] (recommended span).")
+    units: str | None = None
+    values: list[float] | None = Field(default=None, description="Value codes the documentation lists.")
+    bits: list[int] | None = Field(default=None, description="Documented bit positions of a bitmask.")
+    read_only: bool = False
+    reboot_required: bool = False
+
+
 class ParamResult(BaseModel):
     path: str
     params: dict[str, float] = Field(default_factory=dict)
@@ -271,8 +286,21 @@ class ParamResult(BaseModel):
     source: str = Field(default="log", description="'log' (PARM dump) or 'file' (exported .param).")
     metadata_url: str | None = Field(
         default=None,
-        description="Version-specific parameter definitions (apm.pdef.xml) — meanings, defaults, ranges. "
-        "The LLM should consult this to interpret values.",
+        description="Version-specific parameter definitions (apm.pdef.xml) — meanings, ranges, values and "
+        "bitmasks (not defaults). The LLM should consult this to interpret values.",
+    )
+    metadata_version: str | None = Field(
+        default=None,
+        description="Which bundled release `documented` comes from, and how it matches the log's firmware.",
+    )
+    documented: dict[str, ParamDoc] = Field(
+        default_factory=dict,
+        description="Bundled documented metadata of the returned params (when at most 200 are returned).",
+    )
+    undocumented: list[str] = Field(
+        default_factory=list,
+        description="Returned params the release documents nowhere: script-added params, typos, or another "
+        "firmware's params.",
     )
     note: str | None = Field(
         default=None, description="Completeness caveat (e.g. truncated log -> snapshot may be partial)."

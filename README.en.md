@@ -291,8 +291,8 @@ The **Add to LM Studio** button above; or `~/.lmstudio/mcp.json` (Windows: `%USE
 | `vehicle_profile(path)` | **Physical/architecture profile**: frame & type, motor count, battery cells/capacity, hover throttle, **power margin** and thrust-to-weight. For physically-grounded reasoning. |
 | `list_events(path, kinds?, start_s?, end_s?)` | Decoded `ERR`/`MODE`/`EV`/`MSG` timeline. |
 | `query_timeseries(path, message_type, fields, start_s?, end_s?, max_points?, instance?)` | Decimated numeric series for drilling into a finding. Multi-instance messages (per IMU/GPS/compass/battery/EKF core) return one `instance` at a time; `available_instances` lists them. |
-| `get_params(path, name_glob?)` | Parameter values from the log's PARM dump (e.g. `INS_HNTCH_*`), plus the total count, a version-specific metadata link to interpret them, and a note if the snapshot looks incomplete. |
-| `load_param_file(path, name_glob?)` | Read a user-exported `.param`/`.params` file — the authoritative complete config, for when the log's snapshot is truncated or to compare flown-vs-current. |
+| `get_params(path, name_glob?)` | Parameter values from the log's PARM dump (e.g. `INS_HNTCH_*`), plus the total count, a version-specific metadata link and a note if the snapshot looks incomplete. Each returned parameter also gets its documented range, units, listed values and bitmask bits for the log's firmware (bundled, offline); names that release does not document are listed under `undocumented`. |
+| `load_param_file(path, name_glob?, firmware?)` | Read a user-exported `.param`/`.params` file — the authoritative complete config, for when the log's snapshot is truncated or to compare flown-vs-current. With `firmware` (e.g. `ArduCopter V4.6.3`) it attaches the documented metadata and lists names that release lacks (typos, script parameters). |
 | `recommend_tuning(path, area?)` | Advisory tuning (harmonic notch from the batch sampler, a fast IMU stream, the in-flight FFT or ESC RPM; PID; autotune). **Recommendation only — never applied.** |
 | `list_checks()` | The registered diagnostic checks (extensible catalogue). |
 
@@ -381,4 +381,4 @@ Checks are tested against synthetic in-memory logs (`tests/helpers.py`) and a sy
 
 ## License
 
-MIT
+MIT. The files in `ardupilot_mcp/data/params/` are facts extracted from ArduPilot's per-release parameter definitions (`apm.pdef.xml`, generated from the GPLv3 ArduPilot source): parameter names, documented ranges, units, value codes, bitmask bit positions and flags. No description or label text is copied.

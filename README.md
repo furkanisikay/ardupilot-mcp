@@ -291,8 +291,8 @@ goose configure
 | `vehicle_profile(path)` | **Fiziksel / mimari profil**: frame & tip, motor sayısı, batarya hücresi/kapasitesi, hover gazı, **güç marjı** ve itki/ağırlık. Fiziğe-dayalı muhakeme için. |
 | `list_events(path, kinds?, start_s?, end_s?)` | Çözümlenmiş `ERR`/`MODE`/`EV`/`MSG` zaman çizelgesi. |
 | `query_timeseries(path, message_type, fields, start_s?, end_s?, max_points?, instance?)` | Bir bulguya derinlemesine bakmak için seyreltilmiş sayısal seri. Çoklu sensörlü mesajlarda (IMU/GPS/pusula/batarya/EKF çekirdeği başına) tek bir `instance` döner; `available_instances` hangilerinin olduğunu söyler. |
-| `get_params(path, name_glob?)` | Logun PARM dökümünden parametre değerleri (ör. `INS_HNTCH_*`), toplam sayı, yorumlamak için sürüm-özel metadata linki, ve döküm eksikse bir uyarı. |
-| `load_param_file(path, name_glob?)` | Kullanıcının dışa aktardığı `.param`/`.params` dosyasını okur — log dökümü kesikse veya "uçtuğu config vs şimdiki"yi karşılaştırmak için tam, otoriter config. |
+| `get_params(path, name_glob?)` | Logun PARM dökümünden parametre değerleri (ör. `INS_HNTCH_*`), toplam sayı, sürüm-özel metadata linki ve döküm eksikse bir uyarı. Dönen parametrelerin, logun firmware sürümü için belgelenmiş aralığı, birimi, listelenen değerleri ve bitmask bitleri de gelir (paketle gelen veriden, ağsız); o sürümün belgelemediği adlar `undocumented` altında listelenir. |
+| `load_param_file(path, name_glob?, firmware?)` | Kullanıcının dışa aktardığı `.param`/`.params` dosyasını okur — log dökümü kesikse veya "uçtuğu config vs şimdiki"yi karşılaştırmak için tam, otoriter config. `firmware` (ör. `ArduCopter V4.6.3`) verilirse belgelenmiş metadata eklenir ve o sürümde olmayan adlar (yazım hatası, script parametresi) listelenir. |
 | `recommend_tuning(path, area?)` | Tavsiye niteliğinde tuning (batch sampler, hızlı IMU, uçuş içi FFT ya da ESC RPM verisinden harmonik notch; PID; autotune). **Sadece öneri — asla uygulanmaz.** |
 | `list_checks()` | Kayıtlı teşhis kontrolleri (genişletilebilir katalog). |
 
@@ -381,4 +381,4 @@ Kontroller sentetik in-memory loglarla (`tests/helpers.py`) test edilir; senteti
 
 ## Lisans
 
-MIT
+MIT. `ardupilot_mcp/data/params/` altındaki dosyalar ArduPilot'un sürüm-özel parametre tanımlarından (`apm.pdef.xml`, ArduPilot kaynak kodundan üretilir, GPLv3) çıkarılmış olgulardır: parametre adı, belgelenmiş aralık, birim, değer kodları, bitmask bit numaraları ve bayraklar. Açıklama ya da etiket metni kopyalanmaz.

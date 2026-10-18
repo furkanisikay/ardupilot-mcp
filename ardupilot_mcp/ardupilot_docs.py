@@ -28,7 +28,7 @@ def versioned_param_doc_url(firmware_version: str | None, vehicle_kind: str | No
     """URL of the machine-readable parameter definitions for this exact firmware.
 
     ArduPilot archives per-version ``apm.pdef.xml`` (authoritative parameter names,
-    ranges, defaults, bitmasks) for recent (4.x+) releases. Lets the LLM ground
+    ranges, values, bitmasks; not defaults) for recent (4.x+) releases. Lets the LLM ground
     parameter advice to the log's firmware version instead of latest-stable.
     Returns None for pre-4.x firmware (not archived) or unknown version/vehicle.
     """

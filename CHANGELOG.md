@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- `metadata_url` was described as giving parameter defaults; `apm.pdef.xml` carries ranges,
+  values and bitmasks but no defaults.
 - The parser left pymavlink's memory map of the log open until a garbage collection, so on
   Windows a log the server had read could not be replaced or deleted. The reader is now closed
   once the log is decoded.
@@ -73,6 +75,14 @@ All notable changes to this project are documented here. The format is based on
   we never use. The reader now skips that scan (15 MB forum log: 6.9 s -> 0.15 s).
 
 ### Added
+- Documented parameter metadata, offline: `get_params` (and `load_param_file` given a
+  `firmware`) returns each parameter's documented range, units, listed values and bitmask
+  bits for the log's firmware release, and lists the names that release does not document
+  (script parameters, typos, another firmware's parameters). Facts from ArduPilot's
+  `apm.pdef.xml` for Copter, Plane and Rover 4.4-4.7 and Sub 4.1/4.5/4.7 are bundled (360 KB),
+  regenerated with `scripts/gen_param_meta.py`. It informs and never raises a finding: on
+  30 Copter 4.6 forum logs a range/values check would have flagged 1,196 values, mostly
+  defaults outside the recommended range and raw BAUD rates.
 - Notch advice from the data that can show motor noise: the batch sampler (`ISBH`/`ISBD`,
   raw gyro at the sensor rate, decoded into `FlightLog.batches`), else the primary IMU when it
   is logged fast enough, else the in-flight FFT (`FTN1.PkAvg`). With pre- and post-filter

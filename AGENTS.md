@@ -52,6 +52,8 @@ ardupilot_mcp/
                    vehicle; ESC RPM also tells a motor harmonic from a frame resonance
   profile.py       VehicleProfile (frame, motors, battery cells, power margin)
   param_file.py    parse a user-exported .param / .params file
+  param_meta.py    documented parameter metadata per firmware release, bundled in
+                   data/params/ (facts only; regenerate with scripts/gen_param_meta.py)
   ardupilot_meta.py  ArduPilot reference data (modes, ERR/EV enums, frame classes)
   ardupilot_docs.py  curated, verified ArduPilot doc URLs attached to findings
   server.py        FastMCP server + the read-only MCP tools
