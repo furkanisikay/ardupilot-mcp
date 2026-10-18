@@ -160,7 +160,9 @@ def _absorb(host: Finding, echo: Finding) -> None:
 def merge_duplicates(findings: list[Finding], params: dict[str, float] | None = None) -> list[Finding]:
     """Findings with each event's echoes folded into the finding that measured it (order kept)."""
     params = params or {}
-    lags = {"battery": float(params.get("BATT_LOW_TIMER", BATT_LOW_TIMER_DEFAULT_S))}
+    # Either pack's failsafe may be the one that fired (BATT_ / BATT2_LOW_TIMER).
+    timers = [params.get(k) for k in ("BATT_LOW_TIMER", "BATT2_LOW_TIMER")]
+    lags = {"battery": max((float(v) for v in timers if v is not None), default=BATT_LOW_TIMER_DEFAULT_S)}
     hosts: dict[str, list[Finding]] = {}
     for f in findings:
         t = topic(f)
