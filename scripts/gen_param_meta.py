@@ -61,8 +61,31 @@ def extract(xml_path: Path) -> dict[str, dict]:
                     continue
             if codes:
                 d["v"] = sorted(set(codes))
-        params[name] = d
+        params[name] = _merge(params[name], d) if name in params else d
     return params
+
+
+def _merge(a: dict, b: dict) -> dict:
+    """One name documented twice, e.g. Copter's multirotor and heli attitude controllers
+    (ATC_RAT_*, AUTOTUNE_AXES) or two battery backends (BATT*_VOLT_PIN in 4.7).
+
+    Design choice: the file is per vehicle, not per frame or backend, so keep what either
+    definition documents: the widest range and every listed value code and bit.
+    """
+    out: dict = {}
+    if "r" in a and "r" in b:
+        out["r"] = [min(a["r"][0], b["r"][0]), max(a["r"][1], b["r"][1])]
+    elif "r" in a or "r" in b:
+        out["r"] = a.get("r") or b.get("r")
+    if a.get("u") == b.get("u") and "u" in a:
+        out["u"] = a["u"]
+    for key in ("v", "b"):
+        if key in a or key in b:
+            out[key] = sorted(set(a.get(key, [])) | set(b.get(key, [])))
+    for key in ("ro", "rb"):
+        if a.get(key) or b.get(key):
+            out[key] = 1
+    return out
 
 
 def main(argv: list[str]) -> int:

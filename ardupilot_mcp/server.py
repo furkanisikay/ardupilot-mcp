@@ -368,7 +368,7 @@ def _document(result: ParamResult, firmware_version: str | None, vehicle_kind: s
     if catalog is None:
         return result
     result.metadata_version = catalog.label
-    result.undocumented = [k for k in result.params if catalog.doc(k) is None]
+    result.undocumented = [k for k in result.params if k not in catalog.params]
     if result.matched <= _DOC_LIMIT:
         result.documented = {k: d for k in result.params if (d := catalog.doc(k)) is not None}
     else:
@@ -410,7 +410,16 @@ def load_param_file(path: str, name_glob: str | None = None, firmware: str | Non
     )
     if not firmware:
         return result
-    return _document(result, firmware, meta.vehicle_kind(firmware, all_params.get("FRAME_CLASS")))
+    kind = meta.vehicle_kind(firmware, all_params.get("FRAME_CLASS"))
+    result.metadata_url = docs.versioned_param_doc_url(firmware, kind)
+    result = _document(result, firmware, kind)
+    if result.metadata_version is None:
+        hint = (
+            f"no bundled parameter metadata fits firmware {firmware!r} "
+            "(give the vehicle and version, e.g. 'ArduCopter V4.6.3')"
+        )
+        result.note = f"{result.note}; {hint}" if result.note else hint
+    return result
 
 
 @mcp.tool(annotations=_READONLY)

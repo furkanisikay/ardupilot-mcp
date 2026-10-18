@@ -89,6 +89,21 @@ def test_generator_keeps_facts_and_drops_text(tmp_path):
     }
 
 
+def test_generator_merges_a_name_documented_twice(tmp_path):
+    # Copter documents ATC_RAT_* in both the multirotor and the heli controller; the
+    # heli one comes last and must not replace the multirotor's range or bits.
+    xml = tmp_path / "apm.pdef.xml"
+    xml.write_text(
+        """<paramfile><libraries><parameters name="ATC_">
+        <param name="ATC_RAT_RLL_I"><field name="Range">0.01 2.0</field></param>
+        <param name="AUTOTUNE_AXES"><field name="Bitmask">0:Roll,1:Pitch,2:Yaw,3:YawD</field></param>
+        <param name="ATC_RAT_RLL_I"><field name="Range">0.0 0.6</field></param>
+        <param name="AUTOTUNE_AXES"><field name="Bitmask">0:Roll,1:Pitch,2:Yaw</field></param>
+        </parameters></libraries></paramfile>"""
+    )
+    assert extract(xml) == {"ATC_RAT_RLL_I": {"r": [0, 2]}, "AUTOTUNE_AXES": {"b": [0, 1, 2, 3]}}
+
+
 @pytest.fixture
 def param_log(tmp_path):
     path = str(tmp_path / "p.bin")
@@ -119,4 +134,7 @@ def test_load_param_file_documents_with_a_firmware(tmp_path):
     assert plain.documented == {} and plain.metadata_version is None
     r = load_param_file(str(f), firmware="ArduCopter V4.6.3")
     assert r.metadata_version == "Copter 4.6.3 (exact)"
+    assert r.metadata_url and "Copter/stable-4.6.3" in r.metadata_url
     assert r.undocumented == ["BATT_LOW_TIMR"]  # the typo stands out
+    bare = load_param_file(str(f), firmware="4.6.3")  # no vehicle: nothing fits, and it says so
+    assert bare.metadata_version is None and "no bundled parameter metadata" in (bare.note or "")

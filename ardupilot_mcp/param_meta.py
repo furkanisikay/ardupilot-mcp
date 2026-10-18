@@ -21,11 +21,12 @@ from dataclasses import dataclass
 from functools import lru_cache
 from importlib import resources
 
+from .ardupilot_docs import VERSIONED_VEHICLE
 from .model import ParamDoc
 
-# Vehicle kind -> vehicle name of the bundled files (the archive's directory names;
-# the Copter definitions include the traditional-helicopter parameters).
-_VEHICLE = {"copter": "Copter", "heli": "Copter", "plane": "Plane", "rover": "Rover", "sub": "Sub"}
+# Vehicle kind -> vehicle name of the bundled files: the archive's directory names (the
+# Copter definitions include the traditional-helicopter parameters; no Tracker is bundled).
+_VEHICLE = VERSIONED_VEHICLE
 _FILE = re.compile(r"^(?P<vehicle>[A-Za-z]+)-(?P<version>\d+\.\d+\.\d+)\.json\.gz$")
 _VERSION = re.compile(r"(\d+)\.(\d+)\.(\d+)")
 
@@ -37,7 +38,6 @@ class ParamCatalog:
     vehicle: str
     version: Version
     match: str  # "exact", "same release series", "nearest older release", "nearest newer release"
-    source: str
     params: dict[str, dict]
 
     @property
@@ -77,11 +77,10 @@ def bundled() -> dict[str, list[Version]]:
 
 
 @lru_cache(maxsize=4)
-def _load(vehicle: str, version: Version) -> tuple[str, dict[str, dict]]:
+def _load(vehicle: str, version: Version) -> dict[str, dict]:
     name = f"{vehicle}-{'.'.join(map(str, version))}.json.gz"
     raw = resources.files(__package__).joinpath("data", "params", name).read_bytes()
-    doc = json.loads(gzip.decompress(raw))
-    return str(doc["source"]), dict(doc["params"])
+    return dict(json.loads(gzip.decompress(raw))["params"])
 
 
 def choose(versions: list[Version], want: Version) -> tuple[Version, str] | None:
@@ -116,5 +115,4 @@ def catalog_for(firmware_version: str | None, vehicle_kind: str | None) -> Param
     if picked is None:
         return None
     version, match = picked
-    source, params = _load(vehicle, version)
-    return ParamCatalog(vehicle=vehicle, version=version, match=match, source=source, params=params)
+    return ParamCatalog(vehicle=vehicle, version=version, match=match, params=_load(vehicle, version))

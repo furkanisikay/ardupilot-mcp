@@ -79,9 +79,11 @@ All notable changes to this project are documented here. The format is based on
   `firmware`) returns each parameter's documented range, units, listed values and bitmask
   bits for the log's firmware release, and lists the names that release does not document
   (script parameters, typos, another firmware's parameters). Facts from ArduPilot's
-  `apm.pdef.xml` for Copter, Plane and Rover 4.4-4.7 and Sub 4.1/4.5/4.7 are bundled (360 KB),
-  regenerated with `scripts/gen_param_meta.py`. It informs and never raises a finding: on
-  30 Copter 4.6 forum logs a range/values check would have flagged 1,196 values, mostly
+  `apm.pdef.xml` for Copter, Plane and Rover 4.4-4.7 and Sub 4.1/4.5/4.7 are bundled (330 KB),
+  regenerated with `scripts/gen_param_meta.py`; a name documented twice (Copter's multirotor
+  and heli `ATC_RAT_*`, two battery backends) keeps the widest range and every listed value
+  and bit of both. It informs and never raises a finding: on
+  30 Copter 4.6 forum logs a range/values check would have flagged 895 values, mostly
   defaults outside the recommended range and raw BAUD rates.
 - Notch advice from the data that can show motor noise: the batch sampler (`ISBH`/`ISBD`,
   raw gyro at the sensor rate, decoded into `FlightLog.batches`), else the primary IMU when it

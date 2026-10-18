@@ -14,7 +14,7 @@ import re
 from .model import Reference
 
 # Vehicle kind -> directory name in the versioned parameter archive.
-_VERSIONED_VEHICLE = {
+VERSIONED_VEHICLE = {
     "copter": "Copter",
     "heli": "Copter",
     "plane": "Plane",
@@ -37,7 +37,7 @@ def versioned_param_doc_url(firmware_version: str | None, vehicle_kind: str | No
     m = re.search(r"(\d+)\.(\d+)\.(\d+)", firmware_version)
     if not m or int(m.group(1)) < 4:
         return None
-    veh = _VERSIONED_VEHICLE.get(vehicle_kind)
+    veh = VERSIONED_VEHICLE.get(vehicle_kind)
     if not veh:
         return None
     return f"https://autotest.ardupilot.org/Parameters/versioned/{veh}/stable-{m.group(0)}/apm.pdef.xml"
