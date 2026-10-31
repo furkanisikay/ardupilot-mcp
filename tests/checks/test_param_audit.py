@@ -96,3 +96,9 @@ def test_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("param_audit") is not None
+
+
+def test_helicopter_default_rate_gain_is_not_flagged():
+    # Heli's default ATC_RAT_RLL_P is 0.024 (AC_AttitudeControl_Heli.h); it flies on FF.
+    log = make_flight_log(params={"ATC_RAT_RLL_P": 0.024, "ATC_RAT_PIT_P": 0.024}, vehicle_kind="heli")
+    assert not [f for f in ParamAuditCheck().run(log) if "rate gain" in f.title]

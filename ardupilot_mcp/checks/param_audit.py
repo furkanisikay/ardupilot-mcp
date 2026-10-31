@@ -21,7 +21,10 @@ from ..model import Finding, Severity
 from .base import Check, register_check
 from .util import make_finding
 
-# Copter rate-controller P gain reference (firmware default ~0.135).
+# Multicopter rate-controller P gain reference (AC_ATC_MULTI_RATE_RP_P 0.135,
+# AC_AttitudeControl_Multi.h). Not used for a helicopter: its default is 0.024 and its
+# rate loop flies mainly on feed-forward (AC_ATC_HELI_RATE_RP_P 0.024, _FF 0.15,
+# AC_AttitudeControl_Heli.h), so a low or zero P is normal there.
 RATE_P_DEFAULT = 0.135
 RATE_P_LOW = 0.04  # well below default -> unusually low
 RATE_P_HIGH = 0.5  # above the usual valid range -> unusually high
@@ -47,7 +50,8 @@ class ParamAuditCheck(Check):
         out: list[Finding] = []
         if multirotor:
             out.extend(self._accel_limits(p))
-            out.extend(self._rate_gains(p))
+            if log.meta.vehicle_kind != "heli":
+                out.extend(self._rate_gains(p))
         out.extend(self._contradictions(p, multirotor))
         return out
 

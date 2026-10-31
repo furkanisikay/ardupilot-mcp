@@ -272,6 +272,18 @@ def test_plane_without_vtol_gets_a_fixed_notch():
     assert rec.suggested_params["INS_HNTCH_MODE"] == 0.0
 
 
+def test_helicopter_gets_a_static_notch():
+    # A governed rotor does not follow throttle; the helicopter wiki sets a static notch
+    # (INS_HNTCH_REF 0, FREQ = rotor speed) without an RPM sensor or ESC telemetry.
+    log = make_flight_log(
+        {"IMU": _imu(80.0)}, params={"MOT_THST_HOVER": 0.45}, vehicle_type="ArduCopter", vehicle_kind="heli"
+    )
+    rec = analyze_notch(log)
+    assert rec is not None
+    assert rec.suggested_params["INS_HNTCH_MODE"] == 0.0
+    assert rec.suggested_params["INS_HNTCH_REF"] == 0.0
+
+
 def test_quadplane_uses_the_vtol_hover_throttle():
     log = make_flight_log(
         {"IMU": _imu(80.0)},

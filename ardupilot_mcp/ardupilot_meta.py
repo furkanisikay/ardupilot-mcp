@@ -91,6 +91,8 @@ CRITICAL_ERR_SUBSYSTEMS: set[int] = {
     16,  # EKFCHECK
     17,  # FAILSAFE_EKFINAV
     25,  # THRUST_LOSS_CHECK
+    26,  # FAILSAFE_SENSORS (Sub: depth sensor failed, mode forced to MANUAL)
+    27,  # FAILSAFE_LEAK (Sub: water in the hull; ArduSub/failsafe.cpp)
     30,  # INTERNAL_ERROR
 }
 # Not FAILSAFE_VIBE (29): its only action is to switch the position controller to
@@ -218,6 +220,7 @@ SUB_MODES: dict[int, str] = {
     16: "POSHOLD",
     19: "MANUAL",
     20: "MOTOR_DETECT",
+    21: "SURFTRAK",  # ArduSub/mode.h (Copter-4.6.3 tree)
 }
 
 _MODES_BY_KIND: dict[str, dict[int, str]] = {

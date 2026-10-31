@@ -145,6 +145,7 @@ FAILSAFE_REASONS: dict[int, str] = {
     17: "terminate",
     19: "crash failsafe",
     25: "failsafe",
+    28: "bad depth failsafe",  # Sub: depth sensor failed (ArduSub/failsafe.cpp)
     29: "leak failsafe",
     50: "dead-reckoning failsafe",
     51: "takeoff failsafe",

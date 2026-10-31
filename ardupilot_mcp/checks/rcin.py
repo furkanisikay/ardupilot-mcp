@@ -61,6 +61,25 @@ class RCInputCheck(Check):
         return self._pwm_findings(log)
 
     def _flag_findings(self, log: FlightLog, times: np.ndarray, flags: np.ndarray) -> list[Finding]:
+        if not np.any((flags & FLAG_HAS_VALID_INPUT) != 0):
+            # Never a valid RC input in the whole log: no link was lost. The vehicle was driven
+            # without an RC receiver (ArduSub logs RCIN while piloted by a MAVLink joystick,
+            # ArduSub.cpp; a companion computer or GCS can fly any vehicle), or none was connected.
+            return [
+                make_finding(
+                    self.id,
+                    Severity.INFO,
+                    "No RC input in this log",
+                    "The autopilot never received a valid RC input in this log (RCI2.Flags HAS_VALID_INPUT "
+                    "never set). There was no RC link to lose: the vehicle was controlled another way (a "
+                    "MAVLink joystick, as ArduSub normally is, a ground station or a companion computer), or "
+                    "the receiver was not connected.",
+                    time_start_s=float(times[0]),
+                    time_end_s=float(times[-1]),
+                    message_types=["RCI2"],
+                    samples={"valid_input_samples": 0.0},
+                )
+            ]
         lost = (flags & FLAG_HAS_VALID_INPUT) == 0
         armed = log.armed_mask(times)
         if armed is not None:
@@ -114,6 +133,22 @@ class RCInputCheck(Check):
         if times.size == 0:
             return []  # not enough channel data to reason about
         stack = np.vstack(cols)  # shape (4, n)
+        if not np.any(stack > NO_SIGNAL_US):
+            # No primary channel ever carried a stick value: no receiver, so no link to lose.
+            return [
+                make_finding(
+                    self.id,
+                    Severity.INFO,
+                    "No RC input in this log",
+                    f"No primary RC channel ever rose above {NO_SIGNAL_US:.0f} us in this log. There was no "
+                    "RC link to lose: the vehicle was controlled another way (a MAVLink joystick, a ground "
+                    "station or a companion computer), or the receiver was not connected.",
+                    time_start_s=float(times[0]),
+                    time_end_s=float(times[-1]),
+                    message_types=["RCIN"],
+                    samples={"max_primary_us": float(np.nanmax(stack)) if np.isfinite(stack).any() else 0.0},
+                )
+            ]
 
         # All four primary channels simultaneously below the no-signal threshold.
         all_low_b = np.all(stack <= NO_SIGNAL_US, axis=0)

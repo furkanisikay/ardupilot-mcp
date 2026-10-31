@@ -94,3 +94,22 @@ def test_the_loss_reports_the_minimum_inside_the_loss_window():
     )
     findings = RCInputCheck().run(log)
     assert [f.evidence.samples["min_pwm_us"] for f in findings] == [990.0]
+
+
+def test_no_rc_receiver_at_all_is_not_a_link_loss():
+    # ArduSub logs RCIN while a MAVLink joystick drives it: HAS_VALID_INPUT is never set.
+    # No link existed, so none was lost.
+    n = 100
+    rcin = build_series(0.0, 10.0, C1=[0] * n, C2=[0] * n, C3=[0] * n, C4=[0] * n)
+    rci2 = build_series(0.0, 10.0, Flags=[0] * n)
+    ev = [{"TimeUS": 0, "Id": 10}]
+    log = make_flight_log({"RCIN": rcin, "RCI2": rci2, "EV": ev}, vehicle_kind="sub")
+    findings = RCInputCheck().run(log)
+    assert [(f.title, f.severity) for f in findings] == [("No RC input in this log", Severity.INFO)]
+
+
+def test_no_rc_receiver_without_rci2_is_not_a_link_loss():
+    n = 100
+    rcin = build_series(0.0, 10.0, C1=[0] * n, C2=[0] * n, C3=[0] * n, C4=[0] * n)
+    log = make_flight_log({"RCIN": rcin, "EV": [{"TimeUS": 0, "Id": 10}]}, vehicle_kind="sub")
+    assert [f.severity for f in RCInputCheck().run(log)] == [Severity.INFO]

@@ -331,17 +331,28 @@ def _harmonic(hz: float, speed: MotorSpeed) -> int | None:
 def _mode(log: FlightLog, speed: MotorSpeed | None) -> tuple[int, float | None, str]:
     """(INS_HNTCH_MODE, INS_HNTCH_REF, why) for this vehicle.
 
-    Throttle tracking exists for Copter/Heli, Plane (its VTOL motors) and Rover
+    Throttle tracking exists for Copter, Plane (its VTOL motors) and Rover
     (AP_Vehicle::update_throttle_notch); the parameter documentation rules it out for a
-    fixed-wing-only plane.
+    fixed-wing-only plane, and the helicopter wiki sets a static notch.
     """
     from .profile import _hover_throttle
 
     if speed is not None:
         return MODE_ESC, 1.0, "ESC telemetry reports motor RPM, so the notch follows the motors directly"
     kind = log.meta.vehicle_kind
+    if kind == "heli":
+        # A governed rotor turns at a set speed whatever the collective, so a throttle-based
+        # notch would follow the wrong signal. Without an RPM sensor or ESC telemetry the
+        # helicopter wiki sets a static notch: REF 0, FREQ the rotor speed (IMU Notch
+        # Filtering Helicopter Setup); with an RPM sensor on RPM1, INS_HNTCH_MODE 2.
+        return (
+            MODE_FIXED,
+            0.0,
+            "static: a helicopter's governed rotor speed does not follow throttle; with an RPM sensor on "
+            "RPM1 use INS_HNTCH_MODE 2 instead",
+        )
     vtol = kind == "plane" and float(log.params.get("Q_ENABLE", 0)) > 0
-    if kind in ("copter", "heli", None) or vtol:
+    if kind in ("copter", None) or vtol:
         if vtol:
             q = log.params.get("Q_M_THST_HOVER")
             hover, estimated = (float(q) if q is not None else None), False

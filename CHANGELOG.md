@@ -34,6 +34,18 @@ All notable changes to this project are documented here. The format is based on
   tracking failure" and a "poor roll tracking" tuning advice. Those modes are no longer
   judged. PID advice names the vehicle's own parameters (Plane RLL_RATE_* / PTCH_RATE_*,
   not ATC_RAT_*) and is not given for Rover or Sub, which have no such parameters.
+- A vehicle with no RC receiver (an ArduSub piloted by joystick, a GCS- or companion-flown
+  vehicle) got a CRITICAL "RC signal loss" for the whole flight. A log that never had a
+  valid RC input now gets an INFO "No RC input in this log".
+- Helicopters were advised a throttle-based notch; a governed rotor does not follow throttle,
+  and the helicopter wiki sets a static notch (REF 0) without an RPM sensor or ESC telemetry.
+- A helicopter's default rate P (0.024; it flies on feed-forward) was "unusually low".
+- A Tri's tail servo (Motor7 function) was counted as a motor, so it showed as a motor
+  imbalance. Motor saturation is now judged at 95% of the vehicle's own MOT_PWM_MIN..MAX
+  range instead of a fixed 1950 us, which a motor limited to 1900 us never reached; the
+  evidence key `frac_above_1950_Cn` is now `frac_saturated_Cn`, with `saturation_pwm`.
+- ArduSub: mode 21 (SURFTRAK) is named, the leak and depth-sensor failsafes (ERR 27, 26) are
+  CRITICAL, and a "bad depth" mode change (ModeReason 28) counts as a failsafe.
 - Real-crash benchmark (48 of 49 logs; one Google Drive file no longer matches its sha256):
   false criticals 97 -> 49 (vibration 29 -> 0, ekf 25 -> 14, gps 6 -> 1), top-1 10 -> 11 of 40, top-3
   21 -> 20. The top-3 hit lost (145616_2) came from a compass-variance rejection after the
