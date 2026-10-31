@@ -664,6 +664,29 @@ class FlightLog:
             state, last = airborne, t
         return armed & flying
 
+    def mode_mask(self, times: np.ndarray, modes: set[int]) -> np.ndarray:
+        """``times`` at which the flight mode (last MODE record at or before) is in ``modes``.
+
+        ``MODE.ModeNum`` is the vehicle's mode number (``Mode`` on older logs). Samples
+        before the first MODE record are in no mode.
+        """
+        changes: list[tuple[float, int]] = []
+        for r in self.get("MODE"):
+            num = r.get("ModeNum", r.get("Mode"))
+            ts = r.get("timestamp")
+            if isinstance(num, (int, float)) and isinstance(ts, (int, float)) and np.isfinite(num):
+                changes.append((float(ts), int(num)))
+        changes.sort()
+        out = np.zeros(times.shape, dtype=bool)
+        if not changes:
+            return out
+        t_change = np.array([t for t, _ in changes])
+        in_set = np.array([m in modes for _, m in changes])
+        idx = np.searchsorted(t_change, times, side="right") - 1
+        known = idx >= 0
+        out[known] = in_set[idx[known]]
+        return out
+
     def clip_to_window(
         self, times: np.ndarray, values: np.ndarray, window: tuple[float | None, float | None]
     ) -> tuple[np.ndarray, np.ndarray]:

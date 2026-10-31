@@ -33,6 +33,16 @@ from .notch import analyze_notch
 # enough to advise a rate-PID review. Conservative; this is advisory only.
 PID_RMS_WARN_DEG = 5.0
 
+# Rate-PID parameter families per vehicle, as the firmware names them (bundled parameter
+# metadata, data/params): Copter and Heli ATC_RAT_RLL/PIT_*; Plane's fixed-wing rate loops
+# RLL_RATE_* / PTCH_RATE_* (its VTOL modes use Q_A_RAT_*). Rover and Sub have no roll/pitch
+# attitude demand to track, so no PID advice is given for them.
+_PID_FAMILIES: dict[str, tuple[str, str]] = {
+    "copter": ("ATC_RAT_RLL", "ATC_RAT_PIT"),
+    "heli": ("ATC_RAT_RLL", "ATC_RAT_PIT"),
+    "plane": ("RLL_RATE", "PTCH_RATE"),
+}
+
 
 def analyze_tuning(log: FlightLog, area: str | None = None) -> list[TuningRecommendation]:
     """Produce advisory tuning recommendations for ``log``.
@@ -59,13 +69,17 @@ def analyze_tuning(log: FlightLog, area: str | None = None) -> list[TuningRecomm
 
 def _analyze_pid(log: FlightLog) -> list[TuningRecommendation]:
     """Advise on rate-PID review when attitude tracking error is high."""
-    if not log.has("ATT"):
+    # An unknown vehicle kind is judged as before (copter families), as the checks run
+    # when the kind cannot be told.
+    kind = log.meta.vehicle_kind or "copter"
+    if not log.has("ATT") or kind not in _PID_FAMILIES:
         return []
     out: list[TuningRecommendation] = []
-    # (actual field, desired field, axis label, ATC param family)
+    roll_fam, pitch_fam = _PID_FAMILIES[kind]
+    # (actual field, desired field, axis label, rate-PID param family)
     axes = (
-        ("Roll", "DesRoll", "roll", "ATC_RAT_RLL"),
-        ("Pitch", "DesPitch", "pitch", "ATC_RAT_PIT"),
+        ("Roll", "DesRoll", "roll", roll_fam),
+        ("Pitch", "DesPitch", "pitch", pitch_fam),
     )
     for actual_f, des_f, label, fam in axes:
         t_act, (act, des) = log.series_many("ATT", [actual_f, des_f])
@@ -73,11 +87,17 @@ def _analyze_pid(log: FlightLog) -> list[TuningRecommendation]:
         if n == 0:
             continue
         err = act - des
-        flying = log.flying_mask(t_act)  # ground time is not tracking performance
-        if flying is not None:
-            err = err[flying]
-            if err.size == 0:
-                continue
+        keep = log.flying_mask(t_act)  # ground time is not tracking performance
+        if keep is None:
+            keep = np.ones(t_act.shape, dtype=bool)
+        if kind == "plane":
+            # No attitude target in these modes (see checks/attitude.py).
+            from .checks.attitude import PLANE_NO_TARGET_MODES
+
+            keep &= ~log.mode_mask(t_act, PLANE_NO_TARGET_MODES)
+        err = err[keep]
+        if err.size == 0:
+            continue
         rms = float(np.sqrt(np.mean(err**2)))
         peak = float(np.max(np.abs(err)))
         if rms <= PID_RMS_WARN_DEG:
@@ -88,7 +108,9 @@ def _analyze_pid(log: FlightLog) -> list[TuningRecommendation]:
             f"The {label} axis tracks its target poorly: RMS error {rms:.1f} deg "
             f"(peak {peak:.1f} deg) between desired and actual over {n} samples. "
             f"Sustained lag like this usually means the rate loop is under-tuned "
-            f"(sluggish tracking) — review {fam}_P and {fam}_D, or run autotune. "
+            f"(sluggish tracking) — review {fam}_P and {fam}_D"
+            + (" (Q_A_RAT_* in VTOL modes)" if kind == "plane" else "")
+            + ", or run autotune. "
             "This is advisory: confirm against vibration, motor saturation (RCOU) "
             "and power before changing gains."
         )
@@ -136,7 +158,7 @@ def _analyze_autotune(log: FlightLog) -> TuningRecommendation | None:
 
     explanation = (
         f"This log contains autotune data ({present}). Autotune derives rate-PID "
-        "gains in flight; inspect the resulting ATC_RAT_RLL/PIT/YAW_P, _I and _D "
+        f"gains in flight; inspect the resulting {_autotune_gains(log.meta.vehicle_kind)} "
         "values for plausibility, confirm the run completed without an aborting "
         "twitch, and verify the new gains were saved. No action is recommended "
         "here — this is an informational pointer to data worth reviewing."
@@ -156,3 +178,10 @@ def _analyze_autotune(log: FlightLog) -> TuningRecommendation | None:
         evidence=evidence,
         confidence="medium",
     )
+
+
+def _autotune_gains(kind: str | None) -> str:
+    """The rate gains autotune sets, named as the vehicle's firmware names them."""
+    if kind == "plane":
+        return "RLL_RATE_* and PTCH_RATE_* (Q_A_RAT_* for a QuadPlane's VTOL autotune)"
+    return "ATC_RAT_RLL/PIT/YAW_P, _I and _D"

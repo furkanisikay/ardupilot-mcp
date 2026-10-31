@@ -41,6 +41,13 @@ MOTOR_SATURATION_US = 1950.0
 # divergence, so a brief one still holds RCOU samples (RCOU logs at ~10 Hz and up).
 SATURATION_PAD_S = 0.5
 
+# ArduPlane modes in which ATT.DesRoll/DesPitch (nav_roll_cd/nav_pitch_cd) is not the
+# attitude the pilot or autopilot asked for: MANUAL writes the current attitude, STABILIZE
+# writes 0 while the pilot banks with stick mixing, TRAINING writes 0 inside its limits, and
+# ACRO writes a locked error or the current attitude (ArduPlane/mode_manual.cpp,
+# mode_stabilize.cpp, mode_training.cpp, mode_acro.cpp, Plane-4.6). Mode numbers: PLANE_MODES.
+PLANE_NO_TARGET_MODES = {0, 2, 3, 4}  # MANUAL, STABILIZE, TRAINING, ACRO
+
 # (desired field, actual field, axis label, is-yaw-circular).
 _AXES = (
     ("DesRoll", "Roll", "roll", False),
@@ -97,6 +104,9 @@ class AttitudeTrackingCheck(Check):
         flying = log.flying_mask(times)
         if flying is not None:
             abs_err = np.where(flying, abs_err, 0.0)
+        if log.meta.vehicle_kind == "plane":
+            # No attitude target in these modes, so there is nothing to track.
+            abs_err = np.where(log.mode_mask(times, PLANE_NO_TARGET_MODES), 0.0, abs_err)
 
         peak_err = safe_max(abs_err) or 0.0
         if peak_err <= WARN_DEG:

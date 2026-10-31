@@ -29,6 +29,11 @@ All notable changes to this project are documented here. The format is based on
   fix". A fix loss, satellite drop or HDOP excursion is now CRITICAL when it lasts 1 s, each
   armed interval is judged on its own, and a receiver with no fix in flight gets the fix
   finding only.
+- Plane: in MANUAL, STABILIZE, TRAINING and ACRO the logged roll/pitch target is no target
+  (STABILIZE logs 0 while the pilot banks), so a normal banked turn was a CRITICAL "attitude
+  tracking failure" and a "poor roll tracking" tuning advice. Those modes are no longer
+  judged. PID advice names the vehicle's own parameters (Plane RLL_RATE_* / PTCH_RATE_*,
+  not ATC_RAT_*) and is not given for Rover or Sub, which have no such parameters.
 - Real-crash benchmark (48 of 49 logs; one Google Drive file no longer matches its sha256):
   false criticals 97 -> 49 (vibration 29 -> 0, ekf 25 -> 14, gps 6 -> 1), top-1 10 -> 11 of 40, top-3
   21 -> 20. The top-3 hit lost (145616_2) came from a compass-variance rejection after the

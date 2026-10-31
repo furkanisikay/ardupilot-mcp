@@ -356,3 +356,32 @@ def test_a_one_sample_spike_still_sees_the_motor_outputs_around_it():
     rcou = build_series(0.03, 10.0, C1=c1, C2=c1, C3=c1, C4=c1)
     (finding,) = AttitudeTrackingCheck().run(_log(att, rcou_records=rcou))
     assert finding.evidence.samples.get("motors_saturated") == 1.0
+
+
+def _plane_banked_turn(mode_num: int):
+    # 5 s banked at 40 deg while ATT.DesRoll stays 0.
+    recs = build_series(
+        0.0,
+        10.0,
+        DesRoll=[0.0] * 100,
+        Roll=[0.0] * 30 + [40.0] * 50 + [0.0] * 20,
+        DesPitch=[0.0] * 100,
+        Pitch=[0.0] * 100,
+        DesYaw=[0.0] * 100,
+        Yaw=[0.0] * 100,
+    )
+    mode = [{"TimeUS": 0, "Mode": mode_num, "ModeNum": mode_num, "Rsn": 1}]
+    return make_flight_log({"ATT": recs, "MODE": mode}, vehicle_type="ArduPlane", vehicle_kind="plane")
+
+
+def test_plane_stabilize_banked_turn_is_not_a_tracking_failure():
+    # ArduPlane STABILIZE writes nav_roll_cd = 0 while the pilot banks with stick mixing
+    # (mode_stabilize.cpp): DesRoll is no target, so the bank is no error.
+    for mode in (0, 2, 3, 4):  # MANUAL, STABILIZE, TRAINING, ACRO
+        assert AttitudeTrackingCheck().run(_plane_banked_turn(mode)) == [], mode
+
+
+def test_plane_fbwa_banked_against_zero_target_is_a_failure():
+    # FBWA does command the bank angle, so the same divergence is a tracking failure.
+    findings = AttitudeTrackingCheck().run(_plane_banked_turn(5))
+    assert [f.severity for f in findings] == [Severity.CRITICAL]
