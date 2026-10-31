@@ -102,3 +102,35 @@ def test_helicopter_default_rate_gain_is_not_flagged():
     # Heli's default ATC_RAT_RLL_P is 0.024 (AC_AttitudeControl_Heli.h); it flies on FF.
     log = make_flight_log(params={"ATC_RAT_RLL_P": 0.024, "ATC_RAT_PIT_P": 0.024}, vehicle_kind="heli")
     assert not [f for f in ParamAuditCheck().run(log) if "rate gain" in f.title]
+
+
+def _bat_log(volts, params):
+    from tests.helpers import build_series
+
+    bat = build_series(0.0, 10.0, Volt=volts, VoltR=volts, Curr=[10.0] * len(volts))
+    return make_flight_log(
+        {"BAT": bat, "EV": [{"TimeUS": 0, "Id": 10}]}, params=params, vehicle_kind="copter"
+    )
+
+
+def test_voltage_compensation_set_for_a_smaller_pack_never_acts():
+    # A 12S pack (~47 -> 39 V) with MOT_BAT_VOLT_MAX left at 6S (25.2 V): the firmware clamps
+    # the voltage to 25.2 V (Thrust_Linearization), so compensation never acts.
+    volts = [47.0 - i * 0.02 for i in range(400)]
+    log = _bat_log(volts, {"MOT_BAT_VOLT_MAX": 25.2, "MOT_BAT_VOLT_MIN": 22.2})
+    f = [x for x in ParamAuditCheck().run(log) if "Voltage compensation" in x.title]
+    assert [x.severity for x in f] == [Severity.WARN] and "never active" in f[0].title
+
+
+def test_voltage_compensation_set_for_a_bigger_pack_is_pinned():
+    # A 6S pack with MOT_BAT_VOLT_* for 12S: clamped at the floor, gains raised all flight.
+    volts = [25.0 - i * 0.01 for i in range(400)]
+    log = _bat_log(volts, {"MOT_BAT_VOLT_MAX": 50.4, "MOT_BAT_VOLT_MIN": 39.6})
+    f = [x for x in ParamAuditCheck().run(log) if "Voltage compensation" in x.title]
+    assert len(f) == 1 and "pinned" in f[0].title
+
+
+def test_voltage_compensation_matching_the_pack_is_fine():
+    volts = [25.0 - i * 0.01 for i in range(400)]
+    log = _bat_log(volts, {"MOT_BAT_VOLT_MAX": 25.2, "MOT_BAT_VOLT_MIN": 19.8})
+    assert not [x for x in ParamAuditCheck().run(log) if "Voltage compensation" in x.title]

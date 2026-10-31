@@ -16,6 +16,8 @@ means "disabled" (not a contradiction), so those are not flagged.
 
 from __future__ import annotations
 
+import numpy as np
+
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
@@ -28,7 +30,10 @@ from .util import make_finding
 RATE_P_DEFAULT = 0.135
 RATE_P_LOW = 0.04  # well below default -> unusually low
 RATE_P_HIGH = 0.5  # above the usual valid range -> unusually high
-_MULTIROTOR = {"copter", "heli", None}  # None = unknown kind, still evaluate
+_MULTIROTOR = {"copter", "heli", None}
+# Design choice: a pack is outside MOT_BAT_VOLT_MAX/_MIN only when it is 2% beyond it (the
+# 5th / 95th voltage percentile while armed), so sensor calibration error is not a finding.
+VOLT_COMP_MARGIN = 0.02  # None = unknown kind, still evaluate
 
 
 def _p(params: dict[str, float], name: str) -> float | None:
@@ -53,7 +58,77 @@ class ParamAuditCheck(Check):
             if log.meta.vehicle_kind != "heli":
                 out.extend(self._rate_gains(p))
         out.extend(self._contradictions(p, multirotor))
+        if log.meta.vehicle_kind in ("copter", None):
+            out.extend(self._voltage_compensation(log))
         return out
+
+    def _voltage_compensation(self, log: FlightLog) -> list[Finding]:
+        """MOT_BAT_VOLT_MAX / _MIN that the pack's voltage never enters.
+
+        The firmware clamps the pack's resting voltage into [MOT_BAT_VOLT_MIN,
+        MOT_BAT_VOLT_MAX] (MIN raised to 60% of MAX) and scales the thrust gains by
+        1 / lift_max from it; MAX <= 0 or MIN >= MAX disables it
+        (Thrust_Linearization::update_lift_max_from_batt_voltage, AP_Motors). A pack that
+        stays above MAX all flight gets no compensation; one that stays below MIN gets its
+        gains raised by a constant factor all flight.
+        """
+        vmax, vmin = _p(log.params, "MOT_BAT_VOLT_MAX"), _p(log.params, "MOT_BAT_VOLT_MIN")
+        if not vmax or vmax <= 0 or vmin is None or vmin >= vmax:
+            return []
+        eff_min = max(vmin, 0.6 * vmax)
+        src = "BAT" if log.has("BAT") else ("CURR" if log.has("CURR") else None)
+        if src is None:
+            return []
+        insts = log.instances(src)
+        idx = int(log.params.get("MOT_BAT_IDX", 0))
+        inst = idx if idx in insts else (insts[0] if insts else None)
+        field = "VoltR" if "VoltR" in log.fields(src) else "Volt"
+        times, volts = log.series(src, field, inst)
+        armed = log.armed_mask(times)
+        if armed is not None:
+            volts = volts[armed]
+        volts = volts[np.isfinite(volts) & (volts > 0)]
+        if volts.size < 20:
+            return []
+        lo, hi = float(np.percentile(volts, 5)), float(np.percentile(volts, 95))
+        if lo > vmax * (1 + VOLT_COMP_MARGIN):
+            title = "Voltage compensation never active (MOT_BAT_VOLT_MAX below the pack)"
+            msg = (
+                f"While armed the pack's {'resting ' if field == 'VoltR' else ''}voltage stayed above "
+                f"{lo:.1f} V ({src}.{field}, 5th percentile), but MOT_BAT_VOLT_MAX is {vmax:.1f} V. The firmware "
+                "clamps the voltage to MOT_BAT_VOLT_MAX before scaling thrust, so the compensation did nothing "
+                "for the whole flight: the controller's gains did not follow the pack as it discharged."
+            )
+            rec = "Set MOT_BAT_VOLT_MAX to 4.2 V x cells and MOT_BAT_VOLT_MIN to 3.3 V x cells for this pack."
+        elif hi < eff_min * (1 - VOLT_COMP_MARGIN):
+            title = "Voltage compensation pinned at its minimum (MOT_BAT_VOLT_MIN above the pack)"
+            gain = 1.0 / (eff_min / vmax)
+            msg = (
+                f"While armed the pack's {'resting ' if field == 'VoltR' else ''}voltage stayed below "
+                f"{hi:.1f} V ({src}.{field}, 95th percentile), but the compensation's floor is {eff_min:.1f} V "
+                f"(MOT_BAT_VOLT_MIN, at least 60% of MOT_BAT_VOLT_MAX {vmax:.1f} V). The firmware clamps the "
+                f"voltage there, so it raised the thrust gains by about {gain:.2f}x for the whole flight as if "
+                "the pack were nearly empty, which makes the controller over-respond."
+            )
+            rec = "Set MOT_BAT_VOLT_MAX to 4.2 V x cells and MOT_BAT_VOLT_MIN to 3.3 V x cells for this pack."
+        else:
+            return []
+        return [
+            make_finding(
+                self.id,
+                Severity.WARN,
+                title,
+                msg,
+                recommendation=rec,
+                message_types=[src],
+                samples={
+                    "mot_bat_volt_max": round(vmax, 2),
+                    "mot_bat_volt_min": round(vmin, 2),
+                    "pack_volt_p5": round(lo, 2),
+                    "pack_volt_p95": round(hi, 2),
+                },
+            )
+        ]
 
     def _accel_limits(self, p: dict[str, float]) -> list[Finding]:
         out: list[Finding] = []

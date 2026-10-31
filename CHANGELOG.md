@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format is based on
   **Hot ESCs**: ESC telemetry temperatures held at or above 80 degC, the bottom of BLHeli_S's
   programmable thermal-protection range (WARN above its 140 degC top); a reading already that
   high on a stopped motor at power-on is named and not judged.
+- `param_audit`: MOT_BAT_VOLT_MAX / _MIN that the pack never enters. The firmware clamps the
+  resting voltage into that range before scaling thrust, so a pack above MAX all flight (a 12S
+  pack with the 6S default left in) gets no voltage compensation, and one below MIN gets its
+  gains raised all flight. Found on one benchmark log (140954_0).
 
 ### Fixed
 - Vibration false alarms. A single VIBE sample above 60 m/s^2 made the axis CRITICAL, and
