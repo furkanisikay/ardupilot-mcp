@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- Corrupt logs passed as clean. Integrity was judged from pymavlink's "bad header"
+  warnings, but its default compiled indexer prints them below Python, where they cannot be
+  captured. A log with garbage in the middle, or random bytes named `.bin`, came back with
+  integrity `ok` (the latter as "no issues detected"). The parser now reads pymavlink's
+  record index instead: bytes inside the log that belong to no record make it `partial`;
+  so does a log whose reading stopped early (pymavlink stops at a record whose type has no
+  format, which used to drop the rest of the flight without a word); and a file with no
+  records at all is an error. On the 48 benchmark logs, no record gap exists and no finding
+  changed.
 - `python examples/generate_demo_log.py --help` wrote a log file named `--help`. It now
   prints its usage; the output path stays an optional argument.
 

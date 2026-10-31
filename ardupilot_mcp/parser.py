@@ -46,6 +46,13 @@ def parse_bin(path: str) -> FlightLog:
             reader = _open_reader(DFReader, path)
         except Exception as exc:  # noqa: BLE001
             raise ValueError(f"could not open DataFlash log {path!r}: {exc}") from exc
+        records, gap_bytes, gap_runs, tail_bytes = _coverage(reader)
+        if records == 0:
+            _close(reader)
+            raise ValueError(
+                f"{path!r} contains no DataFlash records: it is not an ArduPilot .bin log, or it is "
+                "empty or overwritten (a text .log export or a .tlog needs its own extension)"
+            )
         try:
             # A partially written final record is dropped silently: it is what any
             # log looks like when the battery is unplugged after landing, so on its
@@ -58,6 +65,9 @@ def parse_bin(path: str) -> FlightLog:
 
     integrity, integrity_detail = _assess_integrity(capture.getvalue(), integrity, integrity_detail)
     integrity, integrity_detail = _assess_tail(path, integrity, integrity_detail)
+    integrity, integrity_detail = _assess_gaps(
+        gap_bytes, gap_runs, tail_bytes, os.path.getsize(path), integrity, integrity_detail
+    )
 
     log = FlightLog(
         messages=messages,
@@ -431,6 +441,71 @@ def _assess_tail(path: str, integrity: LogIntegrity, detail: str | None) -> tupl
             f"(> {_PAD_TOLERANCE}); the log was likely truncated by a power loss or crash mid-write."
         )
     return integrity, detail
+
+
+def _coverage(reader) -> tuple[int, int, int, int]:
+    """(data records, bytes between records that no record covers, runs of such bytes,
+    bytes after the last record).
+
+    A DataFlash log is records laid end to end, so every byte from the first record to
+    the last belongs to one. Bytes that do not (a block of garbage, a record of a type no
+    FMT defines) are corruption the indexer stepped over. This reads pymavlink's index,
+    not its stderr warnings: the compiled indexer (``dfindexer``, the default) prints
+    those below Python, where redirect_stderr cannot see them. pymavlink stops indexing
+    at a record whose type has no FMT, so everything after it goes unread; the bytes
+    after the last record tell that apart from a partly written last record.
+    """
+    starts: list[np.ndarray] = []
+    lengths: list[np.ndarray] = []
+    records = 0
+    for tid, fmt in reader.formats.items():
+        if tid >= len(reader.offsets) or not reader.offsets[tid]:
+            continue
+        offs = np.asarray(reader.offsets[tid], dtype=np.int64)
+        starts.append(offs)
+        lengths.append(np.full(offs.size, fmt.len, dtype=np.int64))
+        if fmt.name != "FMT":
+            records += int(offs.size)
+    if not starts:
+        return 0, 0, 0, 0
+    s = np.concatenate(starts)
+    order = np.argsort(s, kind="stable")
+    s = s[order]
+    ends = s + np.concatenate(lengths)[order]
+    gaps = s[1:] - ends[:-1]
+    gaps = gaps[gaps > 0]
+    lead = int(s[0])  # bytes before the first record
+    tail = max(0, int(reader.data_len) - int(ends.max()))
+    return records, int(gaps.sum()) + lead, int(gaps.size) + (1 if lead else 0), tail
+
+
+def _assess_gaps(
+    gap_bytes: int, gap_runs: int, tail_bytes: int, size: int, integrity: LogIntegrity, detail: str | None
+) -> tuple[LogIntegrity, str | None]:
+    """Flag bytes inside the log that are not records, and a log whose reading stopped early.
+
+    A tail up to _PAD_TOLERANCE is block-logging page padding; a longer tail of fill bytes
+    is a truncation _assess_tail already reported (integrity no longer OK by then).
+    """
+    notes = []
+    if gap_bytes > 0:
+        notes.append(
+            f"{gap_bytes} byte(s) in {gap_runs} place(s) inside the log are not valid records "
+            "(corrupt write, SD card error or a message with no format); the records around them were read."
+        )
+    if tail_bytes > _PAD_TOLERANCE and integrity == LogIntegrity.OK:
+        pct = 100.0 * tail_bytes / max(1, size)
+        notes.append(
+            f"Reading stopped {tail_bytes} byte(s) ({pct:.0f}% of the file) before its end, at a record "
+            "the decoder could not place (corrupt data or a message with no format); nothing after it "
+            "was analysed."
+        )
+    if not notes:
+        return integrity, detail
+    note = " ".join(notes)
+    if integrity == LogIntegrity.OK:
+        return LogIntegrity.PARTIAL, note
+    return integrity, f"{detail} Also: {note}" if detail else note
 
 
 def _assess_integrity(

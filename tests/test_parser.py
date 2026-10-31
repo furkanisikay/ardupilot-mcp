@@ -119,6 +119,60 @@ def test_garbage_tail_flagged_truncated(tmp_path):
     assert "truncated" in (log.meta.integrity_detail or "").lower()
 
 
+def _splice(path: str, at_record: int, junk: bytes) -> None:
+    """Insert ``junk`` just before the ``at_record``-th ATT record of ``path``."""
+    from pymavlink import DFReader
+
+    from ardupilot_mcp.parser import _close, _open_reader
+
+    reader = _open_reader(DFReader, path)
+    ofs = reader.offsets[reader.name_to_id["ATT"]][at_record]
+    _close(reader)
+    data = open(path, "rb").read()
+    open(path, "wb").write(data[:ofs] + junk + data[ofs:])
+
+
+def test_garbage_inside_log_is_partial(tmp_path):
+    # The default (compiled) pymavlink indexer prints its "bad header" warnings below
+    # Python, so they cannot be captured; the gap in the record index must flag it.
+    p = str(tmp_path / "mid.bin")
+    build_bin(p, _basic_messages(), firmware="ArduCopter V4.5.7")
+    junk = bytes(range(7, 207)) * 3  # 600 bytes of garbage, as a bad SD write leaves
+    _splice(p, 10, junk)
+    log = parse_bin(p)
+    assert log.count("ATT") == 20  # every record around the garbage is still read
+    assert log.meta.integrity == LogIntegrity.PARTIAL
+    assert "600 byte(s) in 1 place(s)" in (log.meta.integrity_detail or "")
+
+
+def test_unknown_record_type_stops_reading_and_is_flagged(tmp_path):
+    # pymavlink stops indexing at a record whose type no FMT defines, so the rest of the
+    # log is never read. That must not pass as a clean, shorter log.
+    p = str(tmp_path / "unknown.bin")
+    build_bin(p, _basic_messages(), firmware="ArduCopter V4.5.7")
+    _splice(p, 10, b"\xa3\x95\xf0")
+    log = parse_bin(p)
+    assert log.count("ATT") < 20
+    assert log.meta.integrity == LogIntegrity.PARTIAL
+    assert "Reading stopped" in (log.meta.integrity_detail or "")
+
+
+def test_clean_log_has_no_gap(tmp_path):
+    p = str(tmp_path / "clean.bin")
+    build_bin(p, _basic_messages(), firmware="ArduCopter V4.5.7")
+    assert parse_bin(p).meta.integrity == LogIntegrity.OK
+
+
+@pytest.mark.parametrize("content", [os.urandom(5000), b"\x00" * 4096, b"\xff" * 4096, b"\xa3\x95"])
+def test_non_log_file_raises(tmp_path, content):
+    # Random bytes, a zeroed/erased card image or a stray header used to give an empty
+    # log with integrity OK, which analyze_log reported as "no issues detected".
+    p = str(tmp_path / "notalog.bin")
+    open(p, "wb").write(content)
+    with pytest.raises(ValueError, match="no DataFlash records"):
+        parse_bin(p)
+
+
 # ---- vectorised decoder == pymavlink's own per-message decoding ----
 
 
