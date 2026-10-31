@@ -322,19 +322,44 @@ def frame_type_name(frame_type: float | int | None) -> str | None:
     return FRAME_TYPES.get(int(frame_type), f"FrameType{int(frame_type)}")
 
 
-def estimate_cells(max_voltage: float | None) -> int | None:
-    """Estimate LiPo series-cell count from peak pack voltage (4.2 V/cell full).
+# A pack's peak voltage in a log (at arming, resting) per cell: a LiPo charged to 4.2 V
+# (LiHV 4.35) and not yet below 3.5 V. Every cell count that puts the peak in this band
+# is a candidate.
+CELL_V_MIN = 3.5
+CELL_V_MAX = 4.4
+# MOT_BAT_VOLT_MAX / _MIN are set to 4.2 V and 3.3 V per cell for standard LiPos ("Setting
+# up for tuning", ArduPilot Copter wiki); 4.35 V per cell covers a LiHV pack's MAX.
+_HINT_PER_CELL = (("MOT_BAT_VOLT_MAX", (4.2, 4.35)), ("MOT_BAT_VOLT_MIN", (3.3,)))
+# Design choice: with no hint, the candidate nearest 4.1 V per cell, a pack charged a little
+# while before arming. On the 48 benchmark logs it agrees with MOT_BAT_VOLT_MAX wherever that
+# parameter is consistent with the measured voltage.
+CELL_V_TYPICAL = 4.1
 
-    Returns None when the voltage is implausible (no real monitor / odd scale) or
-    the implied per-cell voltage is out of a sane resting range.
+
+def estimate_cells(max_voltage: float | None, params: dict[str, float] | None = None) -> int | None:
+    """Estimate the series-cell count from the pack's peak voltage.
+
+    Several cell counts can fit one voltage (47.6 V is 11S at 4.33 V or 12S at 3.97 V), so a
+    parameter that states the pack (MOT_BAT_VOLT_MAX / _MIN) decides when it is consistent
+    with the voltage; otherwise the candidate nearest CELL_V_TYPICAL per cell. Returns None
+    when the voltage is implausible (no real monitor / odd scale) or fits no cell count.
     """
     if max_voltage is None or max_voltage < 4.0 or max_voltage > 70.0:
         return None
-    cells = round(max_voltage / 4.2)
-    if cells < 1:
+    candidates = [n for n in range(1, 17) if CELL_V_MIN <= max_voltage / n <= CELL_V_MAX]
+    if not candidates:
         return None
-    per_cell = max_voltage / cells
-    return cells if 3.3 <= per_cell <= 4.4 else None
+    if len(candidates) == 1:
+        return candidates[0]
+    for name, per_cell in _HINT_PER_CELL:
+        v = (params or {}).get(name)
+        if not v or v <= 0:
+            continue
+        for pc in per_cell:
+            n = round(float(v) / pc)
+            if n in candidates and abs(float(v) / n - pc) <= 0.05:
+                return n
+    return min(candidates, key=lambda n: abs(max_voltage / n - CELL_V_TYPICAL))
 
 
 def vehicle_kind(vehicle_type: str | None, frame_class: float | int | None = None) -> str:

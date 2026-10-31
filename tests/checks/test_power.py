@@ -322,3 +322,27 @@ def test_a_zero_low_timer_still_requires_the_default_hold():
     params = {"BATT_LOW_VOLT": 14.0, "BATT_CRT_VOLT": 13.0, "BATT_LOW_TIMER": 0.0}
     findings = PowerCheck().run(_log(build_series(0.0, 10.0, Volt=volts, Curr=[40.0] * 300), params=params))
     assert not [f for f in findings if f.title == "Battery reached critical voltage"]
+
+
+def test_sag_under_a_current_spike_is_not_a_sudden_drop():
+    # 12S pack: current jumps 10 -> 120 A and the terminal voltage sags 49 -> 45.7 V for the
+    # rest of the climb. The firmware's resting voltage (BAT.VoltR = Volt + Curr x Res) stays
+    # flat, as on a real 50 kg copter log (0.03 ohm); that is load, not a loose connector.
+    volt = [49.0] * 25 + [45.7] * 25
+    curr = [10.0] * 25 + [120.0] * 25
+    rest = [49.3] * 25 + [49.3] * 25
+    recs = build_series(0.0, 10.0, Volt=volt, VoltR=rest, Curr=curr, Res=[0.03] * 50)
+    findings = PowerCheck().run(_log(recs, params={"BATT_LOW_VOLT": 40.0, "BATT_CRT_VOLT": 38.0}))
+    assert not [f for f in findings if "sudden" in f.title.lower()]
+
+
+def test_resting_voltage_collapse_is_still_a_sudden_drop():
+    # Current falls to zero and the resting voltage collapses: a disconnect, not load.
+    volt = [15.4] * 25 + [10.1] * 25
+    rest = [16.7] * 25 + [10.1] * 25
+    curr = [31.5] * 25 + [0.6] * 25
+    recs = build_series(0.0, 10.0, Volt=volt, VoltR=rest, Curr=curr, Res=[0.04] * 50)
+    findings = PowerCheck().run(_log(recs, params={"BATT_LOW_VOLT": 9.0, "BATT_CRT_VOLT": 8.0}))
+    drop = [f for f in findings if "sudden" in f.title.lower()]
+    assert drop and drop[0].severity == Severity.CRITICAL
+    assert drop[0].evidence.samples["load_compensated"] == 1.0

@@ -46,6 +46,15 @@ All notable changes to this project are documented here. The format is based on
   evidence key `frac_above_1950_Cn` is now `frac_saturated_Cn`, with `saturation_pwm`.
 - ArduSub: mode 21 (SURFTRAK) is named, the leak and depth-sensor failsafes (ERR 27, 26) are
   CRITICAL, and a "bad depth" mode change (ModeReason 28) counts as a failsafe.
+- The battery cell count rounded the peak voltage at 4.2 V per cell, so a 12S pack at
+  3.97 V per cell read 11S (and the derived low-voltage thresholds 11S), and a 6S pack at
+  3.84 V per cell gave no estimate. Every cell count that fits 3.5-4.4 V per cell is now a
+  candidate; MOT_BAT_VOLT_MAX / _MIN (4.2 / 3.3 V x cells, Copter wiki) decide between them
+  when they agree with the voltage, else the one nearest 4.1 V per cell. On the 48 benchmark
+  logs this matches MOT_BAT_VOLT_MAX on all 26 where that parameter fits the measured voltage.
+- "Sudden voltage drop" fired on a pack sagging under a current spike (a 50 kg copter at
+  120 A). When BAT.VoltR (the firmware's load-compensated resting voltage) is logged, a drop
+  it does not share is now treated as load, not a loose connector.
 - Real-crash benchmark (48 of 49 logs; one Google Drive file no longer matches its sha256):
   false criticals 97 -> 49 (vibration 29 -> 0, ekf 25 -> 14, gps 6 -> 1), top-1 10 -> 11 of 40, top-3
   21 -> 20. The top-3 hit lost (145616_2) came from a compass-variance rejection after the

@@ -74,6 +74,18 @@ def test_version_reference_in_report_for_4x_only():
 # ---- cell / frame helpers ---------------------------------------------------
 
 
+def test_estimate_cells_high_cell_counts():
+    # 47.6 V fits 11S (4.33 V/cell) and 12S (3.97 V/cell); a real 12S forum log read 11S.
+    assert estimate_cells(47.6) == 12
+    assert estimate_cells(23.05) == 6  # 3.84 V/cell; rounding V/4.2 gave 5S at 4.6 V/cell -> None
+    # A pack resting at 3.8 V/cell is ambiguous by voltage alone; MOT_BAT_VOLT_MAX (4.2 V x cells,
+    # ArduPilot "Setting up for tuning") decides.
+    assert estimate_cells(45.6, {"MOT_BAT_VOLT_MAX": 50.4}) == 12
+    assert estimate_cells(45.6, {"MOT_BAT_VOLT_MIN": 39.6}) == 12
+    # A hint the measured voltage contradicts (set for 6S, flying 12S) is ignored.
+    assert estimate_cells(47.3, {"MOT_BAT_VOLT_MAX": 25.2}) == 12
+
+
 def test_estimate_cells():
     assert estimate_cells(16.8) == 4  # 4S
     assert estimate_cells(25.2) == 6  # 6S

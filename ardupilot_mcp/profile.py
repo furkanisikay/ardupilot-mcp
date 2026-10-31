@@ -64,7 +64,7 @@ def build_profile(log: FlightLog) -> VehicleProfile:
     ft = params.get("FRAME_TYPE")
 
     max_v = _max_voltage(log)
-    cells = meta.estimate_cells(max_v)
+    cells = meta.estimate_cells(max_v, params)
     capacity = params.get("BATT_CAPACITY")
     hover, hover_estimated = _hover_throttle(log)
     power_margin = (1.0 - hover) * 100.0 if hover is not None else None

@@ -275,7 +275,7 @@ class PowerCheck(Check):
         low = low if (low and low > 0.0) else None
         if crt is not None or low is not None:
             return crt, low, f"configured {prefix}*_VOLT failsafe"
-        cells = meta.estimate_cells(safe_max(volts))
+        cells = meta.estimate_cells(safe_max(volts), log.params)
         if cells:
             return (
                 cells * PER_CELL_CRIT_V,
@@ -287,10 +287,23 @@ class PowerCheck(Check):
     # -- sudden fast voltage drop (connector dropout / brown-out) ------------
 
     def _sudden_drop_findings(self, log: FlightLog, src: str, inst: int = 0) -> list[Finding]:
+        # BAT.VoltR is the firmware's resting-voltage estimate, the terminal voltage plus
+        # current x the pack's estimated resistance (AP_BattMonitor "estimated resting
+        # voltage"). A sag under a current spike leaves it flat; a disconnect or a failing
+        # cell does not. Steps are found on the terminal voltage; when VoltR is logged, a step
+        # it does not share is load, not a fault. VoltR is compared as the median of the half
+        # second either side: single samples swing with current x resistance.
         times, volts = log.series(src, "Volt", inst)
+        rest: np.ndarray | None = None
+        if src == "BAT" and "VoltR" in log.fields(src):
+            t_r, (v_r, r_r) = log.series_many(src, ["Volt", "VoltR"], inst)
+            if r_r.size and np.all(np.isfinite(r_r)) and float(np.min(r_r)) > 0.0:
+                times, volts, rest = t_r, v_r, r_r
         armed = log.armed_mask(times)
         if armed is not None:
             times, volts = times[armed], volts[armed]
+            if rest is not None:
+                rest = rest[armed]
         if volts.size < 2:
             return []
         # Fast steps: a voltage fall larger than DROP_WARN_V between samples closer than
@@ -311,6 +324,8 @@ class PowerCheck(Check):
             lo, hi = int(post_lo[i]), int(post_hi[i])
             if hi > lo and float(np.max(volts[lo:hi])) >= float(volts[i - 1]) - drops[i - 1] / 2.0:
                 continue
+            if rest is not None and _resting_drop(times, rest, int(i)) < DROP_WARN_V / 2.0:
+                continue  # the resting voltage held: sag under load
             worst_i = int(i)
             break
         if worst_i < 1:
@@ -328,9 +343,14 @@ class PowerCheck(Check):
                 sev,
                 "Sudden voltage drop",
                 f"Pack voltage dropped {worst_drop:.2f} V in {dt_txt} (a step larger than the "
-                f"{DROP_WARN_V:.1f} V/{DROP_MAX_DT_S:.1f} s threshold). A collapse this fast is not "
-                "normal discharge sag; it points to a loose battery connector, a failing cell, or a "
-                "momentary brown-out of the power system.",
+                f"{DROP_WARN_V:.1f} V/{DROP_MAX_DT_S:.1f} s threshold)"
+                + (
+                    f", and the firmware's load-compensated resting voltage ({src}.VoltR) fell with it"
+                    if rest is not None
+                    else ""
+                )
+                + ". A collapse this fast is not normal discharge sag; it points to a loose battery "
+                "connector, a failing cell, or a momentary brown-out of the power system.",
                 recommendation="Inspect the battery connector/leads and pack health; a brown-out can reset peripherals or the flight controller.",
                 time_start_s=worst_t0,
                 time_end_s=worst_t1,
@@ -339,6 +359,7 @@ class PowerCheck(Check):
                     "drop_volt": round(worst_drop, 2),
                     "drop_dt_s": round(worst_dt, 4),
                     "drop_threshold_volt": DROP_WARN_V,
+                    "load_compensated": 1.0 if rest is not None else 0.0,
                 },
             )
         ]
@@ -390,3 +411,13 @@ class PowerCheck(Check):
                 },
             )
         ]
+
+
+def _resting_drop(times: np.ndarray, rest: np.ndarray, i: int) -> float:
+    """Fall of the median resting voltage from the half second before step ``i`` to the one after."""
+    t = float(times[i])
+    before = rest[(times >= t - 0.5) & (times < t)]
+    after = rest[(times >= t) & (times <= t + 0.5)]
+    if before.size == 0 or after.size == 0:
+        return float("inf")  # nothing to compare: keep the step
+    return float(np.median(before) - np.median(after))
