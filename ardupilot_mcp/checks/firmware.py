@@ -108,8 +108,9 @@ VERDICTS: tuple[Verdict, ...] = (
         re.compile(r"Vibration compensation ON"),
         Severity.WARN,
         "Firmware switched on vibration compensation",
-        "high vibration made the EKF's vertical estimate unreliable, so the firmware changed its "
-        "altitude control to cope",
+        "for over a second the EKF's vertical velocity and position disagreed with the accelerometers "
+        "(the pattern high vibration produces, though a fall produces it too), so the firmware switched "
+        "the altitude controller to vibration-resistant gains; read it with the measured vibration levels",
     ),
     Verdict(
         re.compile(r"EKF variance"),

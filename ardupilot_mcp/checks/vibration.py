@@ -11,8 +11,10 @@ guidance, sustained vibration below ~30 m/s^2 is generally acceptable, 30-60 may
 cause problems, and >60 nearly always degrades position/altitude hold. Ideal
 clipping is zero; a small count (<~100) is likely ok (especially around hard
 landings), but a steadily increasing count means the IMU is railing — a serious
-vibration problem. Accordingly the clip check warns on any clipping and escalates
-to critical once the count is large (>=100).
+vibration problem. Accordingly a count under 100 is noted, a count of 100 or more is a
+warning, and critical once it keeps rising (in separate episodes, or for longer than a crash
+lasts). Vibration levels are
+judged in flight only, and as sustained levels, not single peaks.
 
 Source: https://ardupilot.org/copter/docs/common-measuring-vibration.html
 """
@@ -28,10 +30,28 @@ from .util import fraction_above, intervals_above, make_finding
 
 WARN_MS2 = 30.0
 CRIT_MS2 = 60.0
-# Fraction of the flight above WARN that turns a marginal note into a warning.
+# Fraction of the flight above WARN that turns a marginal note into a warning, and above
+# CRIT that makes it critical.
 SUSTAINED_FRACTION = 0.10
-# Clip count at which clipping is critical: the wiki's "less than ~100 is likely ok".
+# Design choice: the wiki's levels are sustained levels ("levels above 60m/s/s nearly
+# always have problems"), not peaks. A run above CRIT this long, while flying, is a level;
+# a shorter one is a spike (a hard manoeuvre, touchdown or the impact itself). On the 48
+# benchmark crash logs no run above 60 m/s^2 before the impact lasted longer than 0.6 s,
+# and none of those crashes was caused by vibration.
+CRIT_MIN_DURATION_S = 2.0
+# Clip count at which clipping is serious: the wiki's "less than ~100 is likely ok".
 CLIP_CRIT_COUNT = 100
+# Design choice: the wiki calls a *steadily increasing* clip count serious and a few clips
+# around a hard landing normal. Clips closer together than this belong to one episode
+# (one impact, one violent manoeuvre)...
+CLIP_EPISODE_GAP_S = 5.0
+# ...and clipping in at least this many separate episodes, or one episode lasting at least
+# CLIP_STEADY_SPAN_S, is the steady rise of a vibration problem. Anything shorter, however
+# many clips it holds, is an event. On the 48 benchmark crash logs every count of 100+ came
+# from one or two bursts of at most 4.6 s, at the loss of control or a hard landing (a crash
+# is detected after 2 s of lost attitude control, crash_check.cpp).
+CLIP_STEADY_EPISODES = 3
+CLIP_STEADY_SPAN_S = 8.0
 
 
 @register_check
@@ -79,6 +99,13 @@ class VibrationCheck(Check):
 
     def _axis_finding(self, log: FlightLog, axis: str, imu: int, *, multi: bool) -> Finding | None:
         times, vals = log.series("VIBE", axis, imu)
+        ok = np.isfinite(vals) & np.isfinite(times)
+        times, vals = times[ok], vals[ok]
+        # Judge flight only: on the ground (before arming, after landing, the airframe lying
+        # after a crash) the readings are handling and impacts, not flight vibration.
+        mask = log.flying_mask(times)
+        if mask is not None:
+            times, vals = times[mask], vals[mask]
         if vals.size == 0:
             return None
         vmax = float(np.max(vals))
@@ -86,12 +113,14 @@ class VibrationCheck(Check):
             return None
         frac_warn = fraction_above(vals, WARN_MS2)
         frac_crit = fraction_above(vals, CRIT_MS2)
+        crit_runs = intervals_above(times, vals, CRIT_MS2)
+        longest_crit = max((iv.duration_s for iv in crit_runs), default=0.0)
         where = f" on IMU{imu}" if multi else ""
-        if frac_crit > 0.0 or vmax > CRIT_MS2:
+        if longest_crit >= CRIT_MIN_DURATION_S or frac_crit >= SUSTAINED_FRACTION:
             sev = Severity.CRITICAL
             msg = (
-                f"{axis} vibration{where} peaks at {vmax:.0f} m/s^2 (>{CRIT_MS2:.0f}); "
-                f"{frac_crit * 100:.0f}% of samples exceed {CRIT_MS2:.0f} m/s^2. "
+                f"{axis} vibration{where} stayed above {CRIT_MS2:.0f} m/s^2 for up to {longest_crit:.1f} s "
+                f"(peak {vmax:.0f} m/s^2; {frac_crit * 100:.0f}% of the flight above {CRIT_MS2:.0f}). "
                 "Vibration this high corrupts the accelerometers and can trigger EKF failures."
             )
             rec: str | None = (
@@ -106,9 +135,15 @@ class VibrationCheck(Check):
             rec = "Inspect mounting/balance; consider the harmonic notch filter (see recommend_tuning)."
         else:
             sev = Severity.INFO
+            spike = (
+                f"; the longest run above {CRIT_MS2:.0f} m/s^2 lasted {longest_crit:.1f} s, a spike "
+                "(a hard manoeuvre, touchdown or impact) rather than a vibration level"
+                if vmax > CRIT_MS2
+                else ""
+            )
             msg = (
                 f"{axis} vibration{where} is mostly fine but peaks at {vmax:.0f} m/s^2 "
-                f"(brief excursions above {WARN_MS2:.0f} m/s^2)."
+                f"(brief excursions above {WARN_MS2:.0f} m/s^2{spike})."
             )
             rec = None
         ivs = intervals_above(times, vals, WARN_MS2)
@@ -124,6 +159,7 @@ class VibrationCheck(Check):
             samples={
                 f"max_{axis}": round(vmax, 1),
                 f"frac_above_{int(WARN_MS2)}": round(frac_warn, 3),
+                f"longest_above_{int(CRIT_MS2)}_s": round(longest_crit, 2),
                 "imu": imu,
             },
         )
@@ -157,16 +193,39 @@ class VibrationCheck(Check):
                 continue
             first = int(np.flatnonzero(steps > 0)[0]) + 1
             onset = float(times[first]) if first < times.size else None
+            clip_times = times[1:][steps > 0]
+            breaks = np.flatnonzero(np.diff(clip_times) > CLIP_EPISODE_GAP_S)
+            episodes = 1 + int(breaks.size)
+            bounds = np.concatenate(([0], breaks + 1, [clip_times.size]))
+            longest_span = max(
+                (
+                    float(clip_times[b - 1] - clip_times[a])
+                    for a, b in zip(bounds[:-1], bounds[1:], strict=True)
+                ),
+                default=0.0,
+            )
             # The wiki: "a small count (less than ~100) is likely ok, especially around a
             # hard landing"; a large, steadily rising count is a serious problem.
-            sev = Severity.CRITICAL if total >= CLIP_CRIT_COUNT else Severity.INFO
-            meaning = (
-                "Clipping means the IMU saturated (railed); its data is unusable while clipped, which is a "
-                "serious vibration problem."
-                if sev == Severity.CRITICAL
-                else f"Fewer than {CLIP_CRIT_COUNT} clips is usually fine (a hard landing or touchdown "
-                "produces a few); watch whether the count grows from flight to flight."
-            )
+            if total < CLIP_CRIT_COUNT:
+                sev = Severity.INFO
+                meaning = (
+                    f"Fewer than {CLIP_CRIT_COUNT} clips is usually fine (a hard landing or touchdown "
+                    "produces a few); watch whether the count grows from flight to flight."
+                )
+            elif episodes >= CLIP_STEADY_EPISODES or longest_span >= CLIP_STEADY_SPAN_S:
+                sev = Severity.CRITICAL
+                meaning = (
+                    f"The count kept rising ({episodes} episode(s), the longest {longest_span:.1f} s). Clipping "
+                    "means the IMU saturated (railed); its data is unusable while clipped, which is a serious "
+                    "vibration problem."
+                )
+            else:
+                sev = Severity.WARN
+                meaning = (
+                    f"They came in {episodes} short burst(s) (the longest {longest_span:.1f} s), not as a steady "
+                    "rise: the IMU railed during a violent event, which is usually the loss of control, a hard "
+                    "landing or the impact itself rather than its cause. Check what happened just before."
+                )
             out.append(
                 make_finding(
                     self.id,
@@ -177,7 +236,13 @@ class VibrationCheck(Check):
                     time_start_s=onset,
                     time_end_s=float(times[-1]) if times.size else None,
                     message_types=["VIBE"],
-                    samples={"total_clips": int(total), "imu": imu, "crit_threshold": CLIP_CRIT_COUNT},
+                    samples={
+                        "total_clips": int(total),
+                        "clip_episodes": episodes,
+                        "longest_clip_episode_s": round(longest_span, 1),
+                        "imu": imu,
+                        "crit_threshold": CLIP_CRIT_COUNT,
+                    },
                 )
             )
             if imu != primary and len(streams) > 1:

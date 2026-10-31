@@ -91,9 +91,13 @@ CRITICAL_ERR_SUBSYSTEMS: set[int] = {
     16,  # EKFCHECK
     17,  # FAILSAFE_EKFINAV
     25,  # THRUST_LOSS_CHECK
-    29,  # FAILSAFE_VIBE
     30,  # INTERNAL_ERROR
 }
+# Not FAILSAFE_VIBE (29): its only action is to switch the position controller to
+# vibration-resistant gains, with no mode change, and it fires on an EKF pattern (vertical
+# velocity and position innovations both positive, velocity variance above 1, for 1 s) that a
+# fall produces as well as vibration (Copter::check_vibration, ArduCopter/ekf_check.cpp,
+# Copter-4.6.3). It is reported as a warning, as its "Vibration compensation ON" text is.
 
 # EV (event) id -> name (useful subset). Values verified against ArduPilot's
 # LogEvent enum in AP_Logger.h (Copter-4.5.7):

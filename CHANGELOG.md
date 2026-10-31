@@ -7,6 +7,20 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
+- Vibration false alarms. A single VIBE sample above 60 m/s^2 made the axis CRITICAL, and
+  samples before arming and after landing counted. Levels are now judged in flight only, and
+  CRITICAL needs 2 s above 60 m/s^2 or 10% of the flight (the wiki's levels are sustained
+  levels); a shorter run is reported as a spike (INFO). 100 or more clips are a WARN, and
+  CRITICAL only when the count keeps rising (3+ episodes, or one lasting 8 s or more): one
+  burst of clipping is the tumble or impact, not its cause. On the 48 benchmark crash logs
+  no run above 60 m/s^2 before the impact lasted more than 0.6 s, and every 100+ clip count
+  came from bursts of at most 4.6 s.
+- ERR FAILSAFE_VIBE was CRITICAL. The firmware only switches the altitude controller to
+  vibration-resistant gains (no mode change), and it fires on an EKF pattern that a fall
+  produces too (ekf_check.cpp); it is now a WARN, as the "Vibration compensation ON" text
+  already was.
+- Real-crash benchmark (48 of 49 logs; one Google Drive file no longer matches its sha256):
+  false criticals 97 -> 65 (vibration 29 -> 0), top-1 10 -> 11 of 40, top-3 21 (unchanged).
 - Corrupt logs passed as clean. Integrity was judged from pymavlink's "bad header"
   warnings, but its default compiled indexer prints them below Python, where they cannot be
   captured. A log with garbage in the middle, or random bytes named `.bin`, came back with

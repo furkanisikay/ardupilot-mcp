@@ -39,9 +39,9 @@ Claude Code için tek satır yeterli: `claude mcp add ardupilot-mcp -- uvx ardup
 <!-- gen:example -->
 ```text
 First anomaly while armed: Elevated VibeZ vibration @ 9s.
-6 critical, 2 warning, 3 info finding(s).
+5 critical, 3 warning, 3 info finding(s).
 [CRITICAL] vibration @ 9s: Elevated VibeZ vibration
-           VibeZ vibration peaks at 72 m/s^2 (>60); 20% of samples exceed 60 m/s^2.
+           VibeZ vibration stayed above 60 m/s^2 for up to 4.9 s (peak 70 m/s^2; 17% of the flight above 60).
 [CRITICAL] attitude  @ 20s: Attitude tracking failure (roll)
            Roll failed to track the demand for 3.0 s, error up to 35 deg (sustained >25 deg).
 [CRITICAL] power     @ 25s: Battery reached critical voltage
