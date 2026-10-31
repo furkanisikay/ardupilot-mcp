@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import io
+import math
 import os
 
 import numpy as np
@@ -534,16 +535,23 @@ def _extract_params(log: FlightLog, reader) -> dict[str, float]:
     out: dict[str, float] = {}
     for rec in log.get("PARM"):
         name, value = rec.get("Name"), rec.get("Value")
-        if isinstance(name, str) and isinstance(value, (int, float)) and not isinstance(value, bool):
+        if (
+            isinstance(name, str)
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)  # a NaN/inf value is no setting, and breaks the JSON output
+        ):
             out[name] = float(value)
     if out:
         return out
     raw = getattr(reader, "params", None) or {}
     for k, v in raw.items():
         try:
-            out[str(k)] = float(v)
+            f = float(v)
         except (TypeError, ValueError):
             continue
+        if math.isfinite(f):
+            out[str(k)] = f
     return out
 
 

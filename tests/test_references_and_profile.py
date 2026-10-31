@@ -132,3 +132,13 @@ def test_profile_flags_underpowered():
     p = build_profile(log)
     assert p.battery_cells == 6
     assert any("underpowered" in a.lower() for a in p.assessment)
+
+
+def test_plane_cruise_throttle_is_not_a_hover_throttle():
+    from ardupilot_mcp.profile import _hover_throttle
+
+    ctun = build_series(0.0, 10.0, ThO=[0.55] * 100)
+    plane = make_flight_log({"CTUN": ctun}, vehicle_type="ArduPlane", vehicle_kind="plane")
+    copter = make_flight_log({"CTUN": ctun}, vehicle_kind="copter")
+    assert _hover_throttle(plane) == (None, False)
+    assert _hover_throttle(copter) == (0.55, True)

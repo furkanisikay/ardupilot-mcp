@@ -15,12 +15,15 @@ Lines starting with ``#`` or ``//`` are comments.
 
 from __future__ import annotations
 
+import math
 import re
 
 
 def parse_param_file(path: str) -> dict[str, float]:
     out: dict[str, float] = {}
-    with open(path, encoding="utf-8", errors="replace") as fh:
+    # utf-8-sig drops the byte-order mark a Windows editor may save, which would otherwise
+    # glue itself to the first parameter's name.
+    with open(path, encoding="utf-8-sig", errors="replace") as fh:
         for raw in fh:
             line = raw.strip()
             if not line or line.startswith("#") or line.startswith("//"):
@@ -35,7 +38,9 @@ def parse_param_file(path: str) -> dict[str, float]:
             else:
                 continue
             try:
-                out[name.upper()] = float(value)
+                v = float(value)
             except ValueError:
                 continue
+            if math.isfinite(v):
+                out[name.upper()] = v
     return out

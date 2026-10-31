@@ -73,3 +73,26 @@ def test_get_params_notes_incomplete_snapshot(tmp_path):
     p = _synth(tmp_path, {"WPNAV_SPEED": 500.0})
     res = get_params(p)
     assert res.note and "incomplete" in res.note.lower()
+
+
+def test_byte_order_mark_does_not_eat_the_first_parameter(tmp_path):
+    # Notepad and other Windows editors may save a UTF-8 BOM before the first line.
+    p = tmp_path / "bom.param"
+    p.write_bytes(b"\xef\xbb\xbfFRAME_CLASS,1\nATC_RAT_RLL_P,0.135\n")
+    params = parse_param_file(str(p))
+    assert params["FRAME_CLASS"] == 1.0 and "﻿FRAME_CLASS" not in params
+
+
+def test_non_finite_values_are_dropped(tmp_path):
+    p = tmp_path / "nan.param"
+    p.write_text("A_PARAM,nan\nB_PARAM,inf\nC_PARAM,2\n")
+    assert parse_param_file(str(p)) == {"C_PARAM": 2.0}
+
+
+def test_non_finite_parm_in_a_log_does_not_break_get_params(tmp_path):
+    # One inf PARM value became null in the output and failed the tool's number schema.
+    path = str(tmp_path / "inf.bin")
+    build_bin(path, [], params={"GOOD_P": 1.5, "BAD_P": float("inf")}, firmware="ArduCopter V4.6.3")
+    res = get_params(path)
+    names = set(res.params)
+    assert "GOOD_P" in names and "BAD_P" not in names

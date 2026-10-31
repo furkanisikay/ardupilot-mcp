@@ -55,6 +55,16 @@ All notable changes to this project are documented here. The format is based on
 - "Sudden voltage drop" fired on a pack sagging under a current spike (a 50 kg copter at
   120 A). When BAT.VoltR (the firmware's load-compensated resting voltage) is logged, a drop
   it does not share is now treated as load, not a loose connector.
+- A non-finite parameter value (NaN or inf) in a log became `null` in `get_params`, which
+  broke the tool's output schema and failed the whole call; such values are dropped, in logs
+  and in `.param` files.
+- A `.param` file saved with a UTF-8 byte-order mark lost its first parameter.
+- `query_timeseries` with `instance` on a single-instance message returned the data anyway,
+  as if it were that instance; it now says the instance is not present.
+- A `.tlog` of a vehicle that never armed got an onset and the caveat "arming could not be
+  determined"; it now has no onset and says the vehicle never armed.
+- The vehicle profile estimated a hover throttle for a plane from its cruise throttle; only a
+  multirotor gets that estimate.
 - Real-crash benchmark (48 of 49 logs; one Google Drive file no longer matches its sha256):
   false criticals 97 -> 49 (vibration 29 -> 0, ekf 25 -> 14, gps 6 -> 1), top-1 10 -> 11 of 40, top-3
   21 -> 20. The top-3 hit lost (145616_2) came from a compass-variance rejection after the

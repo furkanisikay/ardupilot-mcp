@@ -47,7 +47,10 @@ def _hover_throttle(log: FlightLog) -> tuple[float | None, bool]:
     h = log.params.get("MOT_THST_HOVER")
     if h is not None and 0.0 < float(h) <= 1.0:
         return float(h), False
-    # Fallback: median throttle-out while clearly flying (rough).
+    # Fallback: median throttle-out while clearly flying (rough). Only a multirotor hovers:
+    # a plane's cruise throttle is no hover throttle, and its CTUN.ThO is a percentage.
+    if log.meta.vehicle_kind not in ("copter", "heli", None):
+        return None, False
     if log.has("CTUN"):
         _, tho = log.series("CTUN", "ThO")
         if tho.size:
