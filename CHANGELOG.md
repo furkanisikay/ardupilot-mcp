@@ -19,8 +19,14 @@ All notable changes to this project are documented here. The format is based on
   vibration-resistant gains (no mode change), and it fires on an EKF pattern that a fall
   produces too (ekf_check.cpp); it is now a WARN, as the "Vibration compensation ON" text
   already was.
+- EKF test ratios were judged on every sample, on the ground too, and a single sample above
+  1.0 was CRITICAL. They are now judged in flight, and a rejection is CRITICAL when it lasts
+  1 s, as long as Copter's own EKF failsafe waits (EKF_CHECK_ITERATIONS_MAX); a shorter one
+  is a WARN.
 - Real-crash benchmark (48 of 49 logs; one Google Drive file no longer matches its sha256):
-  false criticals 97 -> 65 (vibration 29 -> 0), top-1 10 -> 11 of 40, top-3 21 (unchanged).
+  false criticals 97 -> 54 (vibration 29 -> 0, ekf 25 -> 14), top-1 10 -> 11 of 40, top-3
+  21 -> 20. The top-3 hit lost (145616_2) came from a compass-variance rejection after the
+  vehicle had disarmed; the labelled cause is the EKF height running away in flight.
 - Corrupt logs passed as clean. Integrity was judged from pymavlink's "bad header"
   warnings, but its default compiled indexer prints them below Python, where they cannot be
   captured. A log with garbage in the middle, or random bytes named `.bin`, came back with

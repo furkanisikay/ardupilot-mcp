@@ -42,8 +42,9 @@ def test_clean_flight_no_findings():
 
 
 def test_critical_velocity_variance_xkf4():
-    # SV ramps up to 1.3 -> the velocity sensor was being rejected -> CRITICAL.
-    sv = [0.2] * 30 + [round(0.2 + i * (1.1 / 19), 3) for i in range(20)]  # ends ~1.3
+    # SV ramps up to 1.3 and stays above 1.0 for 1.5 s -> the velocity sensor was being
+    # rejected for longer than the firmware's EKF failsafe waits -> CRITICAL.
+    sv = [0.2] * 20 + [round(0.2 + i * (1.1 / 14), 3) for i in range(15)] + [1.3] * 15
     recs = build_series(
         0.0,
         10.0,
@@ -61,6 +62,24 @@ def test_critical_velocity_variance_xkf4():
     # Timing window is populated from when the ratio first crossed the warn line.
     assert crit[0].evidence.time_start_s is not None
     assert crit[0].evidence.time_end_s is not None
+
+
+def test_brief_rejection_is_a_warning():
+    # SV above 1.0 for 0.3 s: a rejection shorter than the 1 s the firmware's EKF failsafe
+    # waits for (EKF_CHECK_ITERATIONS_MAX, ekf_check.cpp) is a warning, not critical.
+    sv = [0.2] * 47 + [1.6] * 3
+    recs = build_series(0.0, 10.0, SV=sv, SP=[0.2] * 50, SH=[0.2] * 50, SM=[0.2] * 50)
+    vel = [f for f in EKFCheck().run(_xkf4(recs)) if "velocity" in f.title]
+    assert [f.severity for f in vel] == [Severity.WARN]
+    assert "brief" in vel[0].explanation
+
+
+def test_rejection_on_the_ground_is_ignored():
+    # SH far above 1.0 before arming (the vehicle on the bench) is not a flight problem.
+    sh = [3.0] * 30 + [0.2] * 70
+    recs = build_series(0.0, 10.0, SV=[0.2] * 100, SP=[0.2] * 100, SH=sh, SM=[0.2] * 100)
+    log = make_flight_log({"XKF4": recs, "EV": [{"TimeUS": 4_000_000, "Id": 10}]})
+    assert [f for f in EKFCheck().run(log) if "height" in f.title] == []
 
 
 def test_warn_position_variance():

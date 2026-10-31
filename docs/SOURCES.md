@@ -226,6 +226,7 @@ MCP spec) on 2026-06-14. Generated from a fan-out verification pass over **198 a
 | `ardupilot_mcp/checks/compass.py` · line 34, MIN_SAMPLES | Need minimum 10 samples before compass statistics are meaningful |
 | `ardupilot_mcp/checks/ekf.py` · WARN_RATIO | EKF test ratio > 0.8 means sensor variance is high |
 | `ardupilot_mcp/checks/ekf.py` · line 32, WARN_RATIO | EKF variance test ratio > 0.8 means filter is straining (approaching rejection) |
+| `ardupilot_mcp/checks/ekf.py` · CRIT_MIN_DURATION_S, flying_mask | A test ratio above 1.0 is CRITICAL only when it lasts 1 s in flight, as long as Copter's EKF failsafe waits (EKF_CHECK_ITERATIONS_MAX = 10 checks at 10 Hz, [ArduCopter/ekf_check.cpp](https://github.com/ArduPilot/ardupilot/blob/Copter-4.6.3/ArduCopter/ekf_check.cpp)); a shorter rejection is a WARN; the ratios on the ground (before arming, after landing) are not judged |
 | `ardupilot_mcp/checks/gps.py` · HDOP_WARN | HDOP above 2.0 means geometry is getting poor |
 | `ardupilot_mcp/checks/motors.py` · IMBALANCE_WARN_PWM | Motor output imbalance spread > 150 PWM is a warning |
 | `ardupilot_mcp/checks/motors.py` · IMBALANCE_CRIT_PWM | Motor output imbalance spread > 300 PWM is critical |

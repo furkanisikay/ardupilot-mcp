@@ -13,9 +13,11 @@ Fields (the dimensionless squared-innovation test ratios from XKF4/NKF4):
   SV  velocity     SP  position     SH  height     SM  magnetometer
 (SVT is intentionally not used — it is not a normalised test ratio; see SENSOR_FIELDS.)
 
-For each present field we take the peak ratio over the log:
-  > 1.0 -> CRITICAL (sensor was being rejected)
-  > 0.8 -> WARN     (sensor variance high, approaching rejection)
+For each present field we take the ratio in flight (armed and not landed: the
+estimator on the bench or after a crash is not navigating anything):
+  > 1.0 for 1 s or more -> CRITICAL (sensor was being rejected, as long as the
+                                     firmware's own EKF failsafe waits)
+  > 1.0 briefly, > 0.8  -> WARN     (variance high, approaching or touching rejection)
 We prefer XKF4 and fall back to NKF4; if neither is present the check is a no-op.
 
 Cores: EKF3 runs one core ("lane") per IMU and logs them all under XKF4, told
@@ -40,6 +42,10 @@ from .util import intervals_above, make_finding
 CRIT_RATIO = 1.0
 # Below the rejection line but high enough to warn — the filter is straining.
 WARN_RATIO = 0.8
+# Copter's EKF failsafe acts only once its (filtered) variances have stayed over the
+# threshold for 10 checks at 10 Hz, 1 s (EKF_CHECK_ITERATIONS_MAX, ArduCopter/ekf_check.cpp).
+# A rejection is critical when it lasts that long; a shorter one is a warning.
+CRIT_MIN_DURATION_S = 1.0
 
 # EKF3 message preferred; EKF2 (NKF4) is the legacy fallback. Same field layout.
 PREFERRED_MSG = "XKF4"
@@ -89,6 +95,10 @@ class EKFCheck(Check):
             primary = (
                 (pi == core) if (len(cores) > 1 and np.isfinite(pi).any()) else np.ones(times.size, bool)
             )
+            flying = log.flying_mask(times)
+            if flying is not None:
+                times, primary = times[flying], primary[flying]
+                cols = {k: v[flying] for k, v in cols.items()}
             for field, sensor in SENSOR_FIELDS:
                 vals = cols[field]
                 f = self._field_finding(mtype, field, sensor, times, vals, primary)
@@ -129,11 +139,24 @@ class EKFCheck(Check):
                 "while it was NOT the primary core flying the vehicle, so it did not affect navigation."
             )
             rec = None
+        elif vmax > CRIT_RATIO and _longest_run(t_sel, v_sel, CRIT_RATIO) < CRIT_MIN_DURATION_S:
+            sev = Severity.WARN
+            threshold = CRIT_RATIO
+            msg = (
+                f"EKF {sensor} variance peaked at {vmax:.2f} in {mtype}.{field}, above the "
+                f"{CRIT_RATIO:.1f} rejection boundary for at most {_longest_run(t_sel, v_sel, CRIT_RATIO):.1f} s. "
+                f"The firmware's EKF failsafe acts only after {CRIT_MIN_DURATION_S:.0f} s, so this was a brief "
+                f"rejection of {sensor} data, not a lasting loss of trust."
+            )
+            rec = (
+                f"Check what the {sensor} sensor was doing at that moment (a manoeuvre, a glitch, an impact)."
+            )
         elif vmax > CRIT_RATIO:
             sev = Severity.CRITICAL
             threshold = CRIT_RATIO
             msg = (
-                f"EKF {sensor} variance peaked at {vmax:.2f} (>{CRIT_RATIO:.1f}) in {mtype}.{field} "
+                f"EKF {sensor} variance peaked at {vmax:.2f} (>{CRIT_RATIO:.1f}) in {mtype}.{field} and stayed "
+                f"above it for {_longest_run(t_sel, v_sel, CRIT_RATIO):.1f} s "
                 f"— the estimator was rejecting {sensor} data. A test ratio above {CRIT_RATIO:.1f} "
                 f"means the {sensor} innovation exceeded the filter's modelled uncertainty, so that "
                 "sensor was distrusted; sustained rejection leads to position/altitude drift or an EKF failsafe."
@@ -188,3 +211,24 @@ class EKFCheck(Check):
                 samples={"lane_switches": int(changes.size)},
             )
         ]
+
+
+def _longest_run(times: np.ndarray, vals: np.ndarray, threshold: float) -> float:
+    """Longest time ``vals`` stayed above ``threshold``, counting each sample as one period.
+
+    A run of n samples spans n sample periods (10 checks at 10 Hz is the firmware's 1 s), so
+    one median sample spacing is added to the first-to-last-sample time. Samples dropped by a
+    mask (on the ground, another core primary) end a run rather than join two.
+    """
+    if times.size == 0:
+        return 0.0
+    dt = float(np.median(np.diff(times))) if times.size > 1 else 0.0
+    idx = np.flatnonzero(vals > threshold)
+    if idx.size == 0:
+        return 0.0
+    t = times[idx]
+    # A run breaks where a sample in between was not above, or where time jumps.
+    breaks = np.flatnonzero((np.diff(idx) > 1) | (np.diff(t) > 3 * dt)) + 1
+    bounds = np.concatenate(([0], breaks, [idx.size]))
+    longest = max(float(t[b - 1] - t[a]) + dt for a, b in zip(bounds[:-1], bounds[1:], strict=True))
+    return round(longest, 6)  # 5 samples at 5 Hz is 1.0 s, not 0.9999999
