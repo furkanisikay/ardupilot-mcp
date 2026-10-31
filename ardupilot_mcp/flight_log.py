@@ -628,6 +628,15 @@ class FlightLog:
             mask |= (times >= t0) & (times <= t1)
         return mask
 
+    @property
+    def flight_state_logged(self) -> bool:
+        """Whether the log records being airborne, not only being armed: Plane's
+        ``STAT.isFlying`` or Copter's land-detector events (EV LAND_COMPLETE 18 /
+        NOT_LANDED 28). Without them ``flying_mask`` is the armed mask."""
+        if self.series("STAT", "isFlying")[1].size:
+            return True
+        return any(r.get("Id") in (18, 28) for r in self.get("EV"))
+
     def flying_mask(self, times: np.ndarray) -> np.ndarray | None:
         """``times`` that are armed AND not on the ground (None if arming is unknown).
 

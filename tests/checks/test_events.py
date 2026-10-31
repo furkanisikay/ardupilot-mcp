@@ -159,3 +159,40 @@ def test_a_failed_switch_to_mode_zero_is_reported():
     log = make_flight_log({"ERR": [{"TimeUS": 1_000_000, "Subsys": 10, "ECode": 0}]})
     (finding,) = EventsCheck().run(log)
     assert "could not switch to STABILIZE" in finding.explanation
+
+
+def _disarm_log(method: int, land_events: list[dict]):
+    ev = [
+        {"TimeUS": 0, "Id": 10},
+        {"TimeUS": 2_000_000, "Id": 28},
+        *land_events,
+        {"TimeUS": 20_000_000, "Id": 11},
+    ]
+    arm = [{"TimeUS": 0, "ArmState": 1, "Method": 2}, {"TimeUS": 20_000_000, "ArmState": 0, "Method": method}]
+    return make_flight_log({"EV": ev, "ARM": arm}, vehicle_kind="copter")
+
+
+def test_failsafe_disarm_in_flight_is_a_warning():
+    # ARM.Method 7 = battery failsafe (AP_Arming::Method): the autopilot stopped the motors aloft.
+    f = [x for x in EventsCheck().run(_disarm_log(7, [])) if x.title.startswith("Disarmed in flight")]
+    assert [(x.title, x.severity) for x in f] == [("Disarmed in flight (battery failsafe)", Severity.WARN)]
+
+
+def test_switch_disarm_in_flight_is_info():
+    f = [x for x in EventsCheck().run(_disarm_log(2, [])) if x.title.startswith("Disarmed in flight")]
+    assert [x.severity for x in f] == [Severity.INFO]
+
+
+def test_switch_disarm_right_after_touchdown_is_not_in_flight():
+    # LAND_COMPLETE_MAYBE (17) a second before: the pilot disarmed on the ground.
+    land = [{"TimeUS": 19_000_000, "Id": 17}]
+    assert not [
+        x for x in EventsCheck().run(_disarm_log(2, land)) if x.title.startswith("Disarmed in flight")
+    ]
+
+
+def test_disarm_is_not_judged_without_a_land_detector_record():
+    ev = [{"TimeUS": 0, "Id": 10}, {"TimeUS": 20_000_000, "Id": 11}]
+    arm = [{"TimeUS": 20_000_000, "ArmState": 0, "Method": 7}]
+    log = make_flight_log({"EV": ev, "ARM": arm}, vehicle_kind="copter")
+    assert not [x for x in EventsCheck().run(log) if x.title.startswith("Disarmed in flight")]

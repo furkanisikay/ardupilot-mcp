@@ -23,7 +23,12 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
+
 from ..ardupilot_meta import (
+    ARM_METHODS,
+    ARM_METHODS_COMMANDED,
+    ARM_METHODS_GROUND_OR_CRASH,
     CRITICAL_ERR_SUBSYSTEMS,
     ERR_EKF_PRIMARY,
     ERR_FLIGHT_MODE,
@@ -48,6 +53,14 @@ KEY_EVENT_NAMES = {
 }
 
 
+# The flight state is read this long before the disarm record, since landing and the
+# disarm can be written in the same instant (design choice).
+INFLIGHT_LOOKBACK_S = 0.3
+# A land event (EV LAND_COMPLETE_MAYBE / LAND_COMPLETE) this long before a disarm puts the
+# disarm on the ground (design choice; the land detector settles within about a second).
+LAND_EVENT_WINDOW_S = 5.0
+
+
 @register_check
 class EventsCheck(Check):
     id = "events"
@@ -61,7 +74,71 @@ class EventsCheck(Check):
         findings.extend(self._err_findings(log))
         findings.extend(self._mode_finding(log))
         findings.extend(self._event_finding(log))
+        findings.extend(self._inflight_disarms(log))
         return findings
+
+    # -- ARM: a disarm while still flying -------------------------------------
+
+    def _inflight_disarms(self, log: FlightLog) -> list[Finding]:
+        """A disarm the land detector had not cleared: the motors stopped in the air.
+
+        ``ARM.Method`` says who did it (AP_Arming::Method). A commanded one (switch, rudder,
+        GCS, script) is reported as INFO: it is most often the pilot's emergency stop after
+        control was already lost. One the autopilot made (a failsafe or termination) is a
+        WARN, since stopping the motors in flight brings the vehicle down. Crash and normal
+        landing disarms are not reported here.
+        """
+        out: list[Finding] = []
+        if not log.has("ARM") or not log.flight_state_logged:
+            return out  # without a land detector record, a landing's disarm looks like flight
+        land_events = [
+            float(r["timestamp"])
+            for r in log.get("EV")
+            if r.get("Id") in (17, 18) and _is_number(r.get("timestamp"))
+        ]
+        for rec in log.get("ARM"):
+            state, method, ts = rec.get("ArmState"), rec.get("Method"), rec.get("timestamp")
+            if not (_is_number(state) and _is_number(method) and _is_number(ts)) or state != 0:
+                continue
+            method, t = int(method), float(ts)
+            if method in ARM_METHODS_GROUND_OR_CRASH:
+                continue
+            flying = log.flying_mask(np.array([t - INFLIGHT_LOOKBACK_S]))
+            if flying is None or not bool(flying[0]):
+                continue
+            # Copter writes LAND_COMPLETE_MAYBE (17) as it settles and LAND_COMPLETE (18) once the
+            # disarm itself forces it, so a disarm right after touchdown (the pilot's switch)
+            # still reads "flying" a moment before; a land event in the seconds before, or at the
+            # same instant, means it was on the ground (ArduCopter/land_detector.cpp).
+            if any(t - LAND_EVENT_WINDOW_S <= lt <= t + 0.05 for lt in land_events):
+                continue
+            name = ARM_METHODS.get(method, f"method {method}")
+            commanded = method in ARM_METHODS_COMMANDED
+            msg = (
+                f"The vehicle was disarmed by {name} (ARM.Method {method}) at t={t:.1f}s while it was still "
+                "flying (the land detector had not reported a landing), so the motors stopped in the air."
+            )
+            msg += (
+                " A commanded disarm in flight is often the pilot's emergency stop after control was lost; if "
+                "nothing had gone wrong before it, check the arm/disarm switch (RCx_OPTION) and rudder-disarm "
+                "(ARMING_RUDDER) settings."
+                if commanded
+                else " The autopilot itself stopped the motors, which brings the vehicle down; check the "
+                "failsafe that chose this action."
+            )
+            out.append(
+                make_finding(
+                    self.id,
+                    Severity.INFO if commanded else Severity.WARN,
+                    f"Disarmed in flight ({name})",
+                    msg,
+                    time_start_s=t,
+                    time_end_s=t,
+                    message_types=["ARM"],
+                    samples={"arm_method": float(method)},
+                )
+            )
+        return out
 
     # -- ERR: one finding per error onset (ECode != 0) -----------------------
 

@@ -19,6 +19,10 @@ All notable changes to this project are documented here. The format is based on
   resting voltage into that range before scaling thrust, so a pack above MAX all flight (a 12S
   pack with the 6S default left in) gets no voltage compensation, and one below MIN gets its
   gains raised all flight. Found on one benchmark log (140954_0).
+- `events`: a disarm while still flying, with who did it (ARM.Method decoded: switch, rudder,
+  GCS, a failsafe, ...). An autopilot-initiated one (a failsafe or termination) is a WARN; a
+  commanded one is INFO, since it is most often the pilot's emergency stop after control was
+  lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
 - Vibration false alarms. A single VIBE sample above 60 m/s^2 made the axis CRITICAL, and

@@ -232,6 +232,54 @@ _MODES_BY_KIND: dict[str, dict[int, str]] = {
 }
 
 
+# ARM.Method: how the vehicle was armed or disarmed (AP_Arming::Method, Copter-4.6.3
+# libraries/AP_Arming/AP_Arming.h). Methods 5 and up are written by disarms only.
+ARM_METHODS: dict[int, str] = {
+    0: "rudder stick",
+    1: "MAVLink command",
+    2: "RC switch",
+    3: "motor test",
+    4: "script",
+    5: "termination",
+    6: "CPU failsafe",
+    7: "battery failsafe",
+    8: "Solo pause when landed",
+    9: "advanced failsafe",
+    10: "ADS-B collision action",
+    11: "parachute release",
+    12: "crash",
+    13: "landed",
+    14: "mission exit",
+    15: "fence breach",
+    16: "radio failsafe",
+    17: "disarm delay",
+    18: "GCS failsafe",
+    19: "terrain failsafe",
+    20: "failsafe action terminate",
+    21: "terrain failsafe",
+    22: "motor detect done",
+    23: "bad flow of control",
+    24: "EKF failsafe",
+    25: "GCS failsafe surface failed",
+    26: "GCS failsafe hold failed",
+    27: "takeoff timeout",
+    28: "auto landed",
+    29: "pilot input failsafe",
+    30: "toy mode land throttle",
+    31: "toy mode land force",
+    32: "landing",
+    33: "dead-reckoning failsafe",
+    34: "black box",
+    35: "DDS",
+    100: "unknown",
+}
+# Disarms a person or a script commanded (their own choice, often an emergency stop).
+ARM_METHODS_COMMANDED = {0, 1, 2, 4}
+# Disarms that are normal on the ground (after landing) or are the crash check itself,
+# which the firmware check already reports.
+ARM_METHODS_GROUND_OR_CRASH = {8, 12, 13, 17, 22, 28, 30, 31, 32}
+
+
 def mode_name(mode_num: int | str, vehicle_kind: str | None = None) -> str:
     """Decode a MODE number for the vehicle that logged it.
 
