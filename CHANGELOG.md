@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `esc` check (multirotor). **Motors lost power while still commanded**: the battery current
+  collapses in flight while the motor outputs still ask for thrust, the pack voltage holds and
+  the log keeps running, so only the ESCs stopped drawing power (an ESC protection shutdown or
+  a failed ESC power feed). This is the signature the forum's helpers diagnose by hand; on
+  the 48 benchmark logs it fires only on the labelled ESC-overheating crash (132194_0).
+  **Hot ESCs**: ESC telemetry temperatures held at or above 80 degC, the bottom of BLHeli_S's
+  programmable thermal-protection range (WARN above its 140 degC top); a reading already that
+  high on a stopped motor at power-on is named and not judged.
+
 ### Fixed
 - Vibration false alarms. A single VIBE sample above 60 m/s^2 made the axis CRITICAL, and
   samples before arming and after landing counted. Levels are now judged in flight only, and

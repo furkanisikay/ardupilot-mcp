@@ -68,7 +68,7 @@ Every tool is read-only.
 | `recommend_tuning` | Harmonic notch, PID and autotune advice. It applies nothing. |
 | `list_checks` | The registered checks. |
 
-Tool arguments and all <!-- gen:checks -->18<!-- /gen:checks --> checks are in [docs/reference.md](docs/reference.md). `scripts/gen_docs.py` generates that file from the code, and CI fails when it is out of date.
+Tool arguments and all <!-- gen:checks -->19<!-- /gen:checks --> checks are in [docs/reference.md](docs/reference.md). `scripts/gen_docs.py` generates that file from the code, and CI fails when it is out of date.
 
 ## How it works
 

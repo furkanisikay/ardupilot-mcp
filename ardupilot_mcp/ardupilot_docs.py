@@ -133,6 +133,10 @@ DOC_URLS: dict[str, tuple[str, str]] = {
         "Complete parameter list",
         "https://ardupilot.org/copter/docs/parameters.html",
     ),
+    "esc_telemetry": (
+        "ESC Telemetry",
+        "https://ardupilot.org/copter/docs/common-esc-telemetry.html",
+    ),
 }
 
 # check id -> ordered topic keys (most specific first).
@@ -146,6 +150,7 @@ CHECK_TOPICS: dict[str, list[str]] = {
     "rcin": ["radio_failsafe"],
     "motors": ["thrust_loss", "motor_order", "esc_calibration"],
     "thrust_loss": ["thrust_loss", "motor_order", "esc_calibration"],
+    "esc": ["esc_telemetry", "thrust_loss"],
     "events": ["log_diagnosis_general"],
     "timing": ["log_diagnosis_general"],
     "integrity": ["log_diagnosis_general"],

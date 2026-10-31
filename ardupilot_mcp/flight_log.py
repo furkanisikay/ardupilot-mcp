@@ -48,6 +48,7 @@ DEFAULT_INSTANCE_FIELDS: dict[str, str] = {
     "XKF4": "C",
     "XKF5": "C",
     "RFND": "Instance",
+    "ESC": "Instance",  # AP_ESC_Telem/LogStructure.h: "TimeUS,Instance,RPM,..."
 }
 
 #: Before 4.1 a second (third, ...) sensor or EKF core was logged under its own message

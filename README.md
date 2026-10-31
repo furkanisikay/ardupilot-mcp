@@ -68,7 +68,7 @@ Bütün araçlar salt okunurdur.
 | `recommend_tuning` | Harmonik notch, PID ve autotune önerisi. Hiçbir şeyi uygulamaz. |
 | `list_checks` | Kayıtlı kontrollerin listesi. |
 
-Araçların argümanları ve <!-- gen:checks -->18<!-- /gen:checks --> kontrolün tamamı [docs/reference.md](docs/reference.md)'de. Bu dosyayı `scripts/gen_docs.py` koddan üretir, CI da güncel olup olmadığını denetler.
+Araçların argümanları ve <!-- gen:checks -->19<!-- /gen:checks --> kontrolün tamamı [docs/reference.md](docs/reference.md)'de. Bu dosyayı `scripts/gen_docs.py` koddan üretir, CI da güncel olup olmadığını denetler.
 
 ## Nasıl çalışır
 

@@ -2,7 +2,7 @@
 
 # Reference
 
-ardupilot-mcp 1.0.0: 12 MCP tools and 18 checks. Every tool is read-only.
+ardupilot-mcp 1.0.0: 12 MCP tools and 19 checks. Every tool is read-only.
 
 ## Tools
 
@@ -141,6 +141,7 @@ Each check runs only when its messages are in the log and the vehicle and log ty
 | `attitude` | attitude | copter, heli, plane | `.bin`, `.tlog` | `ATT` | Compares demanded vs achieved roll/pitch/yaw from ATT to catch loss of control. |
 | `motors` | motors | copter | `.bin`, `.tlog` | `RCOU` | Per-motor PWM output balance and saturation from RCOU (multirotor only). |
 | `thrust_loss` | motors | copter, heli | `.bin`, `.tlog` | — | Firmware thrust-loss detection (message, ERR, MOTB thrust boost) and the same signature in the motor outputs: one motor at maximum, its geometric opposite lowest, sinking at high throttle. |
+| `esc` | motors | copter | `.bin`, `.tlog` | — | Motors losing power while still commanded (battery current collapses, voltage holds, the log continues) and ESC temperatures against the ESC firmware's thermal-protection range. |
 | `rcin` | rc | all | `.bin`, `.tlog` | `RCIN` | Detects RC link loss while armed: RCI2.Flags 'no valid input' (4.x), else all primary channels dropping to a low/no-pulse value together. |
 | `timing` | performance | all | `.bin` | — | Logging gaps / main-loop stalls (IMU/ATT/VIBE timing) and PM scheduler long-loop overruns. |
 | `config` | config | all | `.bin`, `.tlog` | — | Risky safety configuration in parameters (ARMING_CHECK, BATT_MONITOR, FS_THR_ENABLE). |
