@@ -83,10 +83,13 @@ All notable changes to this project are documented here. The format is based on
   determined"; it now has no onset and says the vehicle never armed.
 - The vehicle profile estimated a hover throttle for a plane from its cruise throttle; only a
   multirotor gets that estimate.
-- Real-crash benchmark (48 of 49 logs; one Google Drive file no longer matches its sha256):
-  false criticals 97 -> 49 (vibration 29 -> 0, ekf 25 -> 14, gps 6 -> 1), top-1 10 -> 11 of 40, top-3
-  21 -> 20. The top-3 hit lost (145616_2) came from a compass-variance rejection after the
-  vehicle had disarmed; the labelled cause is the EKF height running away in flight.
+- Real-crash benchmark, measured on 48 of the 49 logs (the Google Drive file of 145232_0 no
+  longer matches its sha256, so `bench/results.json` keeps its 1.0.0 numbers until it can be
+  refreshed with every log): logs with a false critical 35 -> 30, false criticals 97 -> 49
+  (vibration 29 -> 0, ekf 25 -> 14, gps 6 -> 1, events 5 -> 2), top-1 10 -> 12 of 40, top-3
+  21 -> 21. One top-3 hit was lost (145616_2): it came from a compass-variance rejection after
+  the vehicle had disarmed, while the labelled cause is the EKF height running away in flight;
+  one was gained (132194_0, the ESC-overheating crash, now top-1 through the `esc` check).
 - Corrupt logs passed as clean. Integrity was judged from pymavlink's "bad header"
   warnings, but its default compiled indexer prints them below Python, where they cannot be
   captured. A log with garbage in the middle, or random bytes named `.bin`, came back with
