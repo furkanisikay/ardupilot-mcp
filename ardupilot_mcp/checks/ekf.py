@@ -35,7 +35,7 @@ import numpy as np
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
-from .util import intervals_above, make_finding
+from .util import intervals_above, longest_run_above, make_finding
 
 # Variance test ratios are normalised: 1.0 is the rejection boundary, so a peak
 # above it means the EKF actually distrusted/rejected that sensor's data.
@@ -139,12 +139,12 @@ class EKFCheck(Check):
                 "while it was NOT the primary core flying the vehicle, so it did not affect navigation."
             )
             rec = None
-        elif vmax > CRIT_RATIO and _longest_run(t_sel, v_sel, CRIT_RATIO) < CRIT_MIN_DURATION_S:
+        elif vmax > CRIT_RATIO and longest_run_above(t_sel, v_sel, CRIT_RATIO) < CRIT_MIN_DURATION_S:
             sev = Severity.WARN
             threshold = CRIT_RATIO
             msg = (
                 f"EKF {sensor} variance peaked at {vmax:.2f} in {mtype}.{field}, above the "
-                f"{CRIT_RATIO:.1f} rejection boundary for at most {_longest_run(t_sel, v_sel, CRIT_RATIO):.1f} s. "
+                f"{CRIT_RATIO:.1f} rejection boundary for at most {longest_run_above(t_sel, v_sel, CRIT_RATIO):.1f} s. "
                 f"The firmware's EKF failsafe acts only after {CRIT_MIN_DURATION_S:.0f} s, so this was a brief "
                 f"rejection of {sensor} data, not a lasting loss of trust."
             )
@@ -156,7 +156,7 @@ class EKFCheck(Check):
             threshold = CRIT_RATIO
             msg = (
                 f"EKF {sensor} variance peaked at {vmax:.2f} (>{CRIT_RATIO:.1f}) in {mtype}.{field} and stayed "
-                f"above it for {_longest_run(t_sel, v_sel, CRIT_RATIO):.1f} s "
+                f"above it for {longest_run_above(t_sel, v_sel, CRIT_RATIO):.1f} s "
                 f"— the estimator was rejecting {sensor} data. A test ratio above {CRIT_RATIO:.1f} "
                 f"means the {sensor} innovation exceeded the filter's modelled uncertainty, so that "
                 "sensor was distrusted; sustained rejection leads to position/altitude drift or an EKF failsafe."
@@ -211,24 +211,3 @@ class EKFCheck(Check):
                 samples={"lane_switches": int(changes.size)},
             )
         ]
-
-
-def _longest_run(times: np.ndarray, vals: np.ndarray, threshold: float) -> float:
-    """Longest time ``vals`` stayed above ``threshold``, counting each sample as one period.
-
-    A run of n samples spans n sample periods (10 checks at 10 Hz is the firmware's 1 s), so
-    one median sample spacing is added to the first-to-last-sample time. Samples dropped by a
-    mask (on the ground, another core primary) end a run rather than join two.
-    """
-    if times.size == 0:
-        return 0.0
-    dt = float(np.median(np.diff(times))) if times.size > 1 else 0.0
-    idx = np.flatnonzero(vals > threshold)
-    if idx.size == 0:
-        return 0.0
-    t = times[idx]
-    # A run breaks where a sample in between was not above, or where time jumps.
-    breaks = np.flatnonzero((np.diff(idx) > 1) | (np.diff(t) > 3 * dt)) + 1
-    bounds = np.concatenate(([0], breaks, [idx.size]))
-    longest = max(float(t[b - 1] - t[a]) + dt for a, b in zip(bounds[:-1], bounds[1:], strict=True))
-    return round(longest, 6)  # 5 samples at 5 Hz is 1.0 s, not 0.9999999

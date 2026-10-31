@@ -23,8 +23,14 @@ All notable changes to this project are documented here. The format is based on
   1.0 was CRITICAL. They are now judged in flight, and a rejection is CRITICAL when it lasts
   1 s, as long as Copter's own EKF failsafe waits (EKF_CHECK_ITERATIONS_MAX); a shorter one
   is a WARN.
+- GPS: a single sample without a fix or with fewer than 4 satellites was CRITICAL, the time
+  on the ground between two flights of one log was judged as flight, and a receiver that
+  never had a fix (indoors) got a CRITICAL "0 satellites" on top of "never achieved a 3D
+  fix". A fix loss, satellite drop or HDOP excursion is now CRITICAL when it lasts 1 s, each
+  armed interval is judged on its own, and a receiver with no fix in flight gets the fix
+  finding only.
 - Real-crash benchmark (48 of 49 logs; one Google Drive file no longer matches its sha256):
-  false criticals 97 -> 54 (vibration 29 -> 0, ekf 25 -> 14), top-1 10 -> 11 of 40, top-3
+  false criticals 97 -> 49 (vibration 29 -> 0, ekf 25 -> 14, gps 6 -> 1), top-1 10 -> 11 of 40, top-3
   21 -> 20. The top-3 hit lost (145616_2) came from a compass-variance rejection after the
   vehicle had disarmed; the labelled cause is the EKF height running away in flight.
 - Corrupt logs passed as clean. Integrity was judged from pymavlink's "bad header"

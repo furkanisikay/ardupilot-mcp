@@ -238,3 +238,37 @@ def test_primary_loss_stays_critical_when_auto_switch_disabled():
     log = make_flight_log({"GPS": recs}, params={"GPS_AUTO_SWITCH": 0})
     loss = [f for f in GpsCheck().run(log) if "lost 3D fix" in f.title]
     assert loss and loss[0].severity == Severity.CRITICAL
+
+
+def test_single_sample_dropout_is_a_warning():
+    # One 0.2 s sample with no fix and 3 satellites: a dropout the EKF rides through, not a loss.
+    status = [3] * 25 + [1] + [3] * 24
+    nsats = [12] * 25 + [3] + [12] * 24
+    recs = build_series(0.0, 5.0, Status=status, NSats=nsats, HDop=[0.8] * 50)
+    findings = GpsCheck().run(_log(recs))
+    assert findings and all(f.severity == Severity.WARN for f in findings)
+    assert any("dropped out briefly" in f.title for f in findings)
+
+
+def test_no_fix_ever_reports_the_fix_not_the_satellite_count():
+    # Indoors: 0 satellites and no fix for the whole flight. "Never achieved a 3D fix" says
+    # it; a separate critical "0 satellites" finding would only repeat it louder.
+    recs = build_series(0.0, 5.0, Status=[1] * 50, NSats=[0] * 50, HDop=[99.99] * 50)
+    findings = GpsCheck().run(_log(recs))
+    assert [f.title for f in findings] == ["GPS never achieved a 3D fix"]
+    assert findings[0].severity == Severity.WARN
+
+
+def test_ground_time_between_two_flights_is_not_judged():
+    # Two flights; the GPS loses its fix only while disarmed between them.
+    status = [3] * 20 + [1] * 20 + [3] * 20
+    nsats = [12] * 20 + [2] * 20 + [12] * 20
+    recs = build_series(0.0, 5.0, Status=status, NSats=nsats, HDop=[0.8] * 60)
+    ev = [
+        {"TimeUS": 0, "Id": 10},
+        {"TimeUS": 3_800_000, "Id": 11},
+        {"TimeUS": 8_200_000, "Id": 10},
+        {"TimeUS": 11_800_000, "Id": 11},
+    ]
+    log = make_flight_log({"GPS": recs, "EV": ev})
+    assert GpsCheck().run(log) == []

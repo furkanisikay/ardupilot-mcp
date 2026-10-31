@@ -15,7 +15,9 @@ degrade position-hold / RTL reliability:
   and ArduPilot's default ``GPS_HDOP_GOOD`` arming gate is 1.4; rising HDOP
   means the satellite geometry is poor and the horizontal position is loose.
 
-Emits at most one finding per concern (fix, sats, hdop) per receiver, each
+Judged within the armed intervals. A fix loss, satellite drop or HDOP excursion
+is critical when it lasts 1 s; a shorter one is a dropout (warning). Emits at most
+one finding per concern (fix, sats, hdop) per receiver, each
 citing the concrete min/max value, threshold and time window.
 
 Multiple receivers: modern firmware logs every GPS under the one ``GPS`` message,
@@ -35,7 +37,7 @@ import numpy as np
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
-from .util import intervals_above, make_finding, safe_max, safe_min
+from .util import intervals_above, longest_run_above, make_finding, safe_max, safe_min
 
 # Fix-type thresholds (ArduPilot GPS Status enum).
 FIX_3D = 3  # Status >= 3 is a usable 3D fix.
@@ -54,6 +56,23 @@ HDOP_CRIT = 5.0  # above 5 the horizontal position is effectively unusable.
 # Without a fix the receiver reports a sentinel HDOP (~99.99); that is "no signal",
 # not real dilution, and is already covered by the fix/sats findings.
 HDOP_SENTINEL = 50.0
+# Design choice: a fix loss, satellite drop or HDOP excursion is critical when it lasts this
+# long. A shorter one is a dropout of a sample or two (GPS logs at 5-10 Hz), which the EKF
+# rides through on its inertial prediction. On the 48 benchmark crash logs every such run
+# in flight lasted either 0.2 s (one sample) or 4.4 s and more.
+LOSS_MIN_DURATION_S = 1.0
+
+
+def _in_flight(log: FlightLog, times: np.ndarray, *arrays: np.ndarray) -> tuple[np.ndarray, ...]:
+    """``times`` and ``arrays`` restricted to the armed intervals.
+
+    Each arm-to-disarm interval on its own: a log with several flights would otherwise
+    count the time on the ground between them. Unknown arming keeps every sample.
+    """
+    mask = log.armed_mask(times)
+    if mask is None:
+        return (times, *arrays)
+    return (times[mask], *(a[mask] for a in arrays))
 
 
 @register_check
@@ -70,7 +89,6 @@ class GpsCheck(Check):
         # look like in-flight GPS failures.
         if log.never_armed:
             return []  # fix and satellite quality are judged in flight; this log never armed
-        window = log.armed_window()
         insts = log.instances("GPS")
         receivers = [i for i in insts if i < BLENDED_INSTANCE] or insts
         multi = len(receivers) > 1
@@ -78,7 +96,7 @@ class GpsCheck(Check):
         for inst in receivers:
             label = f"GPS{inst + 1}" if multi else "GPS"
             for sub in (self._fix_finding, self._sats_finding, self._hdop_finding):
-                f = sub(log, window, inst, label)
+                f = sub(log, inst, label)
                 if f is None:
                     continue
                 if multi:
@@ -114,8 +132,8 @@ class GpsCheck(Check):
                 )
                 return
 
-    def _fix_finding(self, log: FlightLog, window, inst: int = 0, label: str = "GPS") -> Finding | None:
-        times, status = log.clip_to_window(*log.series("GPS", "Status", inst), window)
+    def _fix_finding(self, log: FlightLog, inst: int = 0, label: str = "GPS") -> Finding | None:
+        times, status = _in_flight(log, *log.series("GPS", "Status", inst))
         if status.size == 0:
             return None
 
@@ -155,14 +173,21 @@ class GpsCheck(Check):
         min_after = safe_min(post_status) or 0.0
         t0 = loss_intervals[0].start_s
         t1 = loss_intervals[-1].end_s
+        longest = longest_run_above(post_times, -post_status, float(-FIX_3D))
+        lasting = longest >= LOSS_MIN_DURATION_S
         return make_finding(
             self.id,
-            Severity.CRITICAL,
-            f"{label} lost 3D fix during the flight",
+            Severity.CRITICAL if lasting else Severity.WARN,
+            f"{label} lost 3D fix during the flight" if lasting else f"{label} 3D fix dropped out briefly",
             f"{label} first reached a 3D fix at t={first_fix_t:.1f}s but then dropped below 3D "
             f"(Status fell to {int(min_after)}) in {len(loss_intervals)} window(s) between "
-            f"t={t0:.1f}s and t={t1:.1f}s. A mid-flight fix loss removes GPS position aiding "
-            "and can trigger EKF failsafes or position drift.",
+            f"t={t0:.1f}s and t={t1:.1f}s, the longest {longest:.1f} s. "
+            + (
+                "A mid-flight fix loss removes GPS position aiding and can trigger EKF failsafes or position drift."
+                if lasting
+                else f"No dropout lasted {LOSS_MIN_DURATION_S:.0f} s; the EKF rides through a missing sample or "
+                "two on its inertial prediction."
+            ),
             recommendation="Investigate GPS dropout cause (interference, antenna, power) before relying on GPS modes again.",
             time_start_s=t0,
             time_end_s=t1,
@@ -171,13 +196,19 @@ class GpsCheck(Check):
                 "first_fix_time_s": round(first_fix_t, 1) if first_fix_t is not None else 0.0,
                 "min_Status_after_fix": int(min_after),
                 "loss_windows": len(loss_intervals),
+                "longest_loss_s": round(longest, 1),
                 "fix_3d_threshold": FIX_3D,
             },
         )
 
-    def _sats_finding(self, log: FlightLog, window, inst: int = 0, label: str = "GPS") -> Finding | None:
-        times, nsats = log.clip_to_window(*log.series("GPS", "NSats", inst), window)
+    def _sats_finding(self, log: FlightLog, inst: int = 0, label: str = "GPS") -> Finding | None:
+        times, (nsats, status) = log.series_many("GPS", ["NSats", "Status"], inst)
+        times, nsats, status = _in_flight(log, times, nsats, status)
         if nsats.size == 0:
+            return None
+        if np.isfinite(status).any() and not np.any(status >= FIX_3D):
+            # Never a 3D fix in flight (indoors, no sky view, no GPS in use): the fix finding
+            # already says so, and a satellite count of 0 adds nothing to it.
             return None
         nmin = safe_min(nsats)
         if nmin is None or nmin >= SATS_WARN:
@@ -188,7 +219,8 @@ class GpsCheck(Check):
         t0 = low_intervals[0].start_s if low_intervals else None
         t1 = low_intervals[-1].end_s if low_intervals else None
 
-        if nmin < SATS_CRIT:
+        longest_crit = longest_run_above(times, -nsats, float(-SATS_CRIT))
+        if nmin < SATS_CRIT and longest_crit >= LOSS_MIN_DURATION_S:
             sev = Severity.CRITICAL
             msg = (
                 f"{label} satellite count dropped to {int(nmin)} (below {SATS_CRIT}); with this few "
@@ -196,6 +228,13 @@ class GpsCheck(Check):
                 f"was {int(nmin)}."
             )
             rec = "Treat GPS position as unreliable; check antenna/sky view and interference before GPS-dependent flight."
+        elif nmin < SATS_CRIT:
+            sev = Severity.WARN
+            msg = (
+                f"{label} satellite count dipped to {int(nmin)} (below {SATS_CRIT}) for at most "
+                f"{longest_crit:.1f} s, a dropout rather than a loss (none lasted {LOSS_MIN_DURATION_S:.0f} s)."
+            )
+            rec = "Check the GPS antenna, cable and interference sources if dropouts recur."
         else:
             sev = Severity.WARN
             msg = (
@@ -220,18 +259,17 @@ class GpsCheck(Check):
             },
         )
 
-    def _hdop_finding(self, log: FlightLog, window, inst: int = 0, label: str = "GPS") -> Finding | None:
+    def _hdop_finding(self, log: FlightLog, inst: int = 0, label: str = "GPS") -> Finding | None:
         # HDOP only means something when there's a fix. Drop no-fix sentinel
         # readings (~99.99) so we don't mislabel "no signal" as "poor geometry"
         # (the fix/sats findings already cover the no-fix case). Status comes from the
         # same records; without it, only the sentinel is dropped.
         times, (hdop, status) = log.series_many("GPS", ["HDop", "Status"], inst)
         if hdop.size:
-            _, status = log.clip_to_window(times, status, window)
-            times, hdop = log.clip_to_window(times, hdop, window)
+            times, hdop, status = _in_flight(log, times, hdop, status)
             valid = (status >= FIX_3D) & (hdop < HDOP_SENTINEL)
         else:
-            times, hdop = log.clip_to_window(*log.series("GPS", "HDop", inst), window)
+            times, hdop = _in_flight(log, *log.series("GPS", "HDop", inst))
             valid = hdop < HDOP_SENTINEL
         if hdop.size == 0:
             return None
@@ -242,7 +280,8 @@ class GpsCheck(Check):
         if hmax is None or hmax <= HDOP_WARN:
             return None
 
-        if hmax > HDOP_CRIT:
+        longest_crit = longest_run_above(times, hdop, HDOP_CRIT)
+        if hmax > HDOP_CRIT and longest_crit >= LOSS_MIN_DURATION_S:
             sev = Severity.CRITICAL
             threshold = HDOP_CRIT
             msg = (
@@ -253,9 +292,15 @@ class GpsCheck(Check):
         else:
             sev = Severity.WARN
             threshold = HDOP_WARN
+            brief = (
+                f" It was above {HDOP_CRIT:.0f} for at most {longest_crit:.1f} s, a dropout rather than lasting "
+                "poor geometry."
+                if hmax > HDOP_CRIT
+                else ""
+            )
             msg = (
                 f"{label} HDOP peaked at {hmax:.1f} (above {HDOP_WARN:.1f}); satellite geometry is "
-                "poor and the horizontal position is loose. Good HDOP is under ~1.5."
+                f"poor and the horizontal position is loose. Good HDOP is under ~1.5.{brief}"
             )
             rec = "Aim for HDOP under ~1.5 before arming in GPS modes; improve antenna placement/sky view."
 
