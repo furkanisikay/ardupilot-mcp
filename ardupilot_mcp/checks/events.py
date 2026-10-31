@@ -97,10 +97,13 @@ class EventsCheck(Check):
             if r.get("Id") in (17, 18) and _is_number(r.get("timestamp"))
         ]
         for rec in log.get("ARM"):
-            state, method, ts = rec.get("ArmState"), rec.get("Method"), rec.get("timestamp")
-            if not (_is_number(state) and _is_number(method) and _is_number(ts)) or state != 0:
+            state, m_raw, ts = rec.get("ArmState"), rec.get("Method"), rec.get("timestamp")
+            if (
+                not (isinstance(m_raw, (int, float)) and isinstance(ts, (int, float)) and _is_number(state))
+                or state != 0
+            ):
                 continue
-            method, t = int(method), float(ts)
+            method, t = int(m_raw), float(ts)
             if method in ARM_METHODS_GROUND_OR_CRASH:
                 continue
             flying = log.flying_mask(np.array([t - INFLIGHT_LOOKBACK_S]))
