@@ -36,6 +36,11 @@ MIN_CONSISTENCY = 0.75
 # A hold stretch shorter than this (after the mode change settles) is not judged.
 MIN_HOLD_S = 10.0
 SETTLE_S = 2.0
+# Design choice: while the hold target itself moves faster than this (the pilot repositioning
+# with the sticks, flying circles in LOITER), the vehicle trails a moving point and its error
+# turns with the target's path; those samples are not counted. In the QLOITER toilet bowl
+# below the target never moved faster than 2 m/s.
+TARGET_SPEED_MAX = 2.0
 # Validation: on the 48 benchmark logs (34 hold stretches) the largest net turning above
 # 0.5 m was 0.8 turns; a QuadPlane that toilet-bowled in QLOITER after a fan was fitted
 # under its compass turned 3.8 times, and 0.2-0.3 times without the fan (forum thread 140262).
@@ -55,14 +60,17 @@ class CirclingCheck(Check):
 
     def run(self, log: FlightLog) -> list[Finding]:
         modes = HOLD_MODES.get(log.meta.vehicle_kind or "copter", HOLD_MODES["copter"])
-        tn, (tpn, pn) = log.series_many("PSCN", ["TPN", "PN"])
-        te, (tpe, pe) = log.series_many("PSCE", ["TPE", "PE"])
+        tn, (tpn, pn, tvn) = log.series_many("PSCN", ["TPN", "PN", "TVN"])
+        te, (tpe, pe, tve) = log.series_many("PSCE", ["TPE", "PE", "TVE"])
         n = min(tn.size, te.size)
         if n < 50:
             return []
         t = tn[:n]
         # PSCN and PSCE are written together each cycle; pair them by index.
         err_n, err_e = (pn - tpn)[:n], (pe - tpe)[:n]
+        target_speed = np.hypot(tvn[:n], tve[:n])
+        # Without a logged target velocity (NaN), the target is taken as still.
+        target_still = ~(target_speed > TARGET_SPEED_MAX)
         ok = np.isfinite(t) & np.isfinite(err_n) & np.isfinite(err_e)
         hold = log.mode_mask(t, modes) & ok
         flying = log.flying_mask(t)
@@ -76,9 +84,10 @@ class CirclingCheck(Check):
                 continue
             keep = ts >= ts[0] + SETTLE_S
             ts, en, ee = ts[keep], err_n[seg][keep], err_e[seg][keep]
+            still = target_still[seg][keep]
             r = np.hypot(en, ee)
             ang = np.unwrap(np.arctan2(ee, en))
-            big = (r[1:] > ERROR_FLOOR_M) & (r[:-1] > ERROR_FLOOR_M)
+            big = (r[1:] > ERROR_FLOOR_M) & (r[:-1] > ERROR_FLOOR_M) & still[1:] & still[:-1]
             d = np.diff(ang)[big]
             if d.size == 0:
                 continue
@@ -98,8 +107,8 @@ class CirclingCheck(Check):
                 self.id,
                 Severity.WARN,
                 "Circling while holding position (toilet bowl)",
-                f"Between t={t0:.0f}s and t={t1:.0f}s in a position-hold mode the position error (PSCN/PSCE, "
-                f"position minus target) turned {abs(net):.1f} times {direction} around the target, "
+                f"Between t={t0:.0f}s and t={t1:.0f}s in a position-hold mode, with the hold target still "
+                f"(moving under {TARGET_SPEED_MAX:.0f} m/s), the position error (PSCN/PSCE, position minus target) turned {abs(net):.1f} times {direction} around the target, "
                 f"{consistency * 100:.0f}% of its turning in that one direction, at a median {radius:.1f} m off. "
                 "The vehicle was orbiting the point it tried to hold. The wiki ties this circling to a compass "
                 "problem, most likely magnetic interference from power cables under the autopilot; a heading "

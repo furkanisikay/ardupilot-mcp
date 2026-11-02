@@ -225,3 +225,17 @@ def test_plane_stabilize_is_not_tuning_evidence():
     mode = [{"TimeUS": 0, "Mode": 2, "ModeNum": 2, "Rsn": 1}]
     log = make_flight_log({"ATT": recs, "MODE": mode}, vehicle_type="ArduPlane", vehicle_kind="plane")
     assert analyze_tuning(log, area="pid") == []
+
+
+def test_pid_advice_counts_only_the_samples_it_judged():
+    # 900 samples in MANUAL (no target) and 100 in FBWA: the RMS uses 100 and must say so.
+    recs = _att_records(50.0, 1000, roll_err_deg=8.0)
+    mode = [
+        {"TimeUS": 0, "Mode": 0, "ModeNum": 0, "Rsn": 1},
+        {"TimeUS": 18_000_000, "Mode": 5, "ModeNum": 5, "Rsn": 1},
+    ]
+    log = make_flight_log({"ATT": recs, "MODE": mode}, vehicle_type="ArduPlane", vehicle_kind="plane")
+    rec = analyze_tuning(log, area="pid")
+    assert rec and rec[0].evidence.samples["samples"] == 100.0
+    assert "over 100 samples" in rec[0].explanation
+    assert rec[0].evidence.time_start_s >= 18.0

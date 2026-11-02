@@ -34,6 +34,8 @@ _MULTIROTOR = {"copter", "heli", None}
 # Design choice: a pack is outside MOT_BAT_VOLT_MAX/_MIN only when it is 2% beyond it (the
 # 5th / 95th voltage percentile while armed), so sensor calibration error is not a finding.
 VOLT_COMP_MARGIN = 0.02
+# MOT_THST_EXPO default (AP_MOTORS_THST_EXPO_DEFAULT, AP_MotorsMulticopter.h).
+THST_EXPO_DEFAULT = 0.65
 # Design choice: a plane above AIRSPEED_MAX for this share of its flight flies outside its
 # configured speed range. On the benchmark planes the share was 0.33-0.86 where the thread
 # found the airspeed parameters wrong and at most 0.04 elsewhere.
@@ -185,7 +187,8 @@ class ParamAuditCheck(Check):
 
         The firmware clamps the pack's resting voltage into [MOT_BAT_VOLT_MIN,
         MOT_BAT_VOLT_MAX] (MIN raised to 60% of MAX) and scales the thrust gains by
-        1 / lift_max from it; MAX <= 0 or MIN >= MAX disables it
+        1 / lift_max from it (lift_max = r (1 - MOT_THST_EXPO) + MOT_THST_EXPO r^2, r = voltage / MAX);
+        MAX <= 0, MIN >= MAX or a voltage below 0.25 x MIN disables it
         (Thrust_Linearization::update_lift_max_from_batt_voltage, AP_Motors). A pack that
         stays above MAX all flight gets no compensation; one that stays below MIN gets its
         gains raised by a constant factor all flight.
@@ -218,9 +221,14 @@ class ParamAuditCheck(Check):
                 "for the whole flight: the controller's gains did not follow the pack as it discharged."
             )
             rec = "Set MOT_BAT_VOLT_MAX to 4.2 V x cells and MOT_BAT_VOLT_MIN to 3.3 V x cells for this pack."
-        elif hi < eff_min * (1 - VOLT_COMP_MARGIN):
+        elif hi < eff_min * (1 - VOLT_COMP_MARGIN) and lo >= 0.25 * vmin:
+            # Below 0.25 x MOT_BAT_VOLT_MIN the firmware turns compensation off instead.
             title = "Voltage compensation pinned at its minimum (MOT_BAT_VOLT_MIN above the pack)"
-            gain = 1.0 / (eff_min / vmax)
+            # gain = 1 / lift_max, lift_max = r (1 - expo) + expo r^2, r = voltage / MAX
+            # (Thrust_Linearization::update_lift_max_from_batt_voltage; MOT_THST_EXPO default 0.65).
+            expo = min(1.0, max(-1.0, float(log.params.get("MOT_THST_EXPO", THST_EXPO_DEFAULT))))
+            r = eff_min / vmax
+            gain = 1.0 / (r * (1 - expo) + expo * r * r)
             msg = (
                 f"While armed the pack's {'resting ' if field == 'VoltR' else ''}voltage stayed below "
                 f"{hi:.1f} V ({src}.{field}, 95th percentile), but the compensation's floor is {eff_min:.1f} V "

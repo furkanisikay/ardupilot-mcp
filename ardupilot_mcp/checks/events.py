@@ -59,6 +59,8 @@ INFLIGHT_LOOKBACK_S = 0.3
 # A land event (EV LAND_COMPLETE_MAYBE / LAND_COMPLETE) this long before a disarm puts the
 # disarm on the ground (design choice; the land detector settles within about a second).
 LAND_EVENT_WINDOW_S = 5.0
+# Records written by the disarm itself share its timestamp to within a scheduler tick.
+SAME_INSTANT_S = 0.05
 
 
 @register_check
@@ -109,11 +111,12 @@ class EventsCheck(Check):
             flying = log.flying_mask(np.array([t - INFLIGHT_LOOKBACK_S]))
             if flying is None or not bool(flying[0]):
                 continue
-            # Copter writes LAND_COMPLETE_MAYBE (17) as it settles and LAND_COMPLETE (18) once the
-            # disarm itself forces it, so a disarm right after touchdown (the pilot's switch)
-            # still reads "flying" a moment before; a land event in the seconds before, or at the
-            # same instant, means it was on the ground (ArduCopter/land_detector.cpp).
-            if any(t - LAND_EVENT_WINDOW_S <= lt <= t + 0.05 for lt in land_events):
+            # Copter writes LAND_COMPLETE_MAYBE (17) as it settles on the ground, so a disarm
+            # right after touchdown (the pilot's switch) still reads "flying" a moment before; a
+            # land event in the seconds before it means it was on the ground. Every disarm,
+            # one in the air included, also writes 17 and 18 at its own instant, because
+            # disarming sets the land state (ArduCopter/land_detector.cpp); those are not counted.
+            if any(t - LAND_EVENT_WINDOW_S <= lt < t - SAME_INSTANT_S for lt in land_events):
                 continue
             name = ARM_METHODS.get(method, f"method {method}")
             commanded = method in ARM_METHODS_COMMANDED

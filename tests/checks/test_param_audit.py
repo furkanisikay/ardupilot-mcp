@@ -185,3 +185,11 @@ def test_gps_and_rangefinder_height_sources_are_noted():
         assert [x.severity for x in f] == [Severity.INFO], src
     baro = make_flight_log(params={"EK3_SRC1_POSZ": 1}, vehicle_kind="copter")
     assert not [x for x in ParamAuditCheck().run(baro) if "height source" in x.title]
+
+
+def test_pinned_compensation_gain_follows_the_firmware_formula():
+    # 4S pack with 6S settings: r = 19.8 / 25.2, expo 0.65 -> gain 1 / (r*0.35 + 0.65*r^2) = 1.48.
+    volts = [16.4 - i * 0.005 for i in range(400)]
+    log = _bat_log(volts, {"MOT_BAT_VOLT_MAX": 25.2, "MOT_BAT_VOLT_MIN": 19.8})
+    f = [x for x in ParamAuditCheck().run(log) if "pinned" in x.title]
+    assert f and "1.48x" in f[0].explanation

@@ -189,3 +189,22 @@ def test_vibration_on_the_ground_is_ignored():
     log = make_flight_log({"VIBE": recs, "EV": [{"TimeUS": 4_000_000, "Id": 10}]})
     assert isinstance(log, FlightLog)
     assert not [f for f in VibrationCheck().run(log) if f.title.startswith("Elevated VibeZ")]
+
+
+def test_spikes_in_two_flights_are_not_joined_across_the_ground_time():
+    # Two flights (0-50 s, 100-150 s), each with a 0.5 s spike at 70 m/s^2 next to the gap.
+    n = 1500
+    vz = [12.0] * n
+    for i in range(495, 500):
+        vz[i] = 70.0
+    for i in range(1000, 1005):
+        vz[i] = 70.0
+    recs = _modern({"VibeZ": vz}, {}, n=n)
+    ev = [{"TimeUS": 0, "Id": 10}, {"TimeUS": 50_000_000, "Id": 11}, {"TimeUS": 100_000_000, "Id": 10}]
+    f = [
+        x
+        for x in VibrationCheck().run(make_flight_log({"VIBE": recs, "EV": ev}))
+        if x.title.startswith("Elevated VibeZ")
+    ]
+    assert [x.severity for x in f] == [Severity.INFO]
+    assert f[0].evidence.samples["longest_above_60_s"] <= 1.0

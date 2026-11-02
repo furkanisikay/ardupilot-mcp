@@ -96,14 +96,15 @@ def _analyze_pid(log: FlightLog) -> list[TuningRecommendation]:
 
             keep &= ~log.mode_mask(t_act, PLANE_NO_TARGET_MODES)
         err = err[keep]
-        if err.size == 0:
+        t_kept = t_act[keep]
+        n = int(err.size)  # the samples the RMS is computed over, not the whole log
+        if n == 0:
             continue
         rms = float(np.sqrt(np.mean(err**2)))
         peak = float(np.max(np.abs(err)))
         if rms <= PID_RMS_WARN_DEG:
             continue
-        t0 = float(t_act[0]) if t_act.size else None
-        t1 = float(t_act[min(n, t_act.size) - 1]) if t_act.size else None
+        t0, t1 = float(t_kept[0]), float(t_kept[-1])
         explanation = (
             f"The {label} axis tracks its target poorly: RMS error {rms:.1f} deg "
             f"(peak {peak:.1f} deg) between desired and actual over {n} samples. "

@@ -196,3 +196,11 @@ def test_disarm_is_not_judged_without_a_land_detector_record():
     arm = [{"TimeUS": 20_000_000, "ArmState": 0, "Method": 7}]
     log = make_flight_log({"EV": ev, "ARM": arm}, vehicle_kind="copter")
     assert not [x for x in EventsCheck().run(log) if x.title.startswith("Disarmed in flight")]
+
+
+def test_land_events_written_by_the_disarm_itself_do_not_hide_it():
+    # The firmware writes LAND_COMPLETE (18) and LAND_COMPLETE_MAYBE (17) at the disarm instant,
+    # in the air too; only land events before the disarm put it on the ground.
+    land = [{"TimeUS": 20_000_000, "Id": 18}, {"TimeUS": 20_000_000, "Id": 17}]
+    f = [x for x in EventsCheck().run(_disarm_log(7, land)) if x.title.startswith("Disarmed in flight")]
+    assert [x.severity for x in f] == [Severity.WARN]

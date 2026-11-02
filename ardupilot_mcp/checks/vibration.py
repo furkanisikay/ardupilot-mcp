@@ -26,7 +26,7 @@ import numpy as np
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
-from .util import fraction_above, intervals_above, make_finding
+from .util import fraction_above, intervals_above, longest_run_above, make_finding
 
 WARN_MS2 = 30.0
 CRIT_MS2 = 60.0
@@ -113,8 +113,9 @@ class VibrationCheck(Check):
             return None
         frac_warn = fraction_above(vals, WARN_MS2)
         frac_crit = fraction_above(vals, CRIT_MS2)
-        crit_runs = intervals_above(times, vals, CRIT_MS2)
-        longest_crit = max((iv.duration_s for iv in crit_runs), default=0.0)
+        # Runs break where time jumps (the ground time between two flights is masked out),
+        # so a spike before one landing and one after the next take-off are not one run.
+        longest_crit = longest_run_above(times, vals, CRIT_MS2)
         where = f" on IMU{imu}" if multi else ""
         if longest_crit >= CRIT_MIN_DURATION_S or frac_crit >= SUSTAINED_FRACTION:
             sev = Severity.CRITICAL
