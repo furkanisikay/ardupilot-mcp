@@ -15,8 +15,10 @@ alone misses most real losses. Firmware 4.x also logs ``RCI2.Flags`` right after
 ``RCIN``: bit 0 HAS_VALID_INPUT ("receiving good RC values") and bit 1
 IN_RC_FAILSAFE (Copter-4.6.3 libraries/AP_Logger/AP_Logger.h RCLoggingFlags,
 LogFile.cpp Write_RCIN). When RCI2 is present it is the authoritative signal; the
-PWM heuristic is the fallback for older logs. Only armed time is judged: a
-receiver with no transmitter on the bench before arming is not a link loss.
+PWM heuristic is the fallback for older logs. Only flight is judged
+(``FlightLog.flying_mask``: armed, and airborne where the log says so): a receiver
+with no transmitter on the bench, or a failsafe tested on the ground, is not an
+in-flight link loss; the firmware's failsafe mode change is still reported.
 """
 
 from __future__ import annotations
@@ -86,7 +88,7 @@ class RCInputCheck(Check):
                 )
             ]
         lost = (flags & FLAG_HAS_VALID_INPUT) == 0
-        armed = log.armed_mask(times)
+        armed = log.flying_mask(times)
         if armed is not None:
             lost &= armed
         intervals = [
@@ -159,7 +161,7 @@ class RCInputCheck(Check):
 
         # All four primary channels simultaneously below the no-signal threshold.
         all_low_b = np.all(stack <= NO_SIGNAL_US, axis=0)
-        armed = log.armed_mask(times)
+        armed = log.flying_mask(times)
         if armed is not None:
             all_low_b &= armed
         all_low = all_low_b.astype(float)

@@ -142,3 +142,15 @@ def test_receiver_sending_its_own_failsafe_values_is_caught_despite_valid_flags(
 def test_glitch_with_the_failsafe_on_is_a_warning():
     findings = RCInputCheck().run(_glitch_log({"FS_THR_ENABLE": 1}))
     assert [(f.title, f.severity) for f in findings] == [("RC signal loss", Severity.WARN)]
+
+
+def test_rc_failsafe_tested_on_the_ground_is_not_an_in_flight_loss():
+    # Benchmark log 141676_0: a plane on the ground (isFlying 0) with the transmitter off.
+    n = 100
+    rcin = build_series(0.0, 10.0, C1=[1500.0] * n, C2=[1500.0] * n, C3=[1000.0] * n, C4=[1500.0] * n)
+    rci2 = build_series(0.0, 10.0, Flags=[1] * 30 + [2] * 40 + [1] * 30)
+    stat = [{"TimeUS": 0, "isFlying": 0}]
+    log = make_flight_log(
+        {"RCIN": rcin, "RCI2": rci2, "STAT": stat, "EV": [{"TimeUS": 0, "Id": 10}]}, vehicle_kind="plane"
+    )
+    assert RCInputCheck().run(log) == []

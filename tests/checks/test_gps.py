@@ -299,3 +299,14 @@ def test_a_5hz_receiver_with_an_odd_late_frame_is_healthy():
 
     deltas = [200.0] * 30 + [260.0] + [200.0] * 29
     assert GpsCheck().run(_rate_log(deltas)) == []
+
+
+def test_plane_armed_from_boot_is_not_judged_while_on_the_ground():
+    # Forum log 145430_0: ARMING_REQUIRE=0, so the plane is armed from boot; the GPS has no
+    # satellites for the first 30 s on the ground (STAT.isFlying 0), then a good fix.
+    gps = build_series(
+        0.0, 2.0, Status=[1] * 60 + [3] * 40, NSats=[0] * 60 + [14] * 40, HDop=[99.0] * 60 + [0.7] * 40
+    )
+    stat = [{"TimeUS": 0, "isFlying": 0}, {"TimeUS": 32_000_000, "isFlying": 1}]
+    log = make_flight_log({"GPS": gps, "STAT": stat, "EV": [{"TimeUS": 0, "Id": 10}]}, vehicle_kind="plane")
+    assert GpsCheck().run(log) == []

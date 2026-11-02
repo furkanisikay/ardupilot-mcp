@@ -15,7 +15,9 @@ degrade position-hold / RTL reliability:
   and ArduPilot's default ``GPS_HDOP_GOOD`` arming gate is 1.4; rising HDOP
   means the satellite geometry is poor and the horizontal position is loose.
 
-Judged within the armed intervals. A fix loss, satellite drop or HDOP excursion
+Judged in flight (``FlightLog.flying_mask``): armed, and airborne where the log says so, so a
+plane with ARMING_REQUIRE=0, armed from boot, is not judged while its GPS still acquires on
+the ground. A fix loss, satellite drop or HDOP excursion
 is critical when it lasts 1 s; a shorter one is a dropout (warning). Emits at most
 one finding per concern (fix, sats, hdop) per receiver, each
 citing the concrete min/max value, threshold and time window.
@@ -92,12 +94,12 @@ def _timing_unhealthy(delta_ms: np.ndarray) -> np.ndarray:
 
 
 def _in_flight(log: FlightLog, times: np.ndarray, *arrays: np.ndarray) -> tuple[np.ndarray, ...]:
-    """``times`` and ``arrays`` restricted to the armed intervals.
+    """``times`` and ``arrays`` restricted to flight (``FlightLog.flying_mask``).
 
-    Each arm-to-disarm interval on its own: a log with several flights would otherwise
-    count the time on the ground between them. Unknown arming keeps every sample.
+    Each flight on its own: a log with several flights would otherwise count the time on
+    the ground between them. Unknown arming keeps every sample.
     """
-    mask = log.armed_mask(times)
+    mask = log.flying_mask(times)
     if mask is None:
         return (times, *arrays)
     return (times[mask], *(a[mask] for a in arrays))
@@ -112,7 +114,7 @@ class GpsCheck(Check):
     description = "GPS fix quality, satellite count and HDOP from the GPS message."
 
     def run(self, log: FlightLog) -> list[Finding]:
-        # Evaluate GPS over the armed-flight window so the pre-arm acquisition
+        # Evaluate GPS over the flight window so the pre-arm acquisition
         # phase (sats climbing from 0, no fix yet) and post-land idling don't
         # look like in-flight GPS failures.
         if log.never_armed:

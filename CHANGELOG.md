@@ -68,6 +68,11 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- GPS and RC input are judged in flight, not over all armed time. A plane with ARMING_REQUIRE=0
+  is armed from boot, so its GPS acquiring satellites and its receiver binding on the ground
+  were CRITICAL (forum log 145430_0); an RC failsafe tested on the ground was a CRITICAL link
+  loss (141676_0). Plane uses STAT.isFlying, Copter its land-detector events; the firmware's
+  failsafe mode change is still reported. Benchmark false criticals 49 -> 48.
 - "GPS / rangefinder configured but no data logged" when the data was simply not logged:
   LOG_BITMASK without the GPS bit (2), or on a copter without the CTUN bit (4) that carries RFND,
   says nothing about the sensor. The logging advice names the bit instead. Three benchmark and
