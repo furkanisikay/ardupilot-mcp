@@ -254,3 +254,24 @@ def test_records_without_a_time_field_take_their_place_in_the_file(tmp_path, mon
     assert [round(r["timestamp"], 3) for r in log.get("EV")] == [1.2]
     assert [round(r["timestamp"], 3) for r in log.get("ERR")] == [0.0]
     assert log.armed_intervals() == [(pytest.approx(1.2), pytest.approx(2.9))]
+
+
+def test_pre_4x_gps_is_timed_by_its_boot_clock(tmp_path, monkeypatch):
+    # Copter 3.2 GPS: TimeMS = GPS time of week, T = boot milliseconds.
+    from tests import synth_bin
+
+    tid = synth_bin.FORMATS["GPS"][0]
+    monkeypatch.setitem(synth_bin.FORMATS, "GPS", (tid, "BIHI", ["Status", "TimeMS", "Week", "T"]))
+    msgs: list = []
+    for i in range(20):
+        msgs.append(("ATT", {"TimeUS": 20_000_000 + i * 100_000, "Roll": 0.0}))
+        if i % 5 == 0:
+            msgs.append(
+                ("GPS", {"Status": 3, "TimeMS": 44_336_000 + i * 100, "Week": 2150, "T": 20_000 + i * 100})
+            )
+    p = str(tmp_path / "gps32.bin")
+    build_bin(p, msgs, firmware=None)
+    log = parse_bin(p)
+    assert [round(float(t), 3) for t in log.times("GPS")] == [0.0, 0.5, 1.0, 1.5]
+    assert log.meta.duration_s == pytest.approx(1.9)
+    assert log.get("GPS")[0]["TimeMS"] == 44_336_000  # the GPS field itself is kept

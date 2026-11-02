@@ -68,6 +68,8 @@ All notable changes to this project are documented here. The format is based on
   the time of the last boot-clock record before it in the file. A logging gap that holds a
   re-arm is a disarmed pause (3.x logged only while armed), not a stalled loop, and a log
   re-armed with no disarm record at all no longer claims it "ended while armed".
+- Copter 3.x GPS records were timed by GPS time of week (GPS.TimeMS), hours away from the rest
+  of the log, so no GPS sample fell inside the flight; they now use their boot clock (GPS.T).
 - Bench logs judged as flights. An onboard log recorded from boot (LOG_DISARMED 1 or 3) with
   no arm record was treated as "arming unknown", so a USB-powered bench session raised a
   critical battery voltage and attitude failures. The firmware records every arm in such a

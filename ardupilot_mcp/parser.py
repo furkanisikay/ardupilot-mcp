@@ -200,8 +200,24 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
                 v = v.copy()  # detach from the gather buffer
             cols[col] = v
         out[fmt.name] = cols
+    _gps_boot_clock(out)
     _stamp_untimed(out, positions)
     return out, cut
+
+
+def _gps_boot_clock(columns: dict[str, dict[str, np.ndarray]]) -> None:
+    """Time pre-4.x GPS records by their boot clock, not by GPS time of week.
+
+    Before TimeUS, GPS and GPS2 logged ``TimeMS`` = GPS time of week (ms) and ``T`` =
+    ``hal.scheduler->millis()``, the boot clock every other message used
+    (libraries/DataFlash/LogFile.cpp, ArduCopter-3.2.1). ``T`` becomes their TimeUS.
+    """
+    for name, cols in columns.items():
+        if not name.startswith("GPS") or "TimeUS" in cols:
+            continue
+        boot, week = cols.get("T"), cols.get("Week")
+        if boot is not None and week is not None and "TimeMS" in cols and boot.dtype != object:
+            cols["TimeUS"] = boot.astype(np.float64) * 1e3
 
 
 # Records timed by the flight controller's boot clock, used to time records that carry no
