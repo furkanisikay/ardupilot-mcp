@@ -63,6 +63,14 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- RC dropouts the receiver did not report. With RCI2 in the log, only its "no valid input"
+  flag was read, so a receiver that sends its own failsafe values on a dropout (every channel
+  at 875 us while still flagged valid, a FrSky Fport link in forum thread 145881) went unseen
+  while the throttle and mode channel fell with it. The PWM signature is now checked too, and
+  it is CRITICAL when FS_THR_ENABLE is 0, since nothing then catches the low throttle; mode
+  changes during a drop are named.
+- A board-voltage dip as a vehicle hits the ground no longer reads as an in-flight brown-out:
+  CRITICAL also needs the rail under 4.6 V for 10% of the armed time (144427_0: 56%, 145881_0: 1%).
 - Board voltage (POWR.Vcc) below 4.6 V was always a CRITICAL "brown-out", including a 0.1 V dip
   on a board running at 4.64 V that kept logging. 4.6 V is LogAnalyzer's FAIL level, which this
   project reports as WARN elsewhere; it is CRITICAL now only when the recording then stops while

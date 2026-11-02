@@ -59,6 +59,10 @@ SAG_MIN_V = 1.0
 # https://ardupilot.org/copter/docs/common-diagnosing-problems-using-logs.html
 VCC_MIN_V = 4.6
 VCC_MAX_SPREAD_V = 0.3
+# Design choice: a brown-out is a rail low for at least this share of the armed time before
+# the log stops armed (144427_0: 56%); a single dip as a vehicle hits the ground is not
+# (145881_0: 1%, the motors cut by an RC glitch and the log ending on impact).
+VCC_BROWNOUT_LOW_SHARE = 0.10
 # Design choice: a median outside this is not a 5 V rail reading, so skip.
 VCC_PLAUSIBLE_MIN_V = 3.0
 VCC_PLAUSIBLE_MAX_V = 6.0
@@ -221,7 +225,8 @@ class PowerCheck(Check):
             # autopilot lost its supply in flight.
             from ..timeline import log_ended_armed  # local: timeline imports the checks package
 
-            browned_out = log_ended_armed(log)
+            low_share = float(np.mean(vcc < VCC_MIN_V))
+            browned_out = log_ended_armed(log) and low_share >= VCC_BROWNOUT_LOW_SHARE
             return [
                 make_finding(
                     self.id,
@@ -233,8 +238,9 @@ class PowerCheck(Check):
                     f"(median {med:.2f} V), below the {VCC_MIN_V:.1f} V minimum ArduPilot's LogAnalyzer "
                     "applied."
                     + (
-                        " The recording then stopped while still armed: the signature of the autopilot "
-                        "browning out (losing its supply) in flight."
+                        f" The rail sat below {VCC_MIN_V:.1f} V for {low_share * 100:.0f}% of the armed time and the "
+                        "recording then stopped while still armed: the signature of the autopilot browning "
+                        "out (losing its supply) in flight."
                         if browned_out
                         else " A 5 V rail running this low leaves little margin before the autopilot or "
                         "its sensors brown out."
@@ -246,7 +252,7 @@ class PowerCheck(Check):
                     time_start_s=t_min,
                     time_end_s=t_min,
                     message_types=["POWR"],
-                    samples={**samples, "min_threshold_v": VCC_MIN_V},
+                    samples={**samples, "min_threshold_v": VCC_MIN_V, "low_share": round(low_share, 2)},
                 )
             ]
         if spread > VCC_MAX_SPREAD_V:

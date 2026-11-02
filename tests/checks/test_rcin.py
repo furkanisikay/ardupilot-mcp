@@ -113,3 +113,32 @@ def test_no_rc_receiver_without_rci2_is_not_a_link_loss():
     rcin = build_series(0.0, 10.0, C1=[0] * n, C2=[0] * n, C3=[0] * n, C4=[0] * n)
     log = make_flight_log({"RCIN": rcin, "EV": [{"TimeUS": 0, "Id": 10}]}, vehicle_kind="sub")
     assert [f.severity for f in RCInputCheck().run(log)] == [Severity.INFO]
+
+
+def _glitch_log(params):
+    # The 145881 forum logs (FrSky Fport): every channel jumps to 875 us for 1 s while
+    # RCI2.Flags keeps reporting valid input; the mode channel falls with it.
+    n = 200
+    c = [1500.0] * 100 + [875.0] * 10 + [1500.0] * 90
+    c3 = [1400.0] * 100 + [875.0] * 10 + [1400.0] * 90
+    rcin = build_series(0.0, 10.0, C1=c, C2=c, C3=c3, C4=c)
+    rci2 = build_series(0.0, 10.0, Flags=[1] * n)
+    msgs = {
+        "RCIN": rcin,
+        "RCI2": rci2,
+        "EV": [{"TimeUS": 0, "Id": 10}],
+        "MODE": [{"TimeUS": 10_100_000, "Mode": 0}],
+    }
+    return make_flight_log(msgs, params=params, vehicle_kind="copter")
+
+
+def test_receiver_sending_its_own_failsafe_values_is_caught_despite_valid_flags():
+    findings = RCInputCheck().run(_glitch_log({"FS_THR_ENABLE": 0}))
+    assert [(f.title, f.severity) for f in findings] == [("RC signal loss", Severity.CRITICAL)]
+    text = findings[0].explanation
+    assert "kept reporting valid input" in text and "FS_THR_ENABLE is 0" in text and "mode changed" in text
+
+
+def test_glitch_with_the_failsafe_on_is_a_warning():
+    findings = RCInputCheck().run(_glitch_log({"FS_THR_ENABLE": 1}))
+    assert [(f.title, f.severity) for f in findings] == [("RC signal loss", Severity.WARN)]

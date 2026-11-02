@@ -382,10 +382,23 @@ def test_dead_monitor_needs_a_flying_copter_and_a_measuring_monitor():
 
 
 def test_low_vcc_then_the_log_stops_armed_is_a_brownout():
-    # The 144427_0 benchmark log: Vcc ~4.6 V dipping to 4.42 V, then logging ends in flight.
-    vcc = [4.6] * 60 + [4.42] * 5 + [4.6] * 35
+    # The 144427_0 benchmark log: Vcc around 4.6 V, under it most of the flight, dipping to
+    # 4.42 V, then logging ends in flight.
+    vcc = [4.58, 4.62] * 30 + [4.42] * 5 + [4.6] * 35
     log = make_flight_log({"POWR": build_series(0.0, 10.0, Vcc=vcc), "EV": [{"TimeUS": 0, "Id": 10}]})
     f = [x for x in PowerCheck().run(log) if "Vcc" in x.title]
     assert [(x.title, x.severity) for x in f] == [
         ("Flight-controller board voltage (Vcc) low, then the log stopped in flight", Severity.CRITICAL)
+    ]
+    assert f[0].evidence.samples["low_share"] == 0.35
+
+
+def test_one_vcc_dip_at_impact_is_not_a_brownout():
+    # The 145881_0 forum log: Vcc steady at 4.64 V, one 4.44 V sample as the copter hits the
+    # ground, the log ends armed.
+    vcc = [4.64] * 99 + [4.44]
+    log = make_flight_log({"POWR": build_series(0.0, 10.0, Vcc=vcc), "EV": [{"TimeUS": 0, "Id": 10}]})
+    f = [x for x in PowerCheck().run(log) if "Vcc" in x.title]
+    assert [(x.title, x.severity) for x in f] == [
+        ("Flight-controller board voltage (Vcc) below 4.6 V", Severity.WARN)
     ]
