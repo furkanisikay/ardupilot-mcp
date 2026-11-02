@@ -68,7 +68,7 @@ Bütün araçlar salt okunurdur.
 | `recommend_tuning` | Harmonik notch, PID ve autotune önerisi. Hiçbir şeyi uygulamaz. |
 | `list_checks` | Kayıtlı kontrollerin listesi. |
 
-Araçların argümanları ve <!-- gen:checks -->19<!-- /gen:checks --> kontrolün tamamı [docs/reference.md](docs/reference.md)'de. Bu dosyayı `scripts/gen_docs.py` koddan üretir, CI da güncel olup olmadığını denetler.
+Araçların argümanları ve <!-- gen:checks -->20<!-- /gen:checks --> kontrolün tamamı [docs/reference.md](docs/reference.md)'de. Bu dosyayı `scripts/gen_docs.py` koddan üretir, CI da güncel olup olmadığını denetler.
 
 ## Nasıl çalışır
 
@@ -82,7 +82,7 @@ Sunucu MCP Python SDK 2 üzerinde çalışır. Hem 2026-07-28 protokol sürümü
 
 Motor, forumdaki <!-- gen:bench-logs -->49<!-- /gen:bench-logs --> gerçek kaza logu üzerinde ölçülür; logların sebebini o logu inceleyen bir geliştirici ya da deneyimli bir kullanıcı yazmıştır. Güncel skorlar ve yöntem [bench/README.md](bench/README.md)'de.
 
-- Pusula yön hatasından kaynaklanan dairesel sürüklenme (toilet-bowl) henüz tespit edilmiyor.
+- Dairesel sürüklenme (toilet-bowl) konum tutma modlarında konum kontrolcüsü kaydından (PSCN/PSCE, 4.1 ve sonrası) tespit edilir; bu kayıt olmayan loglarda tespit edilemez.
 - Format tanımları bozulmuş bir log, kısmi sonuç yerine açık bir hata verir.
 - `.tlog` dosyasında ERR kaydı, batch sampler, hızlı IMU ve mod değişikliği nedeni yoktur.
 - Bulgular karar desteğidir. Uçuşa elverişlilik kararı vermez.

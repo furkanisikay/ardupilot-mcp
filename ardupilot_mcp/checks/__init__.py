@@ -20,6 +20,7 @@ _CHECK_MODULES = [
     "power",
     "gps",
     "compass",
+    "circling",
     "attitude",
     "motors",
     "thrust_loss",

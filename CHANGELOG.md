@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `circling` check: **toilet bowling**, which the README listed as not detected. In LOITER,
+  POSHOLD or QLOITER, the position error (PSCN/PSCE) turning the same way around the target,
+  orbit after orbit; the wiki ties it to a compass problem. Validated on a forum QuadPlane that
+  toilet-bowled once a fan was fitted (3.8 turns) against its log without the fan (0.3) and the
+  48 benchmark logs (at most 0.8).
 - `esc` check (multirotor). **Motors lost power while still commanded**: the battery current
   collapses in flight while the motor outputs still ask for thrust, the pack voltage holds and
   the log keeps running, so only the ESCs stopped drawing power (an ESC protection shutdown or

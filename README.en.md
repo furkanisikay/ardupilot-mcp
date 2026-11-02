@@ -68,7 +68,7 @@ Every tool is read-only.
 | `recommend_tuning` | Harmonic notch, PID and autotune advice. It applies nothing. |
 | `list_checks` | The registered checks. |
 
-Tool arguments and all <!-- gen:checks -->19<!-- /gen:checks --> checks are in [docs/reference.md](docs/reference.md). `scripts/gen_docs.py` generates that file from the code, and CI fails when it is out of date.
+Tool arguments and all <!-- gen:checks -->20<!-- /gen:checks --> checks are in [docs/reference.md](docs/reference.md). `scripts/gen_docs.py` generates that file from the code, and CI fails when it is out of date.
 
 ## How it works
 
@@ -82,7 +82,7 @@ The server runs on the MCP Python SDK 2. It speaks the 2026-07-28 protocol revis
 
 The engine is measured on <!-- gen:bench-logs -->49<!-- /gen:bench-logs --> real crash logs from the ArduPilot forum, each labelled with the cause that a developer or an experienced helper stated after reading the log. Current scores and the method are in [bench/README.md](bench/README.md).
 
-- Circular drift from a compass heading error (toilet bowl) is not detected yet.
+- Circular drift (toilet bowl) is detected in position-hold modes from the position controller log (PSCN/PSCE, 4.1 and later); a log without it cannot show it.
 - A log with corrupted format definitions fails with a clear error instead of a partial result.
 - A `.tlog` has no ERR records, batch sampler, fast IMU or mode-change reason.
 - Findings support a decision. They do not decide whether an aircraft is fit to fly.

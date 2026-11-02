@@ -23,7 +23,7 @@ CATEGORY_CHECKS: dict[str, set[str]] = {
     "vibration": {"vibration"},
     "power_brownout": {"power"},
     "thrust_loss_motor_esc": {"thrust_loss", "motors", "esc"},
-    "compass_interference": {"compass", "calibration"},
+    "compass_interference": {"compass", "calibration", "circling"},
     "gps": {"gps", "sensors"},
     "ekf": {"ekf"},
     "rc_failsafe_link": {"rcin"},
