@@ -176,3 +176,12 @@ def test_pre_4_5_airspeed_parameter_names():
     log = _plane_log([28.0] * 300, params)
     f = [x for x in ParamAuditCheck().run(log) if x.title.startswith("Flew far above")]
     assert f and f[0].title == "Flew far above ARSPD_FBW_MAX"
+
+
+def test_gps_and_rangefinder_height_sources_are_noted():
+    for src in (2, 3):
+        log = make_flight_log(params={"EK3_SRC1_POSZ": src, "AHRS_EKF_TYPE": 3}, vehicle_kind="copter")
+        f = [x for x in ParamAuditCheck().run(log) if x.title == "EKF height source is not the barometer"]
+        assert [x.severity for x in f] == [Severity.INFO], src
+    baro = make_flight_log(params={"EK3_SRC1_POSZ": 1}, vehicle_kind="copter")
+    assert not [x for x in ParamAuditCheck().run(baro) if "height source" in x.title]

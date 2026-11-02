@@ -37,7 +37,10 @@ VOLT_COMP_MARGIN = 0.02
 # Design choice: a plane above AIRSPEED_MAX for this share of its flight flies outside its
 # configured speed range. On the benchmark planes the share was 0.33-0.86 where the thread
 # found the airspeed parameters wrong and at most 0.04 elsewhere.
-AIRSPEED_OVER_MAX_FRACTION = 0.20  # None = unknown kind, still evaluate
+AIRSPEED_OVER_MAX_FRACTION = 0.20
+# EK3_SRC1_POSZ values (EKF sources wiki: 1 Baro, 2 RangeFinder, 3 GPS, 4 Beacon, 6 ExternalNav).
+HEIGHT_SRC_RANGEFINDER = 2
+HEIGHT_SRC_GPS = 3  # None = unknown kind, still evaluate
 
 
 def _p(params: dict[str, float], name: str) -> float | None:
@@ -66,7 +69,39 @@ class ParamAuditCheck(Check):
             out.extend(self._voltage_compensation(log))
         if log.meta.vehicle_kind == "plane":
             out.extend(self._airspeed_envelope(log))
+        out.extend(self._height_source(p))
         return out
+
+    def _height_source(self, p: dict[str, float]) -> list[Finding]:
+        """EKF3 primary height source other than the barometer, as the EKF sources wiki weighs it."""
+        if p.get("AHRS_EKF_TYPE", 3) != 3:
+            return []
+        src = p.get("EK3_SRC1_POSZ")
+        if src == HEIGHT_SRC_RANGEFINDER:
+            msg = (
+                "EK3_SRC1_POSZ=2 makes the rangefinder the EKF's primary height source. The EKF sources page "
+                "says this should almost never be used: it is only appropriate indoors over a flat floor with no "
+                "clutter, and surface tracking and terrain following do not need it."
+            )
+        elif src == HEIGHT_SRC_GPS:
+            msg = (
+                "EK3_SRC1_POSZ=3 makes GPS the EKF's primary height source. The EKF sources page recommends it "
+                "only for long flights where air pressure may change, with a high-quality GPS (e.g. a dual-band "
+                "UBlox F9P); a GPS glitch then corrupts the height estimate directly. Read any GPS finding in "
+                "this log with that in mind."
+            )
+        else:
+            return []
+        return [
+            make_finding(
+                self.id,
+                Severity.INFO,
+                "EKF height source is not the barometer",
+                msg,
+                recommendation="Unless the vehicle needs it, use the barometer (EK3_SRC1_POSZ=1), the default.",
+                samples={"ek3_src1_posz": float(src)},
+            )
+        ]
 
     def _airspeed_envelope(self, log: FlightLog) -> list[Finding]:
         """Plane: an airspeed range that contradicts itself, or that the flight ran far above.

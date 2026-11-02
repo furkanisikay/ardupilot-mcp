@@ -24,6 +24,8 @@ All notable changes to this project are documented here. The format is based on
   `calc_speed_scaler` applies it), and **AIRSPEED_MAX not above AIRSPEED_MIN**. On the
   benchmark it fires on the six plane logs whose threads found the airspeed parameters wrong
   for the airframe and on one with MAX 8 below MIN 9, and on no other plane.
+- `param_audit`: an EKF3 primary height source of GPS or rangefinder (EK3_SRC1_POSZ 3 / 2) is
+  noted with what the EKF sources page says of it; a GPS glitch corrupts a GPS height directly.
 - `events`: a disarm while still flying, with who did it (ARM.Method decoded: switch, rudder,
   GCS, a failsafe, ...). An autopilot-initiated one (a failsafe or termination) is a WARN; a
   commanded one is INFO, since it is most often the pilot's emergency stop after control was
