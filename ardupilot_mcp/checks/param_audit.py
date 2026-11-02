@@ -33,7 +33,11 @@ RATE_P_HIGH = 0.5  # above the usual valid range -> unusually high
 _MULTIROTOR = {"copter", "heli", None}
 # Design choice: a pack is outside MOT_BAT_VOLT_MAX/_MIN only when it is 2% beyond it (the
 # 5th / 95th voltage percentile while armed), so sensor calibration error is not a finding.
-VOLT_COMP_MARGIN = 0.02  # None = unknown kind, still evaluate
+VOLT_COMP_MARGIN = 0.02
+# Design choice: a plane above AIRSPEED_MAX for this share of its flight flies outside its
+# configured speed range. On the benchmark planes the share was 0.33-0.86 where the thread
+# found the airspeed parameters wrong and at most 0.04 elsewhere.
+AIRSPEED_OVER_MAX_FRACTION = 0.20  # None = unknown kind, still evaluate
 
 
 def _p(params: dict[str, float], name: str) -> float | None:
@@ -60,7 +64,86 @@ class ParamAuditCheck(Check):
         out.extend(self._contradictions(p, multirotor))
         if log.meta.vehicle_kind in ("copter", None):
             out.extend(self._voltage_compensation(log))
+        if log.meta.vehicle_kind == "plane":
+            out.extend(self._airspeed_envelope(log))
         return out
+
+    def _airspeed_envelope(self, log: FlightLog) -> list[Finding]:
+        """Plane: an airspeed range that contradicts itself, or that the flight ran far above.
+
+        AIRSPEED_MIN/MAX (ARSPD_FBW_MIN/MAX before 4.5) bound the speeds TECS flies, and the
+        surfaces are scaled by SCALING_SPEED / airspeed, held between
+        min(0.5, SCALING_SPEED / (2 AIRSPEED_MAX)) and max(2, SCALING_SPEED / (0.7 AIRSPEED_MIN))
+        (Plane::calc_speed_scaler, ArduPlane/Attitude.cpp). Flying well above AIRSPEED_MAX means
+        the parameters do not describe the airframe, and the surfaces got a fraction of the
+        deflection they were tuned at.
+        """
+        p = log.params
+        vmax = _p(p, "AIRSPEED_MAX") if "AIRSPEED_MAX" in p else _p(p, "ARSPD_FBW_MAX")
+        vmin = _p(p, "AIRSPEED_MIN") if "AIRSPEED_MIN" in p else _p(p, "ARSPD_FBW_MIN")
+        max_name = "AIRSPEED_MAX" if "AIRSPEED_MAX" in p else "ARSPD_FBW_MAX"
+        min_name = "AIRSPEED_MIN" if "AIRSPEED_MIN" in p else "ARSPD_FBW_MIN"
+        out: list[Finding] = []
+        if vmax and vmin and vmax > 0 and vmin > 0 and vmax <= vmin:
+            out.append(
+                make_finding(
+                    self.id,
+                    Severity.WARN,
+                    "Airspeed maximum not above the minimum",
+                    f"{max_name}={vmax:.1f} m/s is at or below {min_name}={vmin:.1f} m/s, so the speed range the "
+                    "autopilot flies (TECS, the speed scaling of the surfaces) is empty or inverted.",
+                    recommendation=f"Set {min_name} a margin above the stall speed and {max_name} to the airframe's maximum.",
+                    samples={max_name.lower(): round(vmax, 1), min_name.lower(): round(vmin, 1)},
+                )
+            )
+            return out
+        if not vmax or vmax <= 0:
+            return out
+        times, aspd = log.series("CTUN", "As")
+        flying = log.flying_mask(times)
+        if flying is not None:
+            times, aspd = times[flying], aspd[flying]
+        ok = np.isfinite(aspd)
+        times, aspd = times[ok], aspd[ok]
+        if aspd.size < 20:
+            return out
+        over = aspd > vmax
+        frac = float(np.mean(over))
+        if frac < AIRSPEED_OVER_MAX_FRACTION:
+            return out
+        scaling = _p(p, "SCALING_SPEED")
+        scaler_txt = ""
+        samples: dict[str, float] = {
+            max_name.lower(): round(vmax, 1),
+            "frac_above_max": round(frac, 2),
+            "median_airspeed_above_max": round(float(np.median(aspd[over])), 1),
+        }
+        if scaling and scaling > 0:
+            lo = min(0.5, scaling / (2.0 * vmax))
+            hi = max(2.0, scaling / (0.7 * max(vmin or 0.0, 1.0)))
+            scaler = float(np.median(np.clip(scaling / aspd[over], lo, hi)))
+            scaler_txt = (
+                f" The surfaces are scaled by SCALING_SPEED ({scaling:.1f} m/s) / airspeed, so while above "
+                f"{max_name} they got a median {scaler:.2f}x of the deflection they were tuned at."
+            )
+            samples["median_speed_scaler"] = round(scaler, 2)
+        return out + [
+            make_finding(
+                self.id,
+                Severity.WARN,
+                f"Flew far above {max_name}",
+                f"In flight the airspeed estimate (CTUN.As) was above {max_name} ({vmax:.1f} m/s) for "
+                f"{frac * 100:.0f}% of the time, at a median {samples['median_airspeed_above_max']:.1f} m/s there. "
+                "The airspeed parameters do not describe this airframe's real speeds." + scaler_txt,
+                recommendation=(
+                    f"Set {min_name}, AIRSPEED_CRUISE and {max_name} to the airframe's measured speeds and "
+                    "SCALING_SPEED to the cruise speed, then re-tune (changing SCALING_SPEED scales every PID)."
+                ),
+                time_start_s=float(times[over][0]),
+                message_types=["CTUN"],
+                samples=samples,
+            )
+        ]
 
     def _voltage_compensation(self, log: FlightLog) -> list[Finding]:
         """MOT_BAT_VOLT_MAX / _MIN that the pack's voltage never enters.

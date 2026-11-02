@@ -134,3 +134,45 @@ def test_voltage_compensation_matching_the_pack_is_fine():
     volts = [25.0 - i * 0.01 for i in range(400)]
     log = _bat_log(volts, {"MOT_BAT_VOLT_MAX": 25.2, "MOT_BAT_VOLT_MIN": 19.8})
     assert not [x for x in ParamAuditCheck().run(log) if "Voltage compensation" in x.title]
+
+
+def _plane_log(aspd, params):
+    from tests.helpers import build_series
+
+    ctun = build_series(0.0, 10.0, As=aspd)
+    stat = build_series(0.0, 10.0, isFlying=[1] * len(aspd))
+    return make_flight_log(
+        {"CTUN": ctun, "STAT": stat, "EV": [{"TimeUS": 0, "Id": 10}]},
+        params=params,
+        vehicle_type="ArduPlane",
+        vehicle_kind="plane",
+    )
+
+
+def test_plane_flying_far_above_airspeed_max():
+    # A wing at ~40 m/s with AIRSPEED_MAX 28 and SCALING_SPEED 15 (a real forum crash):
+    # the surfaces get SCALING_SPEED / airspeed of their deflection (calc_speed_scaler).
+    params = {"AIRSPEED_MAX": 28.0, "AIRSPEED_MIN": 12.0, "SCALING_SPEED": 15.0}
+    log = _plane_log([20.0] * 100 + [40.0] * 200, params)
+    f = [x for x in ParamAuditCheck().run(log) if x.title.startswith("Flew far above")]
+    assert [x.severity for x in f] == [Severity.WARN]
+    assert f[0].evidence.samples["median_speed_scaler"] == 0.38  # 15 / 40, above the 0.27 floor
+
+
+def test_plane_inside_its_airspeed_range_is_fine():
+    params = {"AIRSPEED_MAX": 32.0, "AIRSPEED_MIN": 12.0, "SCALING_SPEED": 24.0}
+    log = _plane_log([24.0] * 290 + [33.0] * 10, params)
+    assert not [x for x in ParamAuditCheck().run(log) if x.title.startswith("Flew far above")]
+
+
+def test_plane_airspeed_max_below_min():
+    log = _plane_log([0.0] * 50, {"AIRSPEED_MAX": 8.0, "AIRSPEED_MIN": 9.0})
+    f = [x for x in ParamAuditCheck().run(log) if x.title == "Airspeed maximum not above the minimum"]
+    assert [x.severity for x in f] == [Severity.WARN]
+
+
+def test_pre_4_5_airspeed_parameter_names():
+    params = {"ARSPD_FBW_MAX": 22.0, "ARSPD_FBW_MIN": 9.0, "SCALING_SPEED": 13.0}
+    log = _plane_log([28.0] * 300, params)
+    f = [x for x in ParamAuditCheck().run(log) if x.title.startswith("Flew far above")]
+    assert f and f[0].title == "Flew far above ARSPD_FBW_MAX"

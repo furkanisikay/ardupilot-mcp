@@ -19,6 +19,11 @@ All notable changes to this project are documented here. The format is based on
   resting voltage into that range before scaling thrust, so a pack above MAX all flight (a 12S
   pack with the 6S default left in) gets no voltage compensation, and one below MIN gets its
   gains raised all flight. Found on one benchmark log (140954_0).
+- `param_audit` (Plane): **flew far above AIRSPEED_MAX** (CTUN.As above it for 20% of the flight
+  or more), with the surface speed scaling that results (SCALING_SPEED / airspeed, as
+  `calc_speed_scaler` applies it), and **AIRSPEED_MAX not above AIRSPEED_MIN**. On the
+  benchmark it fires on the six plane logs whose threads found the airspeed parameters wrong
+  for the airframe and on one with MAX 8 below MIN 9, and on no other plane.
 - `events`: a disarm while still flying, with who did it (ARM.Method decoded: switch, rudder,
   GCS, a failsafe, ...). An autopilot-initiated one (a failsafe or termination) is a WARN; a
   commanded one is INFO, since it is most often the pilot's emergency stop after control was
