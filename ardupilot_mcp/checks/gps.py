@@ -78,6 +78,19 @@ GPS_AVG_DELTA_MAX_MS = 215.0
 GPS_SLOW_SHARE = 0.10
 
 
+# EKF3 starts using a GPS only once its reported horizontal accuracy is within 5 m, scaled by
+# EK3_CHECK_SCALE (percent, default 100) ("GPS horiz error", AP_NavEKF3_VehicleStatus.cpp
+# calcGpsGoodToAlign, Copter-4.6.3). GPA.HAcc 655.35 m is the "not reported" value.
+EKF_HACC_LIMIT_M = 5.0
+# Once a GPS has passed, the thresholds are raised by this factor for hysteresis (same
+# function), so in flight the limit is 6.5 m at the default scale.
+EKF_ALIGNED_HYSTERESIS = 1.3
+HACC_NOT_REPORTED_M = 655.0
+# Design choice: in flight, a receiver whose reported accuracy stays outside that limit this
+# long is degraded.
+HACC_MIN_DURATION_S = 10.0
+
+
 def _timing_unhealthy(delta_ms: np.ndarray) -> np.ndarray:
     """Per GPA sample, whether AP_GPS::is_healthy's timing test fails after that frame."""
     bad = np.zeros(delta_ms.shape, dtype=bool)
@@ -133,9 +146,9 @@ class GpsCheck(Check):
                     f.evidence.samples["gps_instance"] = inst
                     self._downgrade_if_covered(log, f, inst, receivers)
                 findings.append(f)
-            rate = self._rate_finding(log, inst, label)
-            if rate is not None:
-                findings.append(rate)
+            for extra in (self._rate_finding(log, inst, label), self._accuracy_finding(log, inst, label)):
+                if extra is not None:
+                    findings.append(extra)
         return findings
 
     def _rate_finding(self, log: FlightLog, inst: int, label: str) -> Finding | None:
@@ -172,6 +185,42 @@ class GpsCheck(Check):
             time_end_s=float(t[-1]),
             message_types=["GPA"],
             samples={"median_delta_ms": round(med), "unhealthy_share": round(share, 2)},
+        )
+
+    def _accuracy_finding(self, log: FlightLog, inst: int, label: str) -> Finding | None:
+        """The receiver's own horizontal accuracy (GPA.HAcc) outside EKF3's start limit in flight."""
+        if not log.has("GPA") or inst not in (log.instances("GPA") or [0]):
+            return None
+        t, hacc = log.series("GPA", "HAcc", inst if log.instances("GPA") else None)
+        if t.size < 20:
+            return None
+        t, hacc = _in_flight(log, t, hacc)
+        reported = hacc < HACC_NOT_REPORTED_M
+        if not reported.any():
+            return None
+        scale = float(log.params.get("EK3_CHECK_SCALE", 100.0) or 100.0) / 100.0
+        limit = EKF_HACC_LIMIT_M * EKF_ALIGNED_HYSTERESIS * scale
+        run = longest_run_above(t, np.where(reported, hacc, 0.0), limit)
+        if run < HACC_MIN_DURATION_S:
+            return None
+        bad = reported & (hacc > limit)
+        worst = float(np.nanmax(hacc[reported]))
+        return make_finding(
+            self.id,
+            Severity.WARN,
+            f"{label} reported poor accuracy in flight",
+            f"In flight {label} rated its own horizontal accuracy (GPA.HAcc) worse than {limit:.1f} m for up to "
+            f"{run:.0f} s at a time, peaking at {worst:.0f} m. EKF3 starts using a GPS only within 5 m and holds "
+            "it to 1.3 times that once in use (EK3_CHECK_SCALE scales both); a position this loose pulls the "
+            "EKF's position and, when GPS is the height source, its height.",
+            recommendation=(
+                "Look for interference near the GPS (power wiring, ESCs, video transmitters, a USB3 or SD-card "
+                "source), the antenna's view of the sky and its ground plane; compare GPA.HAcc with NSats."
+            ),
+            time_start_s=float(t[bad][0]) if bad.any() else None,
+            time_end_s=float(t[bad][-1]) if bad.any() else None,
+            message_types=["GPA"],
+            samples={"longest_s": round(run, 1), "peak_hacc_m": round(worst, 1), "limit_m": round(limit, 2)},
         )
 
     @staticmethod

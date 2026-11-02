@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `gps`: **poor reported accuracy in flight**. EKF3 starts using a GPS only once its horizontal
+  accuracy is within 5 m and holds it to 1.3 times that once in use (EK3_CHECK_SCALE scales
+  both); GPA.HAcc outside that for 10 s at a stretch in flight is a WARN. On the benchmark it
+  fires only on 141345_0, the GPS glitch that corrupted the height before the crash.
 - Vibration compensation (FAILSAFE_VIBE, "Vibration compensation ON") now says what the measured
   vibration was in the 3 s before. The firmware triggers it from the EKF's vertical innovations,
   not from the vibration level, and on the benchmark and forum logs it split cleanly: peaks of

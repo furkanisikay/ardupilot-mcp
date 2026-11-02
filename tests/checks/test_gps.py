@@ -310,3 +310,26 @@ def test_plane_armed_from_boot_is_not_judged_while_on_the_ground():
     stat = [{"TimeUS": 0, "isFlying": 0}, {"TimeUS": 32_000_000, "isFlying": 1}]
     log = make_flight_log({"GPS": gps, "STAT": stat, "EV": [{"TimeUS": 0, "Id": 10}]}, vehicle_kind="plane")
     assert GpsCheck().run(log) == []
+
+
+def _hacc_log(hacc, params=None):
+    n = len(hacc)
+    gps = build_series(0.0, 5.0, Status=[3] * n, NSats=[12] * n, HDop=[0.8] * n)
+    gpa = build_series(0.0, 5.0, Delta=[200.0] * n, HAcc=hacc)
+    return make_flight_log({"GPS": gps, "GPA": gpa, "EV": [{"TimeUS": 0, "Id": 10}]}, params=params)
+
+
+def test_accuracy_outside_the_ekf_limit_for_long_is_a_warning():
+    # Benchmark log 141345_0: HAcc beyond 6.5 m for 30 s around the GPS glitch.
+    findings = GpsCheck().run(_hacc_log([1.0] * 50 + [40.0] * 100 + [1.0] * 50))
+    assert [(f.title, f.severity) for f in findings] == [
+        ("GPS reported poor accuracy in flight", Severity.WARN)
+    ]
+    assert findings[0].evidence.samples["limit_m"] == 6.5
+
+
+def test_accuracy_limit_follows_ek3_check_scale_and_ignores_brief_or_unreported():
+    hacc = [1.0] * 50 + [8.0] * 100 + [1.0] * 50
+    assert GpsCheck().run(_hacc_log(hacc, {"EK3_CHECK_SCALE": 150})) == []  # limit 9.75 m
+    assert GpsCheck().run(_hacc_log([1.0] * 50 + [40.0] * 30 + [1.0] * 120)) == []  # 6 s
+    assert GpsCheck().run(_hacc_log([655.35] * 200)) == []  # receiver does not report it
