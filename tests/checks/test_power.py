@@ -346,3 +346,34 @@ def test_resting_voltage_collapse_is_still_a_sudden_drop():
     drop = [f for f in findings if "sudden" in f.title.lower()]
     assert drop and drop[0].severity == Severity.CRITICAL
     assert drop[0].evidence.samples["load_compensated"] == 1.0
+
+
+def _flown(volt, curr, *, kind="copter", params=None):
+    recs = build_series(0.0, 10.0, Volt=volt, Curr=curr)
+    p = {"BATT_MONITOR": 4, **(params or {})}
+    return make_flight_log({"BAT": recs, "EV": [{"TimeUS": 0, "Id": 10}]}, params=p, vehicle_kind=kind)
+
+
+def test_monitor_reading_no_current_in_flight():
+    # The 141734 / 144203 benchmark logs: a hovering copter with BAT.Curr at 0.0-0.1 A.
+    findings = PowerCheck().run(_flown([16.0] * 300, [0.05] * 300))
+    assert [(f.title, f.severity) for f in findings] == [
+        ("Battery monitor reads no current in flight", Severity.WARN)
+    ]
+    assert findings[0].evidence.samples == {"max_curr": 0.05}
+
+
+def test_monitor_reading_no_voltage_in_flight():
+    # The 142576 forum log: BATT_MONITOR=4 reading 0.11 V while the copter flew.
+    findings = PowerCheck().run(_flown([0.11] * 300, [0.02] * 300))
+    assert [f.title for f in findings] == ["Battery monitor reads no pack voltage in flight"]
+
+
+def test_dead_monitor_needs_a_flying_copter_and_a_measuring_monitor():
+    low = ([16.0] * 300, [0.05] * 300)
+    assert PowerCheck().run(_flown(*low, kind="plane")) == []  # a plane glides with the motor off
+    assert PowerCheck().run(_flown(*low, params={"BATT_MONITOR": 3})) == []  # voltage-only monitor
+    assert PowerCheck().run(_flown(*low, params={"BATT_MONITOR": 11})) == []  # fuel flow
+    short = ([16.0] * 80, [0.05] * 80)  # 8 s of flight
+    assert PowerCheck().run(_flown(*short)) == []
+    assert PowerCheck().run(_flown([16.0] * 300, [0.05] * 299 + [6.0])) == []

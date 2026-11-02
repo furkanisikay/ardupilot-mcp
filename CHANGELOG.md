@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `power` (multirotor): **the battery monitor is not reading the flight pack**. A configured
+  voltage-and-current monitor whose current never reaches 1 A over 10 s of flight, or whose
+  voltage stays under 4 V, is wired or set up wrong, and the capacity failsafe, current-based
+  compass compensation and the voltage failsafe work from a wrong number (WARN). It fires on
+  two benchmark logs with unconfigured sensors (141734_0, 144203_1) and one forum log reading
+  0.11 V in flight.
 - `health` check: **the flight controller was reset by its watchdog**. The firmware writes
   WDOG only on the boot after a watchdog reset; the finding names the fault type (a hard fault
   is CRITICAL, as the wiki calls it extremely serious), the fault line and task, and whether

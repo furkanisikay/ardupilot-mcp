@@ -69,6 +69,20 @@ VCC_PLAUSIBLE_MAX_V = 6.0
 PLAUSIBLE_MIN_V = 4.0
 PLAUSIBLE_MAX_V = 70.0
 
+# BATT_MONITOR types that measure the pack's voltage, and of those the ones that also
+# measure its current (AP_BattMonitor_Params.cpp @Values, Copter-4.6.3): 3 analog voltage
+# only, 4 analog voltage and current, 5 Solo, 6 Bebop, 7/13/14/16 SMBus, 8 DroneCAN, 9 ESC
+# telemetry, 15 NeoDesign, 19 Rotoye, 21 INA2XX, 22 LTC2946, 26 INA239, 28 AD7091R5. Fuel,
+# generator, solar, Torqeedo, synthetic-current and scripting monitors are not judged.
+VOLTAGE_MONITORS = {3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 16, 19, 21, 22, 26, 28}
+CURRENT_MONITORS = VOLTAGE_MONITORS - {3}
+# Design choice: an electric multirotor cannot fly on this little current; on the 48
+# benchmark logs every copter whose monitor works peaked at 6.9 A or more in flight.
+DEAD_CURRENT_A = 1.0
+# ...judged over at least this much flight, so a hop off the ground is not enough.
+DEAD_MONITOR_MIN_FLIGHT_S = 10.0
+NO_VOLTAGE_TITLE = "Battery monitor reads no pack voltage in flight"
+
 
 @register_check
 class PowerCheck(Check):
@@ -102,23 +116,88 @@ class PowerCheck(Check):
             # payload battery against the 4S main pack's thresholds is meaningless.
             insts = log.instances(src)
             for inst in insts:
+                found = self._dead_monitor_findings(log, src, inst)
                 # Guard against monitors with no real sensor / an odd voltage scale.
                 _, volts = log.series(src, "Volt", inst)
-                if volts.size:
-                    med = float(np.median(volts))
-                    if med < PLAUSIBLE_MIN_V or med > PLAUSIBLE_MAX_V:
-                        continue
-                for f in (
-                    self._min_voltage_findings(log, src, inst)
-                    + self._sudden_drop_findings(log, src, inst)
-                    + self._sag_findings(log, src, inst)
-                ):
+                med = float(np.median(volts)) if volts.size else None
+                plausible = med is None or PLAUSIBLE_MIN_V <= med <= PLAUSIBLE_MAX_V
+                if plausible and not any(f.title == NO_VOLTAGE_TITLE for f in found):
+                    found += (
+                        self._min_voltage_findings(log, src, inst)
+                        + self._sudden_drop_findings(log, src, inst)
+                        + self._sag_findings(log, src, inst)
+                    )
+                for f in found:
                     if len(insts) > 1:
                         f.title += f" (battery {inst + 1})"
                         f.evidence.samples["battery_instance"] = inst
                     findings.append(f)
         findings.extend(self._vcc_findings(log))
         return findings
+
+    # -- a monitor that does not read the flight pack --------------------------
+
+    def _dead_monitor_findings(self, log: FlightLog, src: str, inst: int) -> list[Finding]:
+        """A configured battery monitor reading no voltage or no current while a multirotor flew."""
+        if log.meta.vehicle_kind != "copter":
+            return []  # a plane glides, a heli may run on fuel: low current proves nothing
+        prefix = "BATT_" if inst == 0 else f"BATT{inst + 1}_"
+        kind = log.params.get(prefix + "MONITOR")
+        if kind is None or int(kind) not in VOLTAGE_MONITORS:
+            return []
+        t, (volts, curr) = log.series_many(src, ["Volt", "Curr"], inst)
+        flying = log.flying_mask(t)
+        if flying is None or t.size < 2:
+            return []
+        dt = float(np.median(np.diff(t)))
+        if not np.isfinite(dt) or dt <= 0 or flying.sum() * dt < DEAD_MONITOR_MIN_FLIGHT_S:
+            return []
+        v, c = volts[flying], curr[flying]
+        label = f"{prefix}MONITOR={int(kind)}"
+        span = (float(t[flying][0]), float(t[flying][-1]))
+        if np.isfinite(v).any() and float(np.nanpercentile(v, 95)) < PLAUSIBLE_MIN_V:
+            vmax = float(np.nanmax(v))
+            return [
+                make_finding(
+                    self.id,
+                    Severity.WARN,
+                    NO_VOLTAGE_TITLE,
+                    f"While the vehicle flew ({flying.sum() * dt:.0f} s) the battery monitor ({label}) read at most "
+                    f"{vmax:.2f} V, which no flying pack gives: it is not measuring the flight battery. The voltage "
+                    "failsafe and the voltage compensation of the motor output have nothing to work with.",
+                    recommendation=(
+                        f"Check the power module's wiring and {prefix}VOLT_PIN / {prefix}VOLT_MULT for this board, then "
+                        "compare the reading with a multimeter on the pack."
+                    ),
+                    time_start_s=span[0],
+                    time_end_s=span[1],
+                    message_types=[src],
+                    samples={"max_volt": round(vmax, 2)},
+                )
+            ]
+        if int(kind) in CURRENT_MONITORS and np.isfinite(c).any() and float(np.nanmax(c)) < DEAD_CURRENT_A:
+            cmax = float(np.nanmax(c))
+            return [
+                make_finding(
+                    self.id,
+                    Severity.WARN,
+                    "Battery monitor reads no current in flight",
+                    f"While the vehicle flew ({flying.sum() * dt:.0f} s) the battery current ({src}.Curr, {label}) never "
+                    f"exceeded {cmax:.2f} A. A flying multirotor draws several amps, so the current sensor is not "
+                    "measuring the flight current: consumed mAh and the capacity failsafe (BATT_LOW_MAH / "
+                    "BATT_CRT_MAH), current-based compass compensation (COMPASS_MOTCT=2) and the MOT_BAT_CURR_MAX "
+                    "limit all work from a wrong number.",
+                    recommendation=(
+                        f"Check the power module's current wiring and {prefix}CURR_PIN / {prefix}AMP_PERVLT / "
+                        f"{prefix}AMP_OFFSET for this sensor, then calibrate the current against a known load."
+                    ),
+                    time_start_s=span[0],
+                    time_end_s=span[1],
+                    message_types=[src],
+                    samples={"max_curr": round(cmax, 3)},
+                )
+            ]
+        return []
 
     # -- flight-controller board voltage (POWR.Vcc) ---------------------------
 
