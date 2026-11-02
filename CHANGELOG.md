@@ -163,9 +163,11 @@ All notable changes to this project are documented here. The format is based on
 - Real-crash benchmark, measured on 48 of the 49 logs (the Google Drive file of 145232_0 no
   longer matches its sha256, so `bench/results.json` keeps its 1.0.0 numbers until it can be
   refreshed with every log): logs with a false critical 35 -> 30, false criticals 97 -> 49
-  (vibration 29 -> 0, ekf 25 -> 14, gps 6 -> 1, events 5 -> 2), top-1 10 -> 11 of 40, top-3
-  21 -> 23. One top-3 hit was lost (145616_2): it came from a compass-variance rejection after
-  the vehicle had disarmed, while the labelled cause is the EKF height running away in flight.
+  (vibration 29 -> 0, ekf 25 -> 14, gps 6 -> 1, events 5 -> 2), top-1 10 of 40 (unchanged), top-3
+  21 -> 22. Two top-3 hits were lost: 142202_0 had scored through an unrelated rangefinder line,
+  and 145616_2 it came from a compass-variance rejection after
+  had scored through a compass-variance rejection after the vehicle had disarmed, while its
+  labelled cause is the EKF height running away in flight.
   Three were gained: 132194_0, the ESC-overheating crash, now top-1 through the `esc` check, and
   two plane logs whose airspeed parameters did not match the airframe (`param_audit`). One top-1
   hit went to a real but different setup fault: 144203_1 (LOIT_OPTIONS) used to open with an
