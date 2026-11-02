@@ -30,5 +30,24 @@ def test_slow_imu_suggests_fast_imu_or_batch_sampler():
     assert not any(a.bitmask_bit == 18 for a in logging_advice(log))
 
 
-def test_plane_gets_no_copter_bit_numbers():
-    assert logging_advice(make_flight_log({}, params={"LOG_BITMASK": 0}, vehicle_kind="plane")) == []
+def test_plane_gets_its_own_bit_numbers():
+    # ArduPlane/defines.h: RC is bit 13 (RCIN and RCOU), COMPASS bit 10, not Copter's 6/10/13.
+    advice = {
+        a.missing: a.bitmask_bit
+        for a in logging_advice(make_flight_log({}, params={"LOG_BITMASK": 0}, vehicle_kind="plane"))
+    }
+    assert advice["RCIN"] == 13 and advice["RCOU"] == 13 and advice["MAG"] == 10 and advice["VIBE"] == 7
+
+
+def test_rover_gets_its_own_bit_numbers():
+    # Rover/defines.h: RC is bit 14, COMPASS bit 11.
+    advice = {
+        a.missing: a.bitmask_bit
+        for a in logging_advice(make_flight_log({}, params={"LOG_BITMASK": 0}, vehicle_kind="rover"))
+    }
+    assert advice["RCIN"] == 14 and advice["MAG"] == 11
+    assert "CTUN" not in advice  # Rover logs THR/STER, not CTUN
+
+
+def test_vehicle_without_known_bits_gets_no_advice():
+    assert logging_advice(make_flight_log({}, params={"LOG_BITMASK": 0}, vehicle_kind="sub")) == []

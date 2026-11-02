@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Logging advice for Plane and Rover. Which LOG_BITMASK bit to turn on for a missing message
+  was given for Copter only, as the bit numbers differ; Plane and Rover now get their own
+  (Plane RC bit 13 and COMPASS 10, Rover RC 14 and COMPASS 11, from each vehicle's defines.h).
 - `firmware` (QuadPlane): a forward transition that timed out ("Transition failed, exceeded time
   limit", CRITICAL, with the QLAND/QRTL it triggers counted as a failsafe mode change) and the
   VTOL motors assisting fixed-wing flight for low altitude or a large attitude error (WARN).
