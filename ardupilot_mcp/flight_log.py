@@ -17,6 +17,7 @@ the small, event-like message types checks iterate over (ERR/EV/MODE/MSG/...).
 from __future__ import annotations
 
 import math
+import re
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -550,15 +551,32 @@ class FlightLog:
         return self.meta.source == "tlog"
 
     @property
+    def arming_complete(self) -> bool:
+        """True when every arm of the vehicle in this log must have left a record.
+
+        A telemetry log's heartbeats carry the arm state throughout. An onboard log with
+        ``LOG_DISARMED`` 1 (log while disarmed) or 3 (the same, discarding never-armed logs)
+        opens at boot, before any arm, and 4.x firmware writes EV ARMED and ARM for every
+        arm (AP_Arming::arm), so a log without them was never armed. 0 and 2 (no logging
+        while disarmed on USB) start a log at arming, after its record may have gone out.
+        """
+        if self.meta.arming_recorded:
+            return True
+        if self.params.get("LOG_DISARMED") not in (1, 3):
+            return False
+        m = re.search(r"V(\d+)\.", self.meta.firmware_version or "")
+        return m is not None and int(m.group(1)) >= 4
+
+    @property
     def never_armed(self) -> bool:
         """True when the log records the arm state throughout and the vehicle never armed."""
-        return self.meta.arming_recorded and not self.armed_intervals()
+        return self.arming_complete and not self.armed_intervals()
 
     def was_armed_at(self, t: float) -> bool:
         """Whether the vehicle was armed at ``t`` (True when arming is unknown)."""
         ivs = self.armed_intervals()
         if not ivs:
-            return not self.meta.arming_recorded
+            return not self.arming_complete
         return any(a <= t <= b for a, b in ivs)
 
     def armed_window(self) -> tuple[float | None, float | None]:
@@ -622,7 +640,7 @@ class FlightLog:
         ivs = self.armed_intervals()
         if not ivs:
             # Known never armed: no sample is armed. Otherwise arming is unknown.
-            return np.zeros(times.shape, dtype=bool) if self.meta.arming_recorded else None
+            return np.zeros(times.shape, dtype=bool) if self.arming_complete else None
         mask = np.zeros(times.shape, dtype=bool)
         for t0, t1 in ivs:
             mask |= (times >= t0) & (times <= t1)

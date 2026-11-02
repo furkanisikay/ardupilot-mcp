@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `health` check: **the flight controller was reset by its watchdog**. The firmware writes
+  WDOG only on the boot after a watchdog reset; the finding names the fault type (a hard fault
+  is CRITICAL, as the wiki calls it extremely serious), the fault line and task, and whether
+  the vehicle was armed or its safety switch off at the reset. A telemetry log's `WDG:` text
+  is read too. The same check reports a main loop stalled while armed (MON, WARN at the
+  firmware's 500 ms main_loop_stuck line) and internal errors decoded by name from PM.InE or
+  the "Internal errors 0x.." message, which the startup-message check no longer repeats.
+  Validated on four forum watchdog logs; no benchmark log changes.
 - Logging advice for Plane and Rover. Which LOG_BITMASK bit to turn on for a missing message
   was given for Copter only, as the bit numbers differ; Plane and Rover now get their own
   (Plane RC bit 13 and COMPASS 10, Rover RC 14 and COMPASS 11, from each vehicle's defines.h).
@@ -49,6 +57,12 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- Bench logs judged as flights. An onboard log recorded from boot (LOG_DISARMED 1 or 3) with
+  no arm record was treated as "arming unknown", so a USB-powered bench session raised a
+  critical battery voltage and attitude failures. The firmware records every arm in such a
+  log, so it is now read as never armed (4.x firmware); this removes 10 false CRITICALs from
+  six forum logs and changes no benchmark log.
+- A bare "PreArm:" line no longer becomes its own startup warning.
 - Vibration false alarms. A single VIBE sample above 60 m/s^2 made the axis CRITICAL, and
   samples before arming and after landing counted. Levels are now judged in flight only, and
   CRITICAL needs 2 s above 60 m/s^2 or 10% of the flight (the wiki's levels are sustained

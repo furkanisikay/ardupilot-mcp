@@ -130,6 +130,25 @@ def test_no_arm_edges_with_log_disarmed_off_means_whole_log_armed():
     assert make_flight_log({"ATT": att}, params={"LOG_DISARMED": 1}).armed_intervals() == []
 
 
+@pytest.mark.parametrize(
+    ("log_disarmed", "firmware", "never_armed"),
+    [
+        (1, "ArduCopter V4.5.5", True),  # logs from boot: an arm would have left EV/ARM
+        (3, "ArduCopter V4.6.3", True),
+        (2, "ArduCopter V4.6.3", False),  # not logging while disarmed on USB
+        (0, "ArduCopter V4.6.3", False),
+        (1, "ArduCopter V3.6.12", False),  # no claim about pre-4 arm records
+        (1, None, False),
+    ],
+)
+def test_logging_from_boot_without_arm_records_means_never_armed(log_disarmed, firmware, never_armed):
+    att = build_series(0.0, 10.0, Roll=[0.0] * 30)
+    log = make_flight_log({"ATT": att}, params={"LOG_DISARMED": log_disarmed}, firmware_version=firmware)
+    assert log.never_armed is never_armed
+    mask = log.armed_mask(np.array([1.0]))
+    assert (mask is not None and not mask.any()) if never_armed else (mask is None or bool(mask.all()))
+
+
 def test_flying_mask_uses_plane_is_flying():
     att = build_series(0.0, 10.0, Roll=[0.0] * 100)
     stat = [

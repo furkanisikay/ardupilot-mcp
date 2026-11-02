@@ -27,6 +27,7 @@ _CHECK_MODULES = [
     "esc",
     "rcin",
     "timing",
+    "health",
     # configuration / setup checks (params, calibration, sensors, startup messages)
     "config",
     "calibration",
