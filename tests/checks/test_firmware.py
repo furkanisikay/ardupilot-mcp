@@ -78,3 +78,25 @@ def test_announced_failsafes_are_verdicts_and_cleared_lines_are_not():
     assert set(found) == {"Firmware triggered a radio failsafe", "Firmware triggered a battery failsafe"}
     radio = found["Firmware triggered a radio failsafe"]
     assert radio.severity == Severity.CRITICAL and radio.evidence.samples["occurrences"] == 1
+
+
+def test_quadplane_transition_failure_and_assists():
+    # Messages as ArduPlane writes them (quadplane.cpp, VTOL_Assist.cpp).
+    log = make_flight_log(
+        {
+            "MSG": _msgs(
+                (0, "ArduPlane V4.6.3"),
+                (40, "Transition failed, exceeded time limit"),
+                (55, "Alt assist 4.2m"),
+                (60, "Angle assist r=45 p=-10"),
+            ),
+            "MODE": [{"TimeUS": 40_100_000, "Mode": 20, "ModeNum": 20, "Rsn": 23}],
+        },
+        vehicle_type="ArduPlane",
+        vehicle_kind="plane",
+    )
+    titles = {f.title: f.severity for f in FirmwareVerdictsCheck().run(log)}
+    assert titles["QuadPlane transition to forward flight failed"] == Severity.CRITICAL
+    assert titles["VTOL motors assisted: altitude too low"] == Severity.WARN
+    assert titles["VTOL motors assisted: attitude error"] == Severity.WARN
+    assert "Mode changed by failed VTOL transition" in titles

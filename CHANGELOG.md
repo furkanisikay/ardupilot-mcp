@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `firmware` (QuadPlane): a forward transition that timed out ("Transition failed, exceeded time
+  limit", CRITICAL, with the QLAND/QRTL it triggers counted as a failsafe mode change) and the
+  VTOL motors assisting fixed-wing flight for low altitude or a large attitude error (WARN).
 - `baro` check (multirotor): **the barometer follows the throttle**. Against the GPS altitude,
   with the slow drift between them removed, a baro reading that rises and falls with CTUN.ThO
   is prop wash or duct airflow on the barometer, which makes altitude hold surge. It fires on

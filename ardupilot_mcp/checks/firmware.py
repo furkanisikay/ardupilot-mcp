@@ -112,6 +112,29 @@ VERDICTS: tuple[Verdict, ...] = (
         "(the pattern high vibration produces, though a fall produces it too), so the firmware switched "
         "the altitude controller to vibration-resistant gains; read it with the measured vibration levels",
     ),
+    # QuadPlane (ArduPlane/quadplane.cpp, VTOL_Assist.cpp).
+    Verdict(
+        re.compile(r"Transition failed, exceeded time limit"),
+        Severity.CRITICAL,
+        "QuadPlane transition to forward flight failed",
+        "the plane did not reach its transition airspeed within Q_TRANS_FAIL seconds, so the firmware "
+        "took the Q_TRANS_FAIL_ACT action (QLAND or QRTL); look at the forward thrust, the airspeed "
+        "reading and AIRSPEED_MIN",
+    ),
+    Verdict(
+        re.compile(r"Alt assist"),
+        Severity.WARN,
+        "VTOL motors assisted: altitude too low",
+        "in fixed-wing flight the plane fell below Q_ASSIST_ALT above the ground, so the VTOL motors "
+        "switched on to hold it up",
+    ),
+    Verdict(
+        re.compile(r"Angle assist"),
+        Severity.WARN,
+        "VTOL motors assisted: attitude error",
+        "in fixed-wing flight the roll or pitch error stayed above Q_ASSIST_ANGLE for Q_ASSIST_DELAY, so "
+        "the VTOL motors switched on to recover control",
+    ),
     Verdict(
         re.compile(r"EKF variance"),
         Severity.WARN,
@@ -144,6 +167,8 @@ FAILSAFE_REASONS: dict[int, str] = {
     11: "terrain failsafe",
     17: "terminate",
     19: "crash failsafe",
+    23: "failed VTOL transition",
+    24: "failed VTOL takeoff",
     25: "failsafe",
     28: "bad depth failsafe",  # Sub: depth sensor failed (ArduSub/failsafe.cpp)
     29: "leak failsafe",
