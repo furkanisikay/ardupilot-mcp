@@ -62,13 +62,19 @@ class CirclingCheck(Check):
         modes = HOLD_MODES.get(log.meta.vehicle_kind or "copter", HOLD_MODES["copter"])
         tn, (tpn, pn, tvn) = log.series_many("PSCN", ["TPN", "PN", "TVN"])
         te, (tpe, pe, tve) = log.series_many("PSCE", ["TPE", "PE", "TVE"])
-        n = min(tn.size, te.size)
-        if n < 50:
+        if tn.size < 50 or te.size < 50:
             return []
-        t = tn[:n]
-        # PSCN and PSCE are written together each cycle; pair them by index.
-        err_n, err_e = (pn - tpn)[:n], (pe - tpe)[:n]
-        target_speed = np.hypot(tvn[:n], tve[:n])
+        t = tn
+        err_n = pn - tpn
+        # PSCN and PSCE are written together each cycle, but a dropped record would shift an
+        # index pairing for the rest of the log: pair them by time.
+        if te.size == tn.size and np.allclose(te, tn, atol=0.02):
+            err_e, tv_e = pe - tpe, tve
+        else:
+            ok_e = np.isfinite(te)
+            err_e = np.interp(t, te[ok_e], (pe - tpe)[ok_e])
+            tv_e = np.interp(t, te[ok_e], tve[ok_e]) if np.isfinite(tve).any() else np.full(t.shape, np.nan)
+        target_speed = np.hypot(tvn, tv_e)
         # Without a logged target velocity (NaN), the target is taken as still.
         target_still = ~(target_speed > TARGET_SPEED_MAX)
         ok = np.isfinite(t) & np.isfinite(err_n) & np.isfinite(err_e)

@@ -35,8 +35,8 @@ MIN_SLOPE_M = 5.0
 MIN_THROTTLE_STD = 0.03
 MIN_SAMPLES = 100
 # Validation: on the 48 benchmark logs the two flights of the cinewhoop whose thread found
-# thrust-dependent barometer errors (145480) correlate 0.71 and 0.75 (14-16 m per full
-# throttle); every other copter log is at most 0.47.
+# thrust-dependent barometer errors (145480) correlate 0.79 and 0.83 with the climb rate held
+# out; every other copter log is at most 0.47.
 
 
 @register_check
@@ -74,8 +74,15 @@ class BaroThrustCheck(Check):
         residual = diff - _running_median(diff, win)
         if float(np.std(throttle)) < MIN_THROTTLE_STD or float(np.std(residual)) <= 0:
             return []
-        corr = float(np.corrcoef(residual, throttle)[0, 1])
-        slope = float(np.polyfit(throttle, residual, 1)[0])
+        # GPS altitude lags the barometer in a hard climb or descent, and climbing takes
+        # throttle, so a lag alone would make the difference follow the throttle. Judge the
+        # throttle with the climb rate held out: the partial correlation, and the throttle's
+        # coefficient in a fit on both.
+        climb = np.gradient(np.interp(t, tb[okb], balt[okb]), t)
+        design = np.column_stack([throttle, climb, np.ones_like(t)])
+        coef = np.linalg.lstsq(design, residual, rcond=None)[0]
+        slope = float(coef[0])
+        corr = _partial_corr(residual, throttle, climb)
         if not np.isfinite(corr) or abs(corr) < MIN_CORRELATION or abs(slope) < MIN_SLOPE_M:
             return []
         way = "higher" if slope > 0 else "lower"
@@ -85,8 +92,8 @@ class BaroThrustCheck(Check):
                 Severity.WARN,
                 "Barometer altitude follows the throttle",
                 f"Against the GPS altitude, the barometer read {abs(slope):.0f} m {way} at full throttle than at "
-                f"zero: once their slow drift apart is removed, the difference correlates {corr:.2f} with the "
-                "throttle (CTUN.ThO). Prop wash or duct airflow over the barometer changes the pressure it reads "
+                f"zero: once their slow drift apart and the climb rate are taken out, the difference correlates "
+                f"{corr:.2f} with the throttle (CTUN.ThO). Prop wash or duct airflow over the barometer changes the pressure it reads "
                 "with thrust, so the height estimate follows the throttle and altitude hold surges or bounces.",
                 recommendation=(
                     "Shield the barometer from the airflow (open-cell foam, a closed enclosure, away from props and "
@@ -102,6 +109,16 @@ class BaroThrustCheck(Check):
                 },
             )
         ]
+
+
+def _partial_corr(y: np.ndarray, x: np.ndarray, z: np.ndarray) -> float:
+    """Correlation of ``y`` and ``x`` once each is cleared of a linear dependence on ``z``."""
+    zc = np.column_stack([z, np.ones_like(z)])
+    ry = y - zc @ np.linalg.lstsq(zc, y, rcond=None)[0]
+    rx = x - zc @ np.linalg.lstsq(zc, x, rcond=None)[0]
+    if float(np.std(ry)) <= 0 or float(np.std(rx)) <= 0:
+        return 0.0
+    return float(np.corrcoef(ry, rx)[0, 1])
 
 
 def _first(log: FlightLog, mtype: str) -> int | None:

@@ -68,3 +68,19 @@ def test_pilot_flying_circles_in_loiter_is_not_a_toilet_bowl():
     tgt_n, tgt_e = 30 * np.cos(a), 30 * np.sin(a)
     err_n, err_e = -0.8 * np.cos(a + np.pi / 2), -0.8 * np.sin(a + np.pi / 2)
     assert CirclingCheck().run(_log(err_n, err_e, tgt_n=tgt_n, tgt_e=tgt_e, tv=5.0)) == []
+
+
+def test_a_dropped_psce_record_does_not_shift_the_pairing():
+    n, e = _orbit(3.0, 1.5)
+    size = len(n)
+    pscn = build_series(0.0, 10.0, TPN=[0.0] * size, PN=list(n), TVN=[0.0] * size)
+    psce = build_series(0.0, 10.0, TPE=[0.0] * size, PE=list(e), TVE=[0.0] * size)
+    del psce[100]  # one record lost: index pairing would be off by one from here on
+    msgs = {
+        "PSCN": pscn,
+        "PSCE": psce,
+        "MODE": [{"TimeUS": 0, "Mode": 5, "ModeNum": 5, "Rsn": 1}],
+        "EV": [{"TimeUS": 0, "Id": 10}],
+    }
+    f = CirclingCheck().run(make_flight_log(msgs, vehicle_kind="copter"))
+    assert len(f) == 1 and f[0].evidence.samples["turns"] >= 2.5

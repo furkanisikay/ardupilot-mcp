@@ -57,3 +57,14 @@ def test_without_a_gps_fix_nothing_is_judged():
         "EV": [{"TimeUS": 0, "Id": 10}],
     }
     assert BaroThrustCheck().run(make_flight_log(msgs, vehicle_kind="copter")) == []
+
+
+def test_gps_lag_in_hard_climbs_is_not_a_thrust_effect():
+    # Throttle punches drive climbs; a GPS that lags 1 s makes baro - GPS follow the climb rate,
+    # and so the throttle, with no airflow on the barometer at all.
+    t = np.arange(N) / 10.0
+    thr = 0.4 + 0.2 * np.sign(np.sin(t / 4.0))
+    climb = 4.0 * (thr - 0.4)
+    h = 20 + np.cumsum(climb) / 10.0
+    gps = np.interp(t - 1.0, t, h)  # 1 s late
+    assert BaroThrustCheck().run(_log(h, gps, thr)) == []
