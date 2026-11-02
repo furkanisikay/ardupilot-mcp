@@ -272,3 +272,30 @@ def test_ground_time_between_two_flights_is_not_judged():
     ]
     log = make_flight_log({"GPS": recs, "EV": ev})
     assert GpsCheck().run(log) == []
+
+
+def _rate_log(deltas):
+    from tests.helpers import build_series, make_flight_log
+
+    n = len(deltas)
+    gps = build_series(0.0, 5.0, Status=[3] * n, NSats=[12] * n, HDop=[0.8] * n)
+    gpa = build_series(0.0, 5.0, Delta=deltas)
+    return make_flight_log({"GPS": gps, "GPA": gpa, "EV": [{"TimeUS": 0, "Id": 10}]})
+
+
+def test_a_1hz_receiver_is_unhealthy_by_the_firmware_rule():
+    # Benchmark log 138886_0: two NMEA receivers at 1 Hz (GPA.Delta 1000 ms).
+    from ardupilot_mcp.checks.gps import GpsCheck
+
+    findings = GpsCheck().run(_rate_log([1000.0] * 60))
+    assert [(f.title, f.severity) for f in findings] == [
+        ("GPS updates too slowly for the autopilot", Severity.WARN)
+    ]
+    assert findings[0].evidence.samples == {"median_delta_ms": 1000, "unhealthy_share": 1.0}
+
+
+def test_a_5hz_receiver_with_an_odd_late_frame_is_healthy():
+    from ardupilot_mcp.checks.gps import GpsCheck
+
+    deltas = [200.0] * 30 + [260.0] + [200.0] * 29
+    assert GpsCheck().run(_rate_log(deltas)) == []

@@ -63,6 +63,34 @@ HDOP_SENTINEL = 50.0
 LOSS_MIN_DURATION_S = 1.0
 
 
+# AP_GPS update-rate health (libraries/AP_GPS/AP_GPS.cpp, Copter-4.6.3): a frame more than
+# 245 ms after the last ("200 ms (5Hz) + 45 ms buffer") is delayed; the receiver is unhealthy
+# with two delayed frames in a row, or when the running average delta (0.98 old + 0.02 new,
+# frames under 2 s) reaches 215 ms (333 ms for an RTK moving-baseline rover, not judged).
+GPS_MAX_DELTA_MS = 245.0
+GPS_DELAY_THRESHOLD = 2
+GPS_AVG_DELTA_MAX_MS = 215.0
+# Design choice: report the rate when the firmware's rule holds the receiver unhealthy for at
+# least this share of the armed time (benchmark: one log at 100%, a 1 Hz NMEA pair; the next
+# highest any log reaches is 7%).
+GPS_SLOW_SHARE = 0.10
+
+
+def _timing_unhealthy(delta_ms: np.ndarray) -> np.ndarray:
+    """Per GPA sample, whether AP_GPS::is_healthy's timing test fails after that frame."""
+    bad = np.zeros(delta_ms.shape, dtype=bool)
+    avg: float | None = None
+    delayed = 0
+    for i, d in enumerate(delta_ms):
+        if not np.isfinite(d):
+            continue
+        delayed = delayed + 1 if d > GPS_MAX_DELTA_MS else 0
+        if d < 2000:
+            avg = float(d) if avg is None or avg <= 0 else 0.98 * avg + 0.02 * float(d)
+        bad[i] = delayed >= GPS_DELAY_THRESHOLD or (avg is not None and avg >= GPS_AVG_DELTA_MAX_MS)
+    return bad
+
+
 def _in_flight(log: FlightLog, times: np.ndarray, *arrays: np.ndarray) -> tuple[np.ndarray, ...]:
     """``times`` and ``arrays`` restricted to the armed intervals.
 
@@ -103,7 +131,46 @@ class GpsCheck(Check):
                     f.evidence.samples["gps_instance"] = inst
                     self._downgrade_if_covered(log, f, inst, receivers)
                 findings.append(f)
+            rate = self._rate_finding(log, inst, label)
+            if rate is not None:
+                findings.append(rate)
         return findings
+
+    def _rate_finding(self, log: FlightLog, inst: int, label: str) -> Finding | None:
+        """The receiver updating too slowly for AP_GPS's health test (GPA.Delta, 4.x)."""
+        if not log.has("GPA") or inst not in (log.instances("GPA") or [0]):
+            return None
+        t, delta = log.series("GPA", "Delta", inst if log.instances("GPA") else None)
+        if t.size < 20:
+            return None
+        bad = _timing_unhealthy(delta)
+        armed = log.armed_mask(t)
+        if armed is not None:
+            t, delta, bad = t[armed], delta[armed], bad[armed]
+        if t.size < 20:
+            return None
+        share = float(np.mean(bad))
+        if share < GPS_SLOW_SHARE:
+            return None
+        med = float(np.nanmedian(delta))
+        return make_finding(
+            self.id,
+            Severity.WARN,
+            f"{label} updates too slowly for the autopilot",
+            f"{label} delivered a position every {med:.0f} ms ({1000.0 / med:.1f} Hz, median GPA.Delta) while armed. "
+            f"ArduPilot treats a receiver as unhealthy when frames arrive more than {GPS_MAX_DELTA_MS:.0f} ms apart "
+            f"twice in a row or average {GPS_AVG_DELTA_MAX_MS:.0f} ms or more (it expects 5 Hz); by that rule it was "
+            f"unhealthy for {share * 100:.0f}% of the armed time.",
+            recommendation=(
+                "Set the receiver to 5 Hz or faster. ArduPilot configures u-blox receivers itself (GPS_RATE_MS, "
+                "GPS_AUTO_CONFIG) but not NMEA ones, which must be set up with the maker's tool; enabling fewer "
+                "constellations (GPS_GNSS_MODE) can also restore the rate."
+            ),
+            time_start_s=float(t[0]),
+            time_end_s=float(t[-1]),
+            message_types=["GPA"],
+            samples={"median_delta_ms": round(med), "unhealthy_share": round(share, 2)},
+        )
 
     @staticmethod
     def _downgrade_if_covered(log: FlightLog, f: Finding, inst: int, receivers: list[int]) -> None:

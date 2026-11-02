@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `gps`: **a receiver too slow for the autopilot**. AP_GPS counts a frame more than 245 ms after
+  the last as delayed and holds the receiver unhealthy after two in a row or with an average
+  of 215 ms; the same rule is applied to GPA.Delta, and a receiver unhealthy by it for 10% of the
+  armed time is a WARN. It fires on one benchmark log: two NMEA receivers at 1 Hz (138886_0),
+  which ArduPilot does not configure itself.
 - `power` (multirotor): **the battery monitor is not reading the flight pack**. A configured
   voltage-and-current monitor whose current never reaches 1 A over 10 s of flight, or whose
   voltage stays under 4 V, is wired or set up wrong, and the capacity failsafe, current-based
@@ -63,6 +68,11 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- "GPS / rangefinder configured but no data logged" when the data was simply not logged:
+  LOG_BITMASK without the GPS bit (2), or on a copter without the CTUN bit (4) that carries RFND,
+  says nothing about the sensor. The logging advice names the bit instead. Three benchmark and
+  three forum findings go. One benchmark top-1/top-3 hit went with them (142202_0, whose
+  labelled cause is a GNSS update rate, scored through the unrelated rangefinder line).
 - A log with a corrupt stretch flooded stderr: pymavlink's compiled indexer prints a "bad
   header" line per bad byte below Python (146 MB for one 30 MB forum log), and MCP clients
   write the server's stderr to a log file on every call. File descriptor 2 is now silenced

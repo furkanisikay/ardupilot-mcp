@@ -78,6 +78,21 @@ _COPTER_KINDS = {"copter", "heli"}
 _FFT_MIN_HZ = NOTCH_MIN_FS_HZ
 
 
+def logging_disabled(log: FlightLog, message: str) -> bool:
+    """True when LOG_BITMASK has every bit that logs ``message`` off for this vehicle.
+
+    False when the vehicle, the message or LOG_BITMASK is unknown: absence of data is then
+    not explained by the logging setup.
+    """
+    rules = _RULES_BY_KIND.get(log.meta.vehicle_kind or "")
+    mask_value = log.params.get("LOG_BITMASK")
+    if rules is None or mask_value is None:
+        return False
+    mask = int(mask_value)
+    bits = next((r.bits for r in rules if r.message == message), None)
+    return bits is not None and not any(mask & (1 << b) for b in bits)
+
+
 def logging_advice(log: FlightLog) -> list[LoggingAdvice]:
     rules = _RULES_BY_KIND.get(log.meta.vehicle_kind or "")
     if rules is None:
