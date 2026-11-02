@@ -235,3 +235,22 @@ def test_parse_releases_the_log_file(tmp_path):
             return any("released.bin" in line for line in fh)
 
     assert not mapped()
+
+
+def test_records_without_a_time_field_take_their_place_in_the_file(tmp_path, monkeypatch):
+    # Copter 3.x wrote EV and ERR with no timestamp; ATT carried TimeMS (boot clock).
+    from tests import synth_bin
+
+    monkeypatch.setitem(synth_bin.FORMATS, "EV", (68, "B", ["Id"]))
+    monkeypatch.setitem(synth_bin.FORMATS, "ERR", (67, "BB", ["Subsys", "ECode"]))
+    msgs: list = [("ERR", {"Subsys": 12, "ECode": 1})]  # before any timed record
+    for i in range(30):
+        msgs.append(("ATT", {"TimeUS": 20_000_000 + i * 100_000, "Roll": 0.0}))
+        if i == 12:
+            msgs.append(("EV", {"Id": 10}))
+    p = str(tmp_path / "untimed.bin")
+    build_bin(p, msgs, firmware=None)
+    log = parse_bin(p)
+    assert [round(r["timestamp"], 3) for r in log.get("EV")] == [1.2]
+    assert [round(r["timestamp"], 3) for r in log.get("ERR")] == [0.0]
+    assert log.armed_intervals() == [(pytest.approx(1.2), pytest.approx(2.9))]

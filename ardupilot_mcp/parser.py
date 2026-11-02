@@ -167,6 +167,7 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
     """
     buf = np.frombuffer(reader.data_map, dtype=np.uint8)
     out: dict[str, dict[str, np.ndarray]] = {}
+    positions: dict[str, np.ndarray] = {}
     cut = 0
     for tid, fmt in reader.formats.items():
         if fmt.name in _SKIP_TYPES or tid >= len(reader.offsets):
@@ -177,6 +178,7 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
         whole = offs + fmt.len <= buf.size
         cut += int(offs.size - np.count_nonzero(whole))
         offs = offs[whole]
+        positions[fmt.name] = offs
         # A type the structured view can't express (``a`` arrays, a format char we have
         # no dtype for such as ``g`` half-floats, or a length mismatch) is decoded by
         # pymavlink on its own, so one odd type never sends the whole log down the slow path.
@@ -198,7 +200,44 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
                 v = v.copy()  # detach from the gather buffer
             cols[col] = v
         out[fmt.name] = cols
+    _stamp_untimed(out, positions)
     return out, cut
+
+
+# Records timed by the flight controller's boot clock, used to time records that carry no
+# time field. GPS is not one: pre-2015 logs put GPS time of week in GPS.TimeMS.
+_STAMP_REFERENCE = (*FlightLog._CLOCK_REFERENCE_MSGS, "RCIN")
+
+
+def _stamp_untimed(columns: dict[str, dict[str, np.ndarray]], positions: dict[str, np.ndarray]) -> None:
+    """Give records without TimeUS/TimeMS the time of the last boot-clock record before them.
+
+    Copter 3.x logged EV, ERR, MODE, MSG and PM with no timestamp at all: they are written
+    as they happen, so their place in the file times them. Each gets a ``TimeUS`` from the
+    nearest earlier reference record (or the first one, for records before any).
+    """
+    ref_pos, ref_t = [], []
+    for name in _STAMP_REFERENCE:
+        cols = columns.get(name)
+        if cols is None or name not in positions:
+            continue
+        for field, per_s in (("TimeUS", 1e6), ("TimeMS", 1e3)):
+            col = cols.get(field)
+            if col is not None and col.dtype != object:
+                ref_pos.append(positions[name])
+                ref_t.append(col.astype(np.float64) / per_s)
+                break
+    if not ref_pos:
+        return
+    pos = np.concatenate(ref_pos)
+    t = np.concatenate(ref_t)
+    order = np.argsort(pos, kind="stable")
+    pos, t = pos[order], t[order]
+    for name, cols in columns.items():
+        if "TimeUS" in cols or "TimeMS" in cols or name not in positions:
+            continue
+        idx = np.clip(np.searchsorted(pos, positions[name], side="right") - 1, 0, None)
+        cols["TimeUS"] = np.round(t[idx] * 1e6)
 
 
 # INS_LOG_BAT_OPT bits (AP_InertialSensor.h BatchSampler): 0 sensor-rate, 1 post-filter,

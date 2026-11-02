@@ -82,6 +82,15 @@ def log_ended_armed(log: FlightLog, armed: list[tuple[float, float]] | None = No
     start = armed[-1][0]
     disarms = [_num(r.get("timestamp")) for r in log.get("EV") if r.get("Id") == 11]
     disarms += [_num(r.get("timestamp")) for r in log.get("ARM") if r.get("ArmState") == 0]
+    # 4.x writes each arm twice (EV ARMED and ARM), so count the larger of the two.
+    arms = max(
+        sum(1 for r in log.get("EV") if r.get("Id") == 10),
+        sum(1 for r in log.get("ARM") if r.get("ArmState") == 1),
+    )
+    # Re-armed with no disarm in between: this log's disarm records did not reach the file
+    # (a Copter 3.2 log re-armed four times with none), so a missing last one proves nothing.
+    if arms >= 2 and not disarms:
+        return False
     return not any(t is not None and t >= start for t in disarms)
 
 
