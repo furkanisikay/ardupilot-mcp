@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `baro` check (multirotor): **the barometer follows the throttle**. Against the GPS altitude,
+  with the slow drift between them removed, a baro reading that rises and falls with CTUN.ThO
+  is prop wash or duct airflow on the barometer, which makes altitude hold surge. It fires on
+  the two benchmark flights of the cinewhoop whose thread found exactly this (145480) and on no
+  other log.
 - `circling` check: **toilet bowling**, which the README listed as not detected. In LOITER,
   POSHOLD or QLOITER, the position error (PSCN/PSCE) turning the same way around the target,
   orbit after orbit; the wiki ties it to a compass problem. Validated on a forum QuadPlane that

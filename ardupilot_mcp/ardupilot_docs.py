@@ -152,6 +152,7 @@ CHECK_TOPICS: dict[str, list[str]] = {
     "thrust_loss": ["thrust_loss", "motor_order", "esc_calibration"],
     "esc": ["esc_telemetry", "thrust_loss"],
     "circling": ["compass_interference", "compass_calibration"],
+    "baro": ["ekf_overview"],
     "events": ["log_diagnosis_general"],
     "timing": ["log_diagnosis_general"],
     "integrity": ["log_diagnosis_general"],

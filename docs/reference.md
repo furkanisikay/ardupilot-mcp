@@ -2,7 +2,7 @@
 
 # Reference
 
-ardupilot-mcp 1.0.0: 12 MCP tools and 20 checks. Every tool is read-only.
+ardupilot-mcp 1.0.0: 12 MCP tools and 21 checks. Every tool is read-only.
 
 ## Tools
 
@@ -148,5 +148,6 @@ Each check runs only when its messages are in the log and the vehicle and log ty
 | `config` | config | all | `.bin`, `.tlog` | — | Risky safety configuration in parameters (ARMING_CHECK, BATT_MONITOR, FS_THR_ENABLE). |
 | `calibration` | calibration | all | `.bin`, `.tlog` | — | Compass offset magnitudes and accelerometer calibration from parameters. |
 | `sensors` | sensors | all | `.bin`, `.tlog` | — | Configured-but-silent sensors and unhealthy sensors from params + RFND/GPS/MAG. |
+| `baro` | sensors | copter | `.bin`, `.tlog` | `BARO`, `CTUN`, `GPS` | Barometer altitude that rises and falls with the throttle against the GPS altitude: prop wash or duct airflow on the barometer, which makes altitude hold surge. |
 | `prearm` | config | all | `.bin`, `.tlog` | — | Notable startup / pre-arm status lines the firmware logged in MSG/STATUSTEXT. |
 | `param_audit` | config | all | `.bin`, `.tlog` | — | Flags self-contradictory, disabled or implausible parameter settings. |

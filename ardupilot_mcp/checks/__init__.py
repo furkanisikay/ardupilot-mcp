@@ -31,6 +31,7 @@ _CHECK_MODULES = [
     "config",
     "calibration",
     "sensors",
+    "baro",
     "prearm",
     "param_audit",
 ]

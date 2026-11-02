@@ -25,7 +25,7 @@ CATEGORY_CHECKS: dict[str, set[str]] = {
     "thrust_loss_motor_esc": {"thrust_loss", "motors", "esc"},
     "compass_interference": {"compass", "calibration", "circling"},
     "gps": {"gps", "sensors"},
-    "ekf": {"ekf"},
+    "ekf": {"ekf", "baro"},
     "rc_failsafe_link": {"rcin"},
     "tuning_oscillation": {"attitude"},
     "mechanical_frame": {"motors", "attitude"},
