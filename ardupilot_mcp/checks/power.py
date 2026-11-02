@@ -216,14 +216,29 @@ class PowerCheck(Check):
         t_min = float(times[int(np.argmin(vcc))])
         samples = {"min_vcc": round(vmin, 3), "max_vcc": round(vmax, 3), "spread_v": round(spread, 3)}
         if vmin < VCC_MIN_V:
+            # LogAnalyzer's FAIL level, which this project reports as WARN (as for PM long loops).
+            # A low rail and a recording that then stops while armed is the brown-out itself: the
+            # autopilot lost its supply in flight.
+            from ..timeline import log_ended_armed  # local: timeline imports the checks package
+
+            browned_out = log_ended_armed(log)
             return [
                 make_finding(
                     self.id,
-                    Severity.CRITICAL,
-                    "Flight-controller board voltage (Vcc) brown-out",
-                    f"The flight controller's board supply (POWR.Vcc) fell to {vmin:.2f} V while armed, "
-                    f"below the {VCC_MIN_V:.1f} V minimum. A 5 V rail this low can brown out or reset the "
-                    "autopilot and its sensors mid-flight.",
+                    Severity.CRITICAL if browned_out else Severity.WARN,
+                    "Flight-controller board voltage (Vcc) low, then the log stopped in flight"
+                    if browned_out
+                    else f"Flight-controller board voltage (Vcc) below {VCC_MIN_V:.1f} V",
+                    f"The flight controller's board supply (POWR.Vcc) fell to {vmin:.2f} V while armed "
+                    f"(median {med:.2f} V), below the {VCC_MIN_V:.1f} V minimum ArduPilot's LogAnalyzer "
+                    "applied."
+                    + (
+                        " The recording then stopped while still armed: the signature of the autopilot "
+                        "browning out (losing its supply) in flight."
+                        if browned_out
+                        else " A 5 V rail running this low leaves little margin before the autopilot or "
+                        "its sensors brown out."
+                    ),
                     recommendation=(
                         "Check the power module / BEC feeding the autopilot and the servo rail; avoid powering "
                         "servos or peripherals from the same regulator."

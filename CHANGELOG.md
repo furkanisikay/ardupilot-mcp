@@ -63,6 +63,10 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- Board voltage (POWR.Vcc) below 4.6 V was always a CRITICAL "brown-out", including a 0.1 V dip
+  on a board running at 4.64 V that kept logging. 4.6 V is LogAnalyzer's FAIL level, which this
+  project reports as WARN elsewhere; it is CRITICAL now only when the recording then stops while
+  armed, the brown-out itself (benchmark log 144427_0).
 - Copter 3.x logs: EV, ERR, MODE, MSG and PM carry no timestamp there, so their events had
   no time and a crash check never reached the incident timeline. Each such record now takes
   the time of the last boot-clock record before it in the file. A logging gap that holds a

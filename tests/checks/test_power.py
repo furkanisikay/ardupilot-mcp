@@ -181,11 +181,13 @@ def _armed(extra: dict) -> dict:
     return {"EV": [{"TimeUS": 1_000_000, "Id": 10}, {"TimeUS": 9_000_000, "Id": 11}], **extra}
 
 
-def test_vcc_brownout_while_armed_is_critical():
+def test_vcc_below_minimum_while_armed_is_a_warning():
+    # LogAnalyzer's FAIL level, reported as WARN like the PM long-loop check.
     vcc = [5.05] * 40 + [4.3] * 5 + [5.05] * 55
     log = make_flight_log(_armed({"POWR": build_series(0.0, 10.0, Vcc=vcc)}))
     f = [x for x in PowerCheck().run(log) if "Vcc" in x.title]
-    assert f and f[0].severity == Severity.CRITICAL
+    assert f and f[0].severity == Severity.WARN
+    assert f[0].title == "Flight-controller board voltage (Vcc) below 4.6 V"
     assert f[0].evidence.samples["min_vcc"] == 4.3
 
 
@@ -377,3 +379,13 @@ def test_dead_monitor_needs_a_flying_copter_and_a_measuring_monitor():
     short = ([16.0] * 80, [0.05] * 80)  # 8 s of flight
     assert PowerCheck().run(_flown(*short)) == []
     assert PowerCheck().run(_flown([16.0] * 300, [0.05] * 299 + [6.0])) == []
+
+
+def test_low_vcc_then_the_log_stops_armed_is_a_brownout():
+    # The 144427_0 benchmark log: Vcc ~4.6 V dipping to 4.42 V, then logging ends in flight.
+    vcc = [4.6] * 60 + [4.42] * 5 + [4.6] * 35
+    log = make_flight_log({"POWR": build_series(0.0, 10.0, Vcc=vcc), "EV": [{"TimeUS": 0, "Id": 10}]})
+    f = [x for x in PowerCheck().run(log) if "Vcc" in x.title]
+    assert [(x.title, x.severity) for x in f] == [
+        ("Flight-controller board voltage (Vcc) low, then the log stopped in flight", Severity.CRITICAL)
+    ]
