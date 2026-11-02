@@ -63,6 +63,10 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- A log with a corrupt stretch flooded stderr: pymavlink's compiled indexer prints a "bad
+  header" line per bad byte below Python (146 MB for one 30 MB forum log), and MCP clients
+  write the server's stderr to a log file on every call. File descriptor 2 is now silenced
+  while the indexer runs; integrity is still judged from the record index.
 - RC dropouts the receiver did not report. With RCI2 in the log, only its "no valid input"
   flag was read, so a receiver that sends its own failsafe values on a dropout (every channel
   at 875 us while still flagged valid, a FrSky Fport link in forum thread 145881) went unseen

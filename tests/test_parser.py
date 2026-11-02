@@ -275,3 +275,16 @@ def test_pre_4x_gps_is_timed_by_its_boot_clock(tmp_path, monkeypatch):
     assert [round(float(t), 3) for t in log.times("GPS")] == [0.0, 0.5, 1.0, 1.5]
     assert log.meta.duration_s == pytest.approx(1.9)
     assert log.get("GPS")[0]["TimeMS"] == 44_336_000  # the GPS field itself is kept
+
+
+def test_a_corrupt_stretch_does_not_flood_stderr(tmp_path, capfd):
+    # pymavlink's C indexer prints one "bad header" line per bad byte to fd 2 (146 MB for
+    # one forum log); an MCP client writes the server's stderr to its log file.
+    p = str(tmp_path / "mid.bin")
+    build_bin(p, _basic_messages(), firmware="ArduCopter V4.5.7")
+    _splice(p, 10, bytes(range(7, 207)) * 3)
+    capfd.readouterr()
+    log = parse_bin(p)
+    out, err = capfd.readouterr()
+    assert log.meta.integrity == LogIntegrity.PARTIAL
+    assert out == "" and "bad header" not in err

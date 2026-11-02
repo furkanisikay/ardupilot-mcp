@@ -44,7 +44,8 @@ def parse_bin(path: str) -> FlightLog:
     capture = io.StringIO()
     with contextlib.redirect_stderr(capture):
         try:
-            reader = _open_reader(DFReader, path)
+            with _quiet_native_stderr():
+                reader = _open_reader(DFReader, path)
         except Exception as exc:  # noqa: BLE001
             raise ValueError(f"could not open DataFlash log {path!r}: {exc}") from exc
         records, gap_bytes, gap_runs, tail_bytes = _coverage(reader)
@@ -93,12 +94,38 @@ def parse_bin(path: str) -> FlightLog:
     return log
 
 
+@contextlib.contextmanager
+def _quiet_native_stderr():
+    """Silence file descriptor 2 while pymavlink's compiled indexer runs.
+
+    Its C ``dfindexer`` prints a "bad header" line per bad byte straight to fd 2, below
+    Python's ``sys.stderr``: 146 MB for one 30 MB forum log with a corrupt stretch, which an
+    MCP client then writes to its server log on every call. Integrity is judged from the
+    index itself (``_coverage``), so nothing is lost.
+    """
+    try:
+        saved = os.dup(2)
+    except OSError:  # no usable fd 2 (a windowless process): nothing to silence
+        yield
+        return
+    try:
+        with open(os.devnull, "wb") as null:
+            os.dup2(null.fileno(), 2)
+            try:
+                yield
+            finally:
+                os.dup2(saved, 2)
+    finally:
+        os.close(saved)
+
+
 def _load_batches(path: str, log: FlightLog) -> list[ImuBatch]:
     """Re-open ``path`` and decode its batch-sampler captures for ``log``."""
     from pymavlink import DFReader
 
     with contextlib.redirect_stderr(io.StringIO()):
-        reader = _open_reader(DFReader, path)
+        with _quiet_native_stderr():
+            reader = _open_reader(DFReader, path)
         try:
             return _decode_batches(reader, log)
         finally:
