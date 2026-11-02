@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Vibration compensation (FAILSAFE_VIBE, "Vibration compensation ON") now says what the measured
+  vibration was in the 3 s before. The firmware triggers it from the EKF's vertical innovations,
+  not from the vibration level, and on the benchmark and forum logs it split cleanly: peaks of
+  57 m/s^2 and more with clipping at crashes and tumbles, at most 15 m/s^2 with no clipping
+  where the helpers found a height-estimate cause (a GPS glitch, poor GPS accuracy, prop wash on
+  the barometer, an oscillating altitude controller). In the second case the finding says
+  vibration did not trigger it and points at those causes.
 - `gps`: **a receiver too slow for the autopilot**. AP_GPS counts a frame more than 245 ms after
   the last as delayed and holds the receiver unhealthy after two in a row or with an average
   of 215 ms; the same rule is applied to GPA.Delta, and a receiver unhealthy by it for 10% of the

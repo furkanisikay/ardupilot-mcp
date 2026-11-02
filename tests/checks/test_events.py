@@ -204,3 +204,33 @@ def test_land_events_written_by_the_disarm_itself_do_not_hide_it():
     land = [{"TimeUS": 20_000_000, "Id": 18}, {"TimeUS": 20_000_000, "Id": 17}]
     f = [x for x in EventsCheck().run(_disarm_log(7, land)) if x.title.startswith("Disarmed in flight")]
     assert [x.severity for x in f] == [Severity.WARN]
+
+
+def _vibe_trigger_log(vibe_z, clips):
+    from tests.helpers import build_series, make_flight_log
+
+    n = len(vibe_z)
+    vibe = build_series(0.0, 10.0, VibeX=[5.0] * n, VibeY=[5.0] * n, VibeZ=vibe_z, Clip=clips)
+    err = [{"TimeUS": 8_000_000, "Subsys": 29, "ECode": 1}]
+    return make_flight_log({"VIBE": vibe, "ERR": err, "EV": [{"TimeUS": 0, "Id": 10}]})
+
+
+def test_vibration_compensation_with_low_vibration_points_at_the_height_estimate():
+    # Forum logs 145303 (oscillating PSC) and 145599 (poor GPS): peak <= 15 m/s^2, no clips.
+    from ardupilot_mcp.checks.events import EventsCheck
+
+    f = [
+        x for x in EventsCheck().run(_vibe_trigger_log([8.0] * 100, [0] * 100)) if "FAILSAFE_VIBE" in x.title
+    ]
+    assert (
+        f and "vibration did not trigger it" in f[0].explanation and "VibeZ peak 8 m/s^2" in f[0].explanation
+    )
+
+
+def test_vibration_compensation_with_high_vibration_says_so():
+    from ardupilot_mcp.checks.events import EventsCheck
+
+    vz = [8.0] * 60 + [70.0] * 40
+    clips = [0] * 60 + list(range(40))
+    f = [x for x in EventsCheck().run(_vibe_trigger_log(vz, clips)) if "FAILSAFE_VIBE" in x.title]
+    assert f and "Vibration was high" in f[0].explanation and "did not trigger" not in f[0].explanation

@@ -31,6 +31,7 @@ from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
 from .util import make_finding
+from .vibration import trigger_note
 
 
 @dataclass(frozen=True)
@@ -230,7 +231,12 @@ class FirmwareVerdictsCheck(Check):
                     v.title,
                     f'The autopilot logged "{first_text}"{when}'
                     + (f" ({len(seen)} times)" if len(seen) > 1 else "")
-                    + f": {v.meaning}. This is the firmware's own on-board conclusion, not an inference.",
+                    + f": {v.meaning}. This is the firmware's own on-board conclusion, not an inference."
+                    + (
+                        trigger_note(log, min(times) if times else None)
+                        if v.title.startswith("Firmware switched on vibration")
+                        else ""
+                    ),
                     recommendation=_recommendation(v),
                     time_start_s=min(times) if times else None,
                     time_end_s=max(times) if times else None,

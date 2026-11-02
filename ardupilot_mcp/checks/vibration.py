@@ -274,3 +274,50 @@ def demote(f: Finding) -> bool:
     f.severity = Severity.WARN if f.severity == Severity.CRITICAL else Severity.INFO
     f.explanation += " (Secondary IMU: reported one level lower; the primary IMU decides severity.)"
     return True
+
+
+# Design choice: the vibration behind a vibration-compensation trigger is read over this
+# window before it (the firmware needs its condition for 1 s, ekf_check.cpp check_vibration).
+TRIGGER_LOOKBACK_S = 3.0
+
+
+def vibration_before(log: FlightLog, t: float) -> tuple[float, float, int] | None:
+    """(peak VibeZ, peak VibeX/Y, accelerometer clips) on the primary IMU over the window before ``t``."""
+    if not log.has("VIBE"):
+        return None
+    imus = log.instances("VIBE")
+    imu = primary_imu(log, imus) if imus else None
+    clip_field = "Clip" if "Clip" in log.fields("VIBE") else "Clip0"
+    times, (vx, vy, vz, clip) = log.series_many("VIBE", ["VibeX", "VibeY", "VibeZ", clip_field], imu)
+    win = (times >= t - TRIGGER_LOOKBACK_S) & (times <= t + 0.5)
+    if not win.any():
+        return None
+    z_peak = float(np.nanmax(vz[win]))
+    xy_peak = float(np.nanmax(np.concatenate([vx[win], vy[win]])))
+    clips = clip[win][np.isfinite(clip[win])]
+    return z_peak, xy_peak, int(clips.max() - clips.min()) if clips.size else 0
+
+
+def trigger_note(log: FlightLog, t: float | None) -> str:
+    """What the measured vibration says about a vibration-compensation trigger at ``t``."""
+    if t is None:
+        return ""
+    found = vibration_before(log, t)
+    if found is None:
+        return ""
+    z_peak, xy_peak, clips = found
+    # The trigger is the EKF's vertical velocity and position innovations (ekf_check.cpp), so
+    # the vertical axis decides; clipping on any axis corrupts the vertical estimate too.
+    if z_peak < WARN_MS2 and clips == 0:
+        return (
+            f" The measured vertical vibration in the {TRIGGER_LOOKBACK_S:.0f} s before was low (VibeZ peak "
+            f"{z_peak:.0f} m/s^2, X/Y {xy_peak:.0f}, no clipping; the wiki's acceptable level is under "
+            f"{WARN_MS2:.0f} m/s^2), so vibration did not trigger it: the EKF's "
+            "height disagreed with the accelerometers for another reason. Look at the height source (a GPS "
+            "glitch or poor GPS accuracy when GPS is the height source, prop wash on the barometer) and at an "
+            "oscillating altitude controller (PSC_* parameters)."
+        )
+    return (
+        f" Vibration was high in the {TRIGGER_LOOKBACK_S:.0f} s before (VibeZ peak {z_peak:.0f} m/s^2, X/Y "
+        f"{xy_peak:.0f}, {clips} clip(s))."
+    )

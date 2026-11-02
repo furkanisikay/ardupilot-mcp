@@ -131,10 +131,10 @@ Each check runs only when its messages are in the log and the vehicle and log ty
 | Check | Category | Vehicles | Logs | Needs | What it reports |
 |---|---|---|---|---|---|
 | `integrity` | integrity | all | `.bin` | — | Reports whether the log parsed cleanly, was truncated/partial, or stopped while armed. |
+| `vibration` | vibration | all | `.bin`, `.tlog` | `VIBE` | Per-axis vibration magnitude and accelerometer clipping from VIBE. |
 | `events` | events | all | `.bin`, `.tlog` | — | Errors, failsafes and the flight mode/event timeline from ERR/MODE/EV. |
 | `firmware` | events | all | `.bin`, `.tlog` | — | In-flight conclusions the autopilot logged itself: crash disarm, EKF failsafe, yaw imbalance, vibration compensation, and failsafe-driven mode changes (MODE.Rsn). |
 | `ekf` | estimator | all | `.bin`, `.tlog` | — | EKF innovation/variance test ratios (XKF4/NKF4) per sensor. |
-| `vibration` | vibration | all | `.bin`, `.tlog` | `VIBE` | Per-axis vibration magnitude and accelerometer clipping from VIBE. |
 | `power` | power | all | `.bin`, `.tlog` | — | Per-battery voltage vs failsafe thresholds, sudden brown-out drops and sag under load (BAT/CURR), plus flight-controller board voltage (POWR.Vcc). |
 | `gps` | gps | all | `.bin`, `.tlog` | `GPS` | GPS fix quality, satellite count and HDOP from the GPS message. |
 | `compass` | compass | all | `.bin`, `.tlog` | `MAG` | Per-compass field-strength stability and throttle-correlated interference from MAG + CTUN (offsets are covered by the calibration check). |

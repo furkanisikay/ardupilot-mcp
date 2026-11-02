@@ -40,6 +40,10 @@ from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
 from .util import make_finding
+from .vibration import trigger_note
+
+# LogErrorSubsystem::FAILSAFE_VIBE (AP_Logger.h): the vibration compensation switching on.
+ERR_FAILSAFE_VIBE = 29
 
 # EV names that mark the key lifecycle of a flight (decoded via ev_name).
 # Verified against ArduPilot's LogEvent enum (AP_Logger.h, Copter-4.5.7): there is
@@ -183,6 +187,7 @@ class EventsCheck(Check):
                     f"ECode {ecode}"
                     + (f" at {ts:.1f}s." if ts is not None else ".")
                     + detail
+                    + (trigger_note(log, ts) if subsys == ERR_FAILSAFE_VIBE else "")
                     + (
                         " This is a safety-critical failsafe/fault that directly affects flight safety."
                         if critical
