@@ -284,8 +284,12 @@ ARM_METHOD_AUXSWITCH = 2
 # 153 ARMDISARM, 154 ARMDISARM_AIRMODE, 165 ARM_EMERGENCY_STOP.
 ARM_DISARM_AUX = {153: "ArmDisarm", 154: "ArmDisarm with AirMode", 165: "Arm / Emergency Stop"}
 # The stick channels (RCMAP_*; default 1-4) and what they fly.
-_STICK_MAPS = (("RCMAP_ROLL", 1, "roll"), ("RCMAP_PITCH", 2, "pitch"), ("RCMAP_THROTTLE", 3, "throttle"),
-               ("RCMAP_YAW", 4, "yaw"))
+_STICK_MAPS = (
+    ("RCMAP_ROLL", 1, "roll"),
+    ("RCMAP_PITCH", 2, "pitch"),
+    ("RCMAP_THROTTLE", 3, "throttle"),
+    ("RCMAP_YAW", 4, "yaw"),
+)
 
 
 def stick_arm_switch(params: dict[str, float]) -> tuple[int, str, str] | None:

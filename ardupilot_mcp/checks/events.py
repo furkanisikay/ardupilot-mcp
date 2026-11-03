@@ -26,8 +26,8 @@ import math
 import numpy as np
 
 from ..ardupilot_meta import (
-    ARM_METHODS,
     ARM_METHOD_AUXSWITCH,
+    ARM_METHODS,
     ARM_METHODS_COMMANDED,
     ARM_METHODS_GROUND_OR_CRASH,
     CRITICAL_ERR_SUBSYSTEMS,
