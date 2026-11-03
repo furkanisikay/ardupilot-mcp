@@ -2,24 +2,23 @@
  "summary": {
   "logs": 49,
   "scored": 41,
-  "top1_hits": 11,
+  "top1_hits": 12,
   "top3_hits": 22,
-  "logs_with_false_critical": 35,
-  "false_criticals_total": 97,
+  "logs_with_false_critical": 26,
+  "false_criticals_total": 44,
   "false_criticals_by_check": {
-   "vibration": 29,
    "attitude": 25,
-   "ekf": 25,
-   "gps": 6,
-   "events": 5,
-   "rcin": 4,
+   "ekf": 11,
+   "rcin": 3,
    "power": 2,
-   "compass": 1
+   "compass": 1,
+   "events": 1,
+   "gps": 1
   },
-  "false_criticals_before_impact": 95,
+  "false_criticals_before_impact": 44,
   "measured_on": {
    "version": "1.0.0",
-   "revision": "428556d"
+   "revision": "334f959"
   }
  },
  "scores": [
@@ -35,7 +34,7 @@
    ],
    "top_check": "attitude",
    "hit": false,
-   "top3": false,
+   "top3": true,
    "onset_check": "attitude",
    "false_criticals": [
     "attitude"
@@ -54,7 +53,7 @@
    ],
    "top_check": "attitude",
    "hit": false,
-   "top3": false,
+   "top3": true,
    "onset_check": "attitude",
    "false_criticals": [
     "attitude"
@@ -68,32 +67,29 @@
     "attitude",
     "motors"
    ],
-   "top_check": "ekf",
-   "hit": false,
+   "top_check": "attitude",
+   "hit": true,
    "top3": true,
    "onset_check": "ekf",
-   "false_criticals": [
-    "ekf"
-   ],
-   "false_criticals_before_impact": 1
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "132194_0",
    "category": "thrust_loss_motor_esc",
    "expected": [
+    "esc",
     "motors",
     "thrust_loss"
    ],
-   "top_check": "vibration",
-   "hit": false,
-   "top3": false,
-   "onset_check": "vibration",
+   "top_check": "esc",
+   "hit": true,
+   "top3": true,
+   "onset_check": "esc",
    "false_criticals": [
-    "vibration",
-    "vibration",
     "ekf"
    ],
-   "false_criticals_before_impact": 3
+   "false_criticals_before_impact": 1
   },
   {
    "id": "137589_0",
@@ -105,18 +101,15 @@
     "prearm",
     "sensors"
    ],
-   "top_check": "ekf",
+   "top_check": "attitude",
    "hit": false,
    "top3": false,
    "onset_check": "ekf",
    "false_criticals": [
     "attitude",
-    "vibration",
-    "vibration",
-    "rcin",
-    "vibration"
+    "rcin"
    ],
-   "false_criticals_before_impact": 5
+   "false_criticals_before_impact": 2
   },
   {
    "id": "137589_1",
@@ -134,20 +127,20 @@
    "onset_check": "ekf",
    "false_criticals": [
     "attitude",
-    "attitude",
-    "vibration"
+    "attitude"
    ],
-   "false_criticals_before_impact": 3
+   "false_criticals_before_impact": 2
   },
   {
    "id": "138886_0",
    "category": "ekf",
    "expected": [
+    "baro",
     "ekf"
    ],
-   "top_check": "events",
-   "hit": true,
-   "top3": true,
+   "top_check": "gps",
+   "hit": false,
+   "top3": false,
    "onset_check": "timing",
    "false_criticals": [],
    "false_criticals_before_impact": 0
@@ -156,10 +149,11 @@
    "id": "139371_0",
    "category": "ekf",
    "expected": [
+    "baro",
     "ekf"
    ],
-   "top_check": "ekf",
-   "hit": true,
+   "top_check": "compass",
+   "hit": false,
    "top3": true,
    "onset_check": "ekf",
    "false_criticals": [],
@@ -169,7 +163,7 @@
    "id": "140954_0",
    "category": "pilot_error",
    "expected": [],
-   "top_check": "events",
+   "top_check": "firmware",
    "hit": null,
    "top3": null,
    "onset_check": "err",
@@ -177,14 +171,9 @@
     "attitude",
     "attitude",
     "attitude",
-    "vibration",
-    "vibration",
-    "vibration",
-    "ekf",
-    "ekf",
     "ekf"
    ],
-   "false_criticals_before_impact": 7
+   "false_criticals_before_impact": 4
   },
   {
    "id": "141345_0",
@@ -198,10 +187,9 @@
    "top3": false,
    "onset_check": "ekf",
    "false_criticals": [
-    "compass",
-    "events"
+    "compass"
    ],
-   "false_criticals_before_impact": 2
+   "false_criticals_before_impact": 1
   },
   {
    "id": "141676_0",
@@ -213,14 +201,12 @@
     "prearm",
     "sensors"
    ],
-   "top_check": "rcin",
+   "top_check": "firmware",
    "hit": false,
    "top3": true,
-   "onset_check": "rcin",
-   "false_criticals": [
-    "rcin"
-   ],
-   "false_criticals_before_impact": 1
+   "onset_check": "mode",
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "141734_0",
@@ -234,14 +220,9 @@
    "top3": true,
    "onset_check": "timing",
    "false_criticals": [
-    "vibration",
-    "vibration",
-    "vibration",
-    "vibration",
-    "ekf",
     "ekf"
    ],
-   "false_criticals_before_impact": 6
+   "false_criticals_before_impact": 1
   },
   {
    "id": "141884_0",
@@ -252,12 +233,9 @@
    "top3": null,
    "onset_check": "attitude",
    "false_criticals": [
-    "attitude",
-    "vibration",
-    "vibration",
-    "vibration"
+    "attitude"
    ],
-   "false_criticals_before_impact": 4
+   "false_criticals_before_impact": 1
   },
   {
    "id": "142129_0",
@@ -288,18 +266,15 @@
     "prearm",
     "sensors"
    ],
-   "top_check": "vibration",
+   "top_check": "attitude",
    "hit": false,
    "top3": false,
-   "onset_check": "vibration",
+   "onset_check": "attitude",
    "false_criticals": [
-    "vibration",
     "attitude",
-    "vibration",
-    "vibration",
     "attitude"
    ],
-   "false_criticals_before_impact": 5
+   "false_criticals_before_impact": 2
   },
   {
    "id": "142202_0",
@@ -308,9 +283,9 @@
     "gps",
     "sensors"
    ],
-   "top_check": "sensors",
-   "hit": true,
-   "top3": true,
+   "top_check": null,
+   "hit": false,
+   "top3": false,
    "onset_check": null,
    "false_criticals": [],
    "false_criticals_before_impact": 0
@@ -347,16 +322,12 @@
    "onset_check": "attitude",
    "false_criticals": [
     "attitude",
-    "vibration",
-    "vibration",
-    "vibration",
-    "vibration",
     "ekf",
     "attitude",
     "ekf",
     "rcin"
    ],
-   "false_criticals_before_impact": 9
+   "false_criticals_before_impact": 5
   },
   {
    "id": "142491_1",
@@ -375,29 +346,26 @@
    "false_criticals": [
     "attitude",
     "attitude",
-    "vibration",
     "ekf",
     "ekf"
    ],
-   "false_criticals_before_impact": 5
+   "false_criticals_before_impact": 4
   },
   {
    "id": "142533_0",
    "category": "pilot_error",
    "expected": [],
-   "top_check": "vibration",
+   "top_check": "attitude",
    "hit": null,
    "top3": null,
    "onset_check": "timing",
    "false_criticals": [
-    "vibration",
     "attitude",
     "attitude",
-    "vibration",
     "ekf",
     "ekf"
    ],
-   "false_criticals_before_impact": 6
+   "false_criticals_before_impact": 4
   },
   {
    "id": "143189_0",
@@ -434,7 +402,7 @@
    "id": "143223_0",
    "category": "pilot_error",
    "expected": [],
-   "top_check": "gps",
+   "top_check": "attitude",
    "hit": null,
    "top3": null,
    "onset_check": "gps",
@@ -447,19 +415,18 @@
    "id": "143837_0",
    "category": "thrust_loss_motor_esc",
    "expected": [
+    "esc",
     "motors",
     "thrust_loss"
    ],
-   "top_check": "gps",
+   "top_check": "power",
    "hit": false,
    "top3": false,
    "onset_check": "timing",
    "false_criticals": [
-    "gps",
-    "gps",
     "power"
    ],
-   "false_criticals_before_impact": 3
+   "false_criticals_before_impact": 1
   },
   {
    "id": "143955_0",
@@ -467,25 +434,24 @@
    "expected": [
     "power"
    ],
-   "top_check": "ekf",
+   "top_check": "prearm",
    "hit": false,
    "top3": false,
    "onset_check": "ekf",
-   "false_criticals": [
-    "ekf"
-   ],
-   "false_criticals_before_impact": 1
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "144128_0",
    "category": "compass_interference",
    "expected": [
     "calibration",
+    "circling",
     "compass"
    ],
    "top_check": "ekf",
    "hit": false,
-   "top3": false,
+   "top3": true,
    "onset_check": "ekf",
    "false_criticals": [],
    "false_criticals_before_impact": 0
@@ -500,8 +466,8 @@
     "prearm",
     "sensors"
    ],
-   "top_check": "prearm",
-   "hit": true,
+   "top_check": "power",
+   "hit": false,
    "top3": true,
    "onset_check": "err",
    "false_criticals": [],
@@ -511,18 +477,18 @@
    "id": "144337_0",
    "category": "thrust_loss_motor_esc",
    "expected": [
+    "esc",
     "motors",
     "thrust_loss"
    ],
-   "top_check": "ekf",
+   "top_check": "attitude",
    "hit": false,
    "top3": true,
    "onset_check": "ekf",
    "false_criticals": [
-    "ekf",
     "attitude"
    ],
-   "false_criticals_before_impact": 2
+   "false_criticals_before_impact": 1
   },
   {
    "id": "144420_0",
@@ -543,14 +509,12 @@
    "expected": [
     "power"
    ],
-   "top_check": "ekf",
-   "hit": false,
+   "top_check": "power",
+   "hit": true,
    "top3": true,
    "onset_check": "ekf",
-   "false_criticals": [
-    "ekf"
-   ],
-   "false_criticals_before_impact": 1
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "144690_0",
@@ -573,21 +537,21 @@
     "prearm",
     "sensors"
    ],
-   "top_check": "ekf",
+   "top_check": "attitude",
    "hit": false,
    "top3": false,
    "onset_check": "power",
    "false_criticals": [
-    "ekf",
     "attitude",
     "attitude"
    ],
-   "false_criticals_before_impact": 3
+   "false_criticals_before_impact": 2
   },
   {
    "id": "145222_0",
    "category": "thrust_loss_motor_esc",
    "expected": [
+    "esc",
     "motors",
     "thrust_loss"
    ],
@@ -596,14 +560,9 @@
    "top3": true,
    "onset_check": "thrust_loss",
    "false_criticals": [
-    "attitude",
-    "vibration",
-    "vibration",
-    "vibration",
-    "ekf",
-    "ekf"
+    "attitude"
    ],
-   "false_criticals_before_impact": 6
+   "false_criticals_before_impact": 1
   },
   {
    "id": "145232_0",
@@ -626,17 +585,17 @@
    "id": "145352_0",
    "category": "ekf",
    "expected": [
+    "baro",
     "ekf"
    ],
-   "top_check": "gps",
+   "top_check": "power",
    "hit": false,
-   "top3": true,
+   "top3": false,
    "onset_check": "power",
    "false_criticals": [
-    "gps",
     "power"
    ],
-   "false_criticals_before_impact": 2
+   "false_criticals_before_impact": 1
   },
   {
    "id": "145382_0",
@@ -644,16 +603,14 @@
    "expected": [
     "attitude"
    ],
-   "top_check": "ekf",
+   "top_check": "rcin",
    "hit": false,
    "top3": false,
    "onset_check": "ekf",
    "false_criticals": [
-    "ekf",
-    "rcin",
-    "ekf"
+    "rcin"
    ],
-   "false_criticals_before_impact": 3
+   "false_criticals_before_impact": 1
   },
   {
    "id": "145422_0",
@@ -662,14 +619,12 @@
     "gps",
     "sensors"
    ],
-   "top_check": "ekf",
+   "top_check": "prearm",
    "hit": false,
    "top3": false,
    "onset_check": "gps",
-   "false_criticals": [
-    "ekf"
-   ],
-   "false_criticals_before_impact": 1
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "145429_0",
@@ -681,8 +636,8 @@
     "prearm",
     "sensors"
    ],
-   "top_check": "vibration",
-   "hit": false,
+   "top_check": "config",
+   "hit": true,
    "top3": true,
    "onset_check": null,
    "false_criticals": [],
@@ -709,31 +664,29 @@
    "id": "145480_0",
    "category": "ekf",
    "expected": [
+    "baro",
     "ekf"
    ],
-   "top_check": "ekf",
+   "top_check": "baro",
    "hit": true,
    "top3": true,
    "onset_check": "ekf",
-   "false_criticals": [
-    "events"
-   ],
-   "false_criticals_before_impact": 1
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "145480_1",
    "category": "ekf",
    "expected": [
+    "baro",
     "ekf"
    ],
-   "top_check": "ekf",
+   "top_check": "baro",
    "hit": true,
    "top3": true,
    "onset_check": "ekf",
-   "false_criticals": [
-    "events"
-   ],
-   "false_criticals_before_impact": 1
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "145571_0",
@@ -741,42 +694,40 @@
    "expected": [
     "attitude"
    ],
-   "top_check": "vibration",
+   "top_check": "ekf",
    "hit": false,
    "top3": false,
-   "onset_check": "vibration",
+   "onset_check": "ekf",
    "false_criticals": [
-    "ekf",
     "ekf"
    ],
-   "false_criticals_before_impact": 2
+   "false_criticals_before_impact": 1
   },
   {
    "id": "145616_0",
    "category": "ekf",
    "expected": [
+    "baro",
     "ekf"
    ],
-   "top_check": "events",
-   "hit": false,
+   "top_check": "ekf",
+   "hit": true,
    "top3": true,
-   "onset_check": "ekf",
-   "false_criticals": [
-    "events",
-    "gps"
-   ],
-   "false_criticals_before_impact": 2
+   "onset_check": "gps",
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "145616_1",
    "category": "ekf",
    "expected": [
+    "baro",
     "ekf"
    ],
    "top_check": "gps",
    "hit": false,
    "top3": true,
-   "onset_check": "ekf",
+   "onset_check": "gps",
    "false_criticals": [
     "gps"
    ],
@@ -786,16 +737,15 @@
    "id": "145616_2",
    "category": "ekf",
    "expected": [
+    "baro",
     "ekf"
    ],
    "top_check": "gps",
    "hit": false,
-   "top3": true,
-   "onset_check": null,
-   "false_criticals": [
-    "gps"
-   ],
-   "false_criticals_before_impact": 1
+   "top3": false,
+   "onset_check": "gps",
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "145617_0",
