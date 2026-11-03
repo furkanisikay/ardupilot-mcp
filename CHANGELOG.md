@@ -184,7 +184,9 @@ All notable changes to this project are documented here. The format is based on
   and 145616_2 had scored through a compass-variance rejection after the vehicle had disarmed,
   while its labelled cause is the EKF height running away in flight.
   Three were gained: 132194_0, the ESC-overheating crash, now top-1 through the `esc` check, and
-  two plane logs whose airspeed parameters did not match the airframe (`param_audit`). One top-1
+  the two flights of 117787 through `param_audit`'s airspeed finding (flown at 27 m/s on a
+  SCALING_SPEED of 13, which halves the surface throw; the labelled cause is a V-tail
+  MIXING_GAIN of 0.5, another shortfall of elevator authority). One top-1
   hit went to a real but different setup fault: 144203_1 (LOIT_OPTIONS) used to open with an
   unrelated "Loiter needs position" message and now opens with its current sensor reading 0 A.
 - Corrupt logs passed as clean. Integrity was judged from pymavlink's "bad header"
