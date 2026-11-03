@@ -92,3 +92,32 @@ def test_temperature_already_high_with_the_motor_stopped_is_not_judged():
     findings = EscCheck().run(_temp_log({0: [159.0] * N}))
     assert [f.title for f in findings] == ["ESC temperature telemetry not judged"]
     assert findings[0].severity == Severity.INFO
+
+
+def _quadplane(curr, volt, out, params=None):
+    p = {
+        "Q_ENABLE": 1,
+        "Q_M_SPIN_MIN": 0.15,
+        "Q_M_PWM_MIN": 1000,
+        "Q_M_PWM_MAX": 2000,
+        **{f"SERVO{n}_FUNCTION": 33 + n - 9 for n in range(9, 13)},
+        **(params or {}),
+    }
+    bat = build_series(0.0, 10.0, Volt=volt, Curr=curr)
+    rcou = build_series(0.0, 10.0, **{f"C{n}": out for n in range(9, 13)})
+    return make_flight_log(
+        {"BAT": bat, "RCOU": rcou, "EV": [{"TimeUS": 0, "Id": 10}]}, params=p, vehicle_kind="plane"
+    )
+
+
+def test_quadplane_vtol_motors_losing_power():
+    # Forum log 142142_0: 46 A -> 0 A while the VTOL motors (SERVO9-12) were driven at 1800+ us.
+    findings = EscCheck().run(_quadplane([46.0] * 150 + [0.0] * 150, [22.9] * 150 + [24.2] * 150, [1850] * N))
+    assert [(f.title, f.severity) for f in findings] == [
+        ("Motors lost power while still commanded", Severity.CRITICAL)
+    ]
+
+
+def test_plane_without_vtol_motors_is_not_judged_for_a_power_cut():
+    findings = EscCheck().run(_quadplane([46.0] * 150 + [0.0] * 150, [22.9] * N, [1850] * N, {"Q_ENABLE": 0}))
+    assert findings == []

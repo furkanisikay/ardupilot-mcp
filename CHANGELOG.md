@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `esc` (QuadPlane): **VTOL motors lost power while still commanded**. A QuadPlane's VTOL motors
+  run the multicopter motor library under Q_ parameters (Q_M_SPIN_MIN, Q_M_PWM_MIN/MAX) on the
+  outputs whose SERVOn_FUNCTION is a motor; the copter power-cut test now runs on them, and ESC
+  temperatures are read on planes too. Forum log 142142 (a 4-in-1 ESC overheating in an enclosed
+  fuselage: 46 A to 0 A with the motors at 1800+ us) now opens with it; no other of the 38
+  plane logs triggers it.
 - `config`: **an arm/disarm switch on a stick channel** (RCx_OPTION ArmDisarm, ArmDisarm with
   AirMode or Arm/Emergency Stop on the roll, pitch, throttle or yaw channel of RCMAP_*): a stick
   movement then disarms the vehicle in flight. An in-flight disarm by RC switch with this set is

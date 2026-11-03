@@ -59,7 +59,7 @@ class EscCheck(Check):
     title = "ESC power & temperature"
     category = "motors"
     requires: set[str] = set()  # BAT+RCOU for the power cut, ESC for temperature
-    vehicles = {"copter"}
+    vehicles = {"copter", "plane"}  # plane: a QuadPlane's VTOL motors (Q_ENABLE)
     description = (
         "Motors losing power while still commanded (battery current collapses, voltage holds, the log "
         "continues) and ESC temperatures against the ESC firmware's thermal-protection range."
@@ -89,12 +89,10 @@ class EscCheck(Check):
         if armed is None:
             armed = np.ones(times.shape, dtype=bool)
 
-        from .motors import MotorsCheck
-        from .thrust_loss import pwm_range
-
-        channels, _ = MotorsCheck._motor_channels(log)
-        pmin, pmax = pwm_range(log)
-        spin_min = float(log.params.get("MOT_SPIN_MIN", MOT_SPIN_MIN_DEFAULT))
+        setup = _motor_setup(log)
+        if setup is None:
+            return None
+        channels, pmin, pmax, spin_min = setup
         commanded_pwm = pmin + (spin_min + COMMAND_MARGIN) * (pmax - pmin)
 
         low = np.flatnonzero(armed & (curr <= CUT_FLOOR_A))
@@ -299,6 +297,33 @@ class EscCheck(Check):
                 },
             )
         ]
+
+
+def _motor_setup(log: FlightLog) -> tuple[list[str], float, float, float] | None:
+    """(motor RCOU channels, PWM min, PWM max, spin-min share) for a copter or a QuadPlane.
+
+    A QuadPlane's VTOL motors run the same AP_MotorsMulticopter with Q_-prefixed parameters
+    (Q_M_SPIN_MIN, Q_M_PWM_MIN/MAX), on the outputs whose SERVOn_FUNCTION is a motor; a plane
+    without Q_ENABLE has no multicopter motors to judge.
+    """
+    from .motors import MOTOR_FUNCTIONS, MotorsCheck
+    from .thrust_loss import PWM_MAX_DEFAULT, PWM_MIN_DEFAULT, pwm_range
+
+    channels, by_config = MotorsCheck._motor_channels(log)
+    if log.meta.vehicle_kind != "plane":
+        pmin, pmax = pwm_range(log)
+        return channels, pmin, pmax, float(log.params.get("MOT_SPIN_MIN", MOT_SPIN_MIN_DEFAULT))
+    if (
+        not log.params.get("Q_ENABLE")
+        or not by_config
+        or not any(int(log.params.get(f"SERVO{n}_FUNCTION", -1)) in MOTOR_FUNCTIONS for n in range(1, 33))
+    ):
+        return None
+    pmin = float(log.params.get("Q_M_PWM_MIN", PWM_MIN_DEFAULT) or PWM_MIN_DEFAULT)
+    pmax = float(log.params.get("Q_M_PWM_MAX", PWM_MAX_DEFAULT) or PWM_MAX_DEFAULT)
+    if not 1 <= pmin < pmax:
+        pmin, pmax = PWM_MIN_DEFAULT, PWM_MAX_DEFAULT
+    return channels, pmin, pmax, float(log.params.get("Q_M_SPIN_MIN", MOT_SPIN_MIN_DEFAULT))
 
 
 def _held_max(times: np.ndarray, vals: np.ndarray, hold_s: float) -> float:
