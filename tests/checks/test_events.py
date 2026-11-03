@@ -234,3 +234,13 @@ def test_vibration_compensation_with_high_vibration_says_so():
     clips = [0] * 60 + list(range(40))
     f = [x for x in EventsCheck().run(_vibe_trigger_log(vz, clips)) if "FAILSAFE_VIBE" in x.title]
     assert f and "Vibration was high" in f[0].explanation and "did not trigger" not in f[0].explanation
+
+
+def test_disarm_by_an_arm_switch_on_the_yaw_stick_is_a_warning():
+    from tests.helpers import make_flight_log
+
+    ev = [{"TimeUS": 0, "Id": 10}, {"TimeUS": 1_000_000, "Id": 28}]
+    arm = [{"TimeUS": 0, "ArmState": 1, "Method": 2}, {"TimeUS": 30_000_000, "ArmState": 0, "Method": 2}]
+    log = make_flight_log({"EV": ev, "ARM": arm}, params={"RC4_OPTION": 153})
+    f = [x for x in EventsCheck().run(log) if x.title.startswith("Disarmed in flight")]
+    assert [x.severity for x in f] == [Severity.WARN] and "yaw stick" in f[0].explanation

@@ -278,6 +278,24 @@ ARM_METHODS_COMMANDED = {0, 1, 2, 4}
 # Disarms that are normal on the ground (after landing) or are the crash check itself,
 # which the firmware check already reports.
 ARM_METHODS_GROUND_OR_CRASH = {8, 12, 13, 17, 22, 28, 30, 31, 32}
+ARM_METHOD_AUXSWITCH = 2
+
+# RCx_OPTION aux functions that arm and disarm (libraries/RC_Channel/RC_Channel.h, Copter-4.6.3):
+# 153 ARMDISARM, 154 ARMDISARM_AIRMODE, 165 ARM_EMERGENCY_STOP.
+ARM_DISARM_AUX = {153: "ArmDisarm", 154: "ArmDisarm with AirMode", 165: "Arm / Emergency Stop"}
+# The stick channels (RCMAP_*; default 1-4) and what they fly.
+_STICK_MAPS = (("RCMAP_ROLL", 1, "roll"), ("RCMAP_PITCH", 2, "pitch"), ("RCMAP_THROTTLE", 3, "throttle"),
+               ("RCMAP_YAW", 4, "yaw"))
+
+
+def stick_arm_switch(params: dict[str, float]) -> tuple[int, str, str] | None:
+    """(channel, stick, function) when an arm/disarm aux function sits on a stick channel."""
+    for name, default, stick in _STICK_MAPS:
+        ch = int(params.get(name, default) or default)
+        option = params.get(f"RC{ch}_OPTION")
+        if option is not None and int(option) in ARM_DISARM_AUX:
+            return ch, stick, ARM_DISARM_AUX[int(option)]
+    return None
 
 
 def mode_name(mode_num: int | str, vehicle_kind: str | None = None) -> str:

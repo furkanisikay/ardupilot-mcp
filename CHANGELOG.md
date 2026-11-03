@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `config`: **an arm/disarm switch on a stick channel** (RCx_OPTION ArmDisarm, ArmDisarm with
+  AirMode or Arm/Emergency Stop on the roll, pitch, throttle or yaw channel of RCMAP_*): a stick
+  movement then disarms the vehicle in flight. An in-flight disarm by RC switch with this set is
+  a WARN that names the stick, not a commanded INFO. Found by forum thread 144992 (RC4_OPTION 153
+  on the yaw stick of a QuadPlane); no other of the 145 validation logs has it.
 - `firmware` (QuadPlane, Plane 4.7+): **VTOL thrust loss** ("Potential VTOL Thrust Loss (n)",
   CRITICAL, with the suspect motor). The copter `thrust_loss` check does not run on a plane, so
   this message went unreported beyond its ERR record. The QuadPlane transition-failure and VTOL

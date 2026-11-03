@@ -27,6 +27,7 @@ import numpy as np
 
 from ..ardupilot_meta import (
     ARM_METHODS,
+    ARM_METHOD_AUXSWITCH,
     ARM_METHODS_COMMANDED,
     ARM_METHODS_GROUND_OR_CRASH,
     CRITICAL_ERR_SUBSYSTEMS,
@@ -35,6 +36,7 @@ from ..ardupilot_meta import (
     err_subsystem_name,
     ev_name,
     mode_name,
+    stick_arm_switch,
 )
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
@@ -123,19 +125,27 @@ class EventsCheck(Check):
             if any(t - LAND_EVENT_WINDOW_S <= lt < t - SAME_INSTANT_S for lt in land_events):
                 continue
             name = ARM_METHODS.get(method, f"method {method}")
-            commanded = method in ARM_METHODS_COMMANDED
+            on_stick = stick_arm_switch(log.params) if method == ARM_METHOD_AUXSWITCH else None
+            commanded = method in ARM_METHODS_COMMANDED and on_stick is None
             msg = (
                 f"The vehicle was disarmed by {name} (ARM.Method {method}) at t={t:.1f}s while it was still "
                 "flying (the land detector had not reported a landing), so the motors stopped in the air."
             )
-            msg += (
-                " A commanded disarm in flight is often the pilot's emergency stop after control was lost; if "
-                "nothing had gone wrong before it, check the arm/disarm switch (RCx_OPTION) and rudder-disarm "
-                "(ARMING_RUDDER) settings."
-                if commanded
-                else " The autopilot itself stopped the motors, which brings the vehicle down; check the "
-                "failsafe that chose this action."
-            )
+            if on_stick is not None:
+                ch, stick, func = on_stick
+                msg += (
+                    f" The arm/disarm switch is the {stick} stick: RC{ch}_OPTION is {func}, so moving that stick "
+                    "disarmed the vehicle."
+                )
+            else:
+                msg += (
+                    " A commanded disarm in flight is often the pilot's emergency stop after control was lost; if "
+                    "nothing had gone wrong before it, check the arm/disarm switch (RCx_OPTION) and rudder-disarm "
+                    "(ARMING_RUDDER) settings."
+                    if commanded
+                    else " The autopilot itself stopped the motors, which brings the vehicle down; check the "
+                    "failsafe that chose this action."
+                )
             out.append(
                 make_finding(
                     self.id,
