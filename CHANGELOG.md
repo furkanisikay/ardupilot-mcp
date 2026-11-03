@@ -94,6 +94,10 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- An ERR record written while the vehicle was disarmed (the transmitter switched off after
+  landing, an EKF stopping its aiding at the disarm) was a CRITICAL fault at the top of the
+  report; with arming recorded it is now an INFO note saying the vehicle was disarmed. A failsafe
+  in flight is unchanged.
 - When an event reaches the log as both an ERR record and a firmware message, the firmware's
   message now carries the merged finding ("Firmware detected a crash and disarmed" instead of
   "Error: CRASH_CHECK (ECode 1)"): it names the suspect motor or the failsafe action, and the ERR
@@ -199,19 +203,17 @@ All notable changes to this project are documented here. The format is based on
   determined"; it now has no onset and says the vehicle never armed.
 - The vehicle profile estimated a hover throttle for a plane from its cruise throttle; only a
   multirotor gets that estimate.
-- Real-crash benchmark, measured on 48 of the 49 logs (the Google Drive file of 145232_0 no
-  longer matches its sha256, so `bench/results.json` keeps its 1.0.0 numbers until it can be
-  refreshed with every log): logs with a false critical 35 -> 30, false criticals 97 -> 49
-  (vibration 29 -> 0, ekf 25 -> 14, gps 6 -> 1, events 5 -> 2), top-1 10 of 40 (unchanged), top-3
-  21 -> 22. Two top-3 hits were lost: 142202_0 had scored through an unrelated rangefinder line,
-  and 145616_2 had scored through a compass-variance rejection after the vehicle had disarmed,
-  while its labelled cause is the EKF height running away in flight.
-  Three were gained: 132194_0, the ESC-overheating crash, now top-1 through the `esc` check, and
-  the two flights of 117787 through `param_audit`'s airspeed finding (flown at 27 m/s on a
-  SCALING_SPEED of 13, which halves the surface throw; the labelled cause is a V-tail
-  MIXING_GAIN of 0.5, another shortfall of elevator authority). One top-1
-  hit went to a real but different setup fault: 144203_1 (LOIT_OPTIONS) used to open with an
-  unrelated "Loiter needs position" message and now opens with its current sensor reading 0 A.
+- Real-crash benchmark on all 49 logs against 1.0.0: logs with a false critical 35 -> 26, false
+  criticals 97 -> 44 (vibration 29 -> 0, ekf 25 -> 11, gps 6 -> 1, events 5 -> 1), top-1 11 -> 12
+  of 41, top-3 22 -> 22. Gained top-1: 132194_0 (the ESC-overheating crash, through `esc`),
+  128873_2, 144427_0 (once a compass rejected alone stopped outranking them), 145429_0 (`config`)
+  and 145616_0. Gained top-3: the two flights of 117787 through `param_audit`'s airspeed finding
+  (flown at 27 m/s on a SCALING_SPEED of 13, which halves the surface throw; the labelled cause
+  is a V-tail MIXING_GAIN of 0.5, another shortfall of elevator authority) and 144128_0. Lost:
+  142202_0, whose hit came from a rangefinder line unrelated to its GPS cause; 138886_0 and
+  145352_0, whose hits came from an EKF variance written after the disarm or after landing;
+  144203_1, whose top-1 now goes to its current sensor reading 0 A, a real fault but not the
+  labelled one; 139371_0 (top-1 now its compass finding) and 145616_2 (no longer in the top 3).
 - Corrupt logs passed as clean. Integrity was judged from pymavlink's "bad header"
   warnings, but its default compiled indexer prints them below Python, where they cannot be
   captured. A log with garbage in the middle, or random bytes named `.bin`, came back with

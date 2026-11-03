@@ -182,6 +182,17 @@ class EventsCheck(Check):
             critical = subsys in CRITICAL_ERR_SUBSYSTEMS
             sev = Severity.CRITICAL if critical else Severity.WARN
             ts = float(rec["timestamp"]) if "timestamp" in rec else None
+            # On the ground and disarmed (the transmitter switched off after landing, a sensor
+            # on the bench) a failsafe acts on nothing: kept as a note, not a fault. Only when
+            # the log records arming, so an unknown state still counts as flight.
+            disarmed = (
+                ts is not None
+                and subsys != ERR_FLIGHT_MODE
+                and bool(log.armed_intervals() or log.arming_complete)
+                and not log.was_armed_at(ts)
+            )
+            if disarmed:
+                sev = Severity.INFO
             kind = "failsafe/critical fault" if critical else "subsystem error"
             detail = (
                 f" The vehicle could not switch to {mode_name(ecode, log.meta.vehicle_kind)}."
@@ -198,6 +209,11 @@ class EventsCheck(Check):
                     + (f" at {ts:.1f}s." if ts is not None else ".")
                     + detail
                     + (trigger_note(log, ts) if subsys == ERR_FAILSAFE_VIBE else "")
+                    + (
+                        " The vehicle was disarmed at the time, so it acted on nothing in flight."
+                        if disarmed
+                        else ""
+                    )
                     + (
                         " This is a safety-critical failsafe/fault that directly affects flight safety."
                         if critical

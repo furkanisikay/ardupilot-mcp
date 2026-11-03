@@ -244,3 +244,16 @@ def test_disarm_by_an_arm_switch_on_the_yaw_stick_is_a_warning():
     log = make_flight_log({"EV": ev, "ARM": arm}, params={"RC4_OPTION": 153})
     f = [x for x in EventsCheck().run(log) if x.title.startswith("Disarmed in flight")]
     assert [x.severity for x in f] == [Severity.WARN] and "yaw stick" in f[0].explanation
+
+
+def test_a_failsafe_error_after_disarming_is_a_note():
+    # Benchmark log 145232_0: the transmitter switched off 80 s after the disarm (ERR RADIO).
+    from tests.helpers import make_flight_log
+
+    ev = [{"TimeUS": 10_000_000, "Id": 10}, {"TimeUS": 100_000_000, "Id": 11}]
+    err = [{"TimeUS": 180_000_000, "Subsys": 2, "ECode": 2}, {"TimeUS": 50_000_000, "Subsys": 6, "ECode": 1}]
+    found = EventsCheck().run(make_flight_log({"EV": ev, "ERR": err}))
+    f = {x.title: x for x in found if x.title.startswith("Error")}
+    radio, batt = f["Error: RADIO (ECode 2)"], f["Error: FAILSAFE_BATT (ECode 1)"]
+    assert radio.severity == Severity.INFO and "disarmed at the time" in radio.explanation
+    assert batt.severity == Severity.CRITICAL  # the battery failsafe in flight stays critical
