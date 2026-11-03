@@ -18,6 +18,8 @@ estimator on the bench or after a crash is not navigating anything):
   > 1.0 for 1 s or more -> CRITICAL (sensor was being rejected, as long as the
                                      firmware's own EKF failsafe waits)
   > 1.0 briefly, > 0.8  -> WARN     (variance high, approaching or touching rejection)
+A compass (SM) rejection while velocity and position stay under FS_EKF_THRESH is a WARN:
+the firmware's EKF check never acts on the compass alone (ekf_over_threshold).
 We prefer XKF4 and fall back to NKF4; if neither is present the check is a no-op.
 
 Cores: EKF3 runs one core ("lane") per IMU and logs them all under XKF4, told
@@ -104,6 +106,8 @@ class EKFCheck(Check):
                 f = self._field_finding(mtype, field, sensor, times, vals, primary)
                 if f is None:
                     continue
+                if field == "SM" and f.severity == Severity.CRITICAL:
+                    _compass_alone(log, f, times, cols, primary)
                 if len(cores) > 1:
                     f.title += f" (core {core})"
                     f.evidence.samples["ekf_core"] = core
@@ -211,3 +215,28 @@ class EKFCheck(Check):
                 samples={"lane_switches": int(changes.size)},
             )
         ]
+
+
+# Copter's and Plane's EKF check count the compass only alongside velocity or position: the
+# failsafe needs position over FS_EKF_THRESH with one other, or two counts (compass +
+# velocity, or velocity over twice the threshold); compass alone never trips it
+# (ekf_over_threshold, ArduCopter/ekf_check.cpp, ArduPlane/ekf_check.cpp, Copter-4.6.3).
+FS_EKF_THRESH_DEFAULT = 0.8
+
+
+def _compass_alone(log: FlightLog, f: Finding, times: np.ndarray, cols: dict, primary: np.ndarray) -> None:
+    """CRITICAL -> WARN when the compass was rejected while velocity and position stayed trusted."""
+    thresh = float(log.params.get("FS_EKF_THRESH", FS_EKF_THRESH_DEFAULT) or FS_EKF_THRESH_DEFAULT)
+    sm, sv, sp = cols["SM"], cols.get("SV"), cols.get("SP")
+    rejecting = primary & np.isfinite(sm) & (sm > CRIT_RATIO)
+    if sv is None or sp is None or not rejecting.any():
+        return
+    others = (np.nan_to_num(sv[rejecting]) >= thresh) | (np.nan_to_num(sp[rejecting]) >= thresh)
+    if others.any():
+        return
+    f.severity = Severity.WARN
+    f.explanation += (
+        f" Velocity and position stayed trusted throughout (SV and SP under FS_EKF_THRESH {thresh:.2f}), and the "
+        "firmware's EKF check never acts on the compass alone, so navigation carried on from GPS and the "
+        "IMU: a compass problem to fix, not an estimator failure."
+    )

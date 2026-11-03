@@ -79,6 +79,10 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- A compass rejected by the EKF (XKF4.SM over 1 for a second) was CRITICAL on its own. The
+  firmware's EKF check (Copter and Plane) counts the compass only together with velocity or
+  position and never acts on it alone, so with SV and SP under FS_EKF_THRESH it is now a WARN
+  that says navigation carried on from GPS. Benchmark: top-1 10 -> 11, false criticals 48 -> 45.
 - GPS and RC input are judged in flight, not over all armed time. A plane with ARMING_REQUIRE=0
   is armed from boot, so its GPS acquiring satellites and its receiver binding on the ground
   were CRITICAL (forum log 145430_0); an RC failsafe tested on the ground was a CRITICAL link
