@@ -17,8 +17,9 @@ This pass merges echoes into the finding that measured the event:
   finding of the same topic is absorbed into it: the specific finding keeps its evidence,
   takes the higher severity, starts at the echo if the echo came first, and lists the echo
   under ``related``. An INFO finding only takes in INFO echoes.
-* Echoes with no specific finding to join collapse into the first echo of their topic
-  when they fall within ``MERGE_SLACK_S`` of it (one failsafe, logged as ERR + MODE).
+* Echoes with no specific finding to join collapse into one echo of their topic when they
+  fall within ``MERGE_SLACK_S`` of it (one failsafe, logged as ERR + MODE): the firmware's own
+  message if there is one, as it names more than the ERR record, else the first.
 
 Nothing is dropped: every absorbed finding is named in ``related`` with its time.
 """
@@ -89,6 +90,7 @@ VERDICT_TOPICS: dict[str, str] = {
     "Firmware triggered a radio failsafe": "radio",
     "Firmware triggered a battery failsafe": "battery",
     "Firmware triggered a GCS failsafe": "gcs",
+    "Firmware detected VTOL thrust loss": "thrust_loss",
 }
 # The prearm check also surfaces in-flight status lines; their text is free-form.
 _STATUS_TEXT_TOPICS: tuple[tuple[str, str], ...] = (
@@ -153,6 +155,15 @@ def _near(echo: Finding, host: Finding, lag: float = 0.0) -> float | None:
     return d if d <= MERGE_SLACK_S + lag else None
 
 
+# Among echoes of one event, which one carries the merged finding: the firmware's message,
+# then the ERR record and mode change, then a status line.
+_ECHO_RANK = {"firmware": 2, "events": 1, "prearm": 0}
+
+
+def _rank(f: Finding) -> int:
+    return _ECHO_RANK.get(f.check_id, 0)
+
+
 def _absorb(host: Finding, echo: Finding) -> None:
     when = f" at t={echo.evidence.time_start_s:.1f}s" if echo.evidence.time_start_s is not None else ""
     host.related.append(f"{echo.check_id}: {echo.title}{when}")
@@ -206,8 +217,17 @@ def merge_duplicates(findings: list[Finding], params: dict[str, float] | None = 
             continue
         prior = [(d, h) for h in echo_hosts.get(t, []) if (d := _near(e, h)) is not None]
         if prior:
-            _absorb(min(prior, key=lambda dh: dh[0])[1], e)
-            absorbed.add(id(e))
+            host = min(prior, key=lambda dh: dh[0])[1]
+            if _rank(e) > _rank(host):
+                # The firmware's own message names more than its ERR record (the suspect motor,
+                # the failsafe action), so it carries the merged finding.
+                _absorb(e, host)
+                absorbed.add(id(host))
+                hosts_t = echo_hosts[t]
+                hosts_t[hosts_t.index(host)] = e
+            else:
+                _absorb(host, e)
+                absorbed.add(id(e))
             continue
         if _window(e) is not None:
             echo_hosts.setdefault(t, []).append(e)

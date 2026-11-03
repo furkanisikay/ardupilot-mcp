@@ -114,6 +114,17 @@ VERDICTS: tuple[Verdict, ...] = (
         "the altitude controller to vibration-resistant gains; read it with the measured vibration levels",
     ),
     # QuadPlane (ArduPlane/quadplane.cpp, VTOL_Assist.cpp).
+    # Plane 4.7+ runs Copter's thrust-loss test on the VTOL motors (QuadPlane::thrust_loss_check:
+    # throttle at 90% or saturated, above 25%, descending, attitude error under 30 deg, for 1 s);
+    # the copter `thrust_loss` check does not run on a plane, so this one reports it.
+    Verdict(
+        re.compile(r"Potential VTOL Thrust Loss \((\d+)\)"),
+        Severity.CRITICAL,
+        "Firmware detected VTOL thrust loss",
+        "the VTOL motors were at full throttle while the aircraft still descended with its attitude under "
+        "control, for a second; the number is the motor the firmware suspects (motor index + 1), and the "
+        "mixer switched to thrust boost to fly on the others",
+    ),
     Verdict(
         re.compile(r"Transition failed, exceeded time limit"),
         Severity.CRITICAL,
@@ -222,7 +233,8 @@ class FirmwareVerdictsCheck(Check):
             samples: dict[str, float] = {"occurrences": len(seen)}
             m = v.pattern.match(first_text)
             if m and m.groups() and m.group(1).isdigit():
-                samples["value_pct"] = int(m.group(1))
+                # The captured number: a motor for thrust loss, a percentage for yaw imbalance.
+                samples["motor" if "Thrust Loss" in v.pattern.pattern else "value_pct"] = int(m.group(1))
             when = f" first at t={min(times):.1f}s" if times else ""
             out.append(
                 make_finding(

@@ -81,7 +81,8 @@ def test_announced_failsafes_are_verdicts_and_cleared_lines_are_not():
 
 
 def test_quadplane_transition_failure_and_assists():
-    # Messages as ArduPlane writes them (quadplane.cpp, VTOL_Assist.cpp).
+    # Messages as ArduPlane writes them (quadplane.cpp, VTOL_Assist.cpp); the texts are as
+    # forum logs 140907_0, 142096_0 and 143882_0 carry them.
     log = make_flight_log(
         {
             "MSG": _msgs(
@@ -100,3 +101,15 @@ def test_quadplane_transition_failure_and_assists():
     assert titles["VTOL motors assisted: altitude too low"] == Severity.WARN
     assert titles["VTOL motors assisted: attitude error"] == Severity.WARN
     assert "Mode changed by failed VTOL transition" in titles
+
+
+def test_vtol_thrust_loss_is_reported_by_the_firmware_check():
+    # Plane 4.7 (quadplane.cpp thrust_loss_check), as forum logs 144992_0 and 145010_1 carry it.
+    log = make_flight_log(
+        {"MSG": _msgs((0, "ArduPlane V4.7.0"), (173, "Potential VTOL Thrust Loss (1)"))},
+        vehicle_type="ArduPlane",
+        vehicle_kind="plane",
+    )
+    f = [x for x in FirmwareVerdictsCheck().run(log) if "thrust loss" in x.title]
+    assert [(x.title, x.severity) for x in f] == [("Firmware detected VTOL thrust loss", Severity.CRITICAL)]
+    assert f[0].evidence.samples["motor"] == 1  # the suspect motor (index + 1)

@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `firmware` (QuadPlane, Plane 4.7+): **VTOL thrust loss** ("Potential VTOL Thrust Loss (n)",
+  CRITICAL, with the suspect motor). The copter `thrust_loss` check does not run on a plane, so
+  this message went unreported beyond its ERR record. The QuadPlane transition-failure and VTOL
+  assist messages are now confirmed on real forum logs (140907, 142096, 143642, 143882).
 - `gps`: **poor reported accuracy in flight**. EKF3 starts using a GPS only once its horizontal
   accuracy is within 5 m and holds it to 1.3 times that once in use (EK3_CHECK_SCALE scales
   both); GPA.HAcc outside that for 10 s at a stretch in flight is a WARN. On the benchmark it
@@ -79,6 +83,10 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- When an event reaches the log as both an ERR record and a firmware message, the firmware's
+  message now carries the merged finding ("Firmware detected a crash and disarmed" instead of
+  "Error: CRASH_CHECK (ECode 1)"): it names the suspect motor or the failsafe action, and the ERR
+  record stays listed under `related`. Benchmark top-3 22 -> 23 (144128_0).
 - A compass rejected by the EKF (XKF4.SM over 1 for a second) was CRITICAL on its own. The
   firmware's EKF check (Copter and Plane) counts the compass only together with velocity or
   position and never acts on it alone, so with SV and SP under FS_EKF_THRESH it is now a WARN
