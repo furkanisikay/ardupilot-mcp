@@ -22,6 +22,7 @@ _CHECK_MODULES = [
     "compass",
     "circling",
     "attitude",
+    "landing",
     "motors",
     "thrust_loss",
     "esc",

@@ -2,7 +2,7 @@
 
 # Reference
 
-ardupilot-mcp 1.0.0: 12 MCP tools and 22 checks. Every tool is read-only.
+ardupilot-mcp 1.0.0: 12 MCP tools and 23 checks. Every tool is read-only.
 
 ## Tools
 
@@ -140,6 +140,7 @@ Each check runs only when its messages are in the log and the vehicle and log ty
 | `compass` | compass | all | `.bin`, `.tlog` | `MAG` | Per-compass field-strength stability and throttle-correlated interference from MAG + CTUN (offsets are covered by the calibration check). |
 | `circling` | compass | copter, plane | `.bin`, `.tlog` | `MODE`, `PSCE`, `PSCN` | Toilet bowling: the position error turning the same way, orbit after orbit, in LOITER / POSHOLD / QLOITER, the circling a heading (compass) error causes. |
 | `attitude` | attitude | copter, heli, plane | `.bin`, `.tlog` | `ATT` | Compares demanded vs achieved roll/pitch/yaw from ATT to catch loss of control. |
+| `landing` | landing | plane | `.bin`, `.tlog` | `MSG`, `TECS` | Automatic-landing flares (the firmware's Flare message) that left most of the sink rate in place, so the aircraft met the ground at nearly its approach descent rate. |
 | `motors` | motors | copter | `.bin`, `.tlog` | `RCOU` | Per-motor PWM output balance and saturation from RCOU (multirotor only). |
 | `thrust_loss` | motors | copter, heli | `.bin`, `.tlog` | — | Firmware thrust-loss detection (message, ERR, MOTB thrust boost) and the same signature in the motor outputs: one motor at maximum, its geometric opposite lowest, sinking at high throttle. |
 | `esc` | motors | copter, plane | `.bin`, `.tlog` | — | Motors losing power while still commanded (battery current collapses, voltage holds, the log continues) and ESC temperatures against the ESC firmware's thermal-protection range. |

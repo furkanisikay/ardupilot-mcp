@@ -168,6 +168,11 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
     if ended_armed and not telemetry_cut and log.meta.duration_s is not None:
         impacts.append((float(log.meta.duration_s), "log ended while armed"))
 
+    for f in findings:
+        # A hard touchdown at the end of the log's last automatic landing (checks/landing.py).
+        touchdown = f.evidence.samples.get("final_touchdown_s") if f.check_id == "landing" else None
+        if touchdown is not None:
+            impacts.append((float(touchdown), "hard touchdown after the flare"))
     impact = min(impacts) if impacts else None
     impact_s = impact[0] if impact else None
 

@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `landing` (Plane): **a flare that did not slow the descent**. For each automatic-landing flare
+  the firmware announces ("Flare 2.0m sink=1.92 ..."), the check follows TECS.dh to the
+  touchdown and reports a flare that reached the ground still sinking at half its starting rate
+  or more, with the flare's height, its time to the ground, LAND_FLARE_ALT / LAND_FLARE_SEC,
+  the TECS_LAND_SINK target and the touchdown jolt. The touchdown of the log's last such flare
+  is the incident's impact, so what happens on the ground afterwards is listed after it. Forum
+  log 142129 (flare started too low, fixed by raising LAND_FLARE_ALT) now names its cause: 2.07
+  and 1.36 m/s at touchdown against a 0.25 m/s target. Validated on 26 flares in 23 Plane logs,
+  21 of them downloaded for this: the 12 soft touchdowns stay clean, all 8 reported flares hit
+  the ground at 26-81 m/s^2, and four hard touchdowns that kept less of the sink are missed. The
+  benchmark counts it towards the configuration category, as it names the flare parameters.
 - `attitude` (Plane): a loss of control that began above AIRSPEED_MAX, on a flight that spent
   much of its time there, now says the speed it began at and how much of their tuned deflection
   the surfaces had (SCALING_SPEED / airspeed, Plane::calc_speed_scaler). The report's first

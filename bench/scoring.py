@@ -29,7 +29,8 @@ CATEGORY_CHECKS: dict[str, set[str]] = {
     "rc_failsafe_link": {"rcin"},
     "tuning_oscillation": {"attitude"},
     "mechanical_frame": {"motors", "attitude"},
-    "configuration": {"config", "param_audit", "calibration", "prearm", "sensors"},
+    # landing: a flare that left the sink in place names the flare timing parameters.
+    "configuration": {"config", "param_audit", "calibration", "prearm", "sensors", "landing"},
     "not_a_fault": set(),
     "pilot_error": set(),
     "firmware_bug": set(),
