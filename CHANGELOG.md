@@ -239,6 +239,9 @@ All notable changes to this project are documented here. The format is based on
   prints its usage; the output path stays an optional argument.
 
 ### Changed
+- `pymavlink>=2.4.50` (was 2.4.49). The compiled log indexer in 2.4.49 ends the whole process
+  with exit status 1 when it meets an FMT record with an invalid length, so one corrupt log
+  stopped the server; 2.4.50 reports it and stops reading instead (pymavlink commit 20774b3).
 - `scripts/gen_docs.py` now generates the README example output, the check and
   benchmark-log counts, and the benchmark table in `bench/README.md` (from the new
   `bench/results.json`). CI fails when these sections drift from the code and

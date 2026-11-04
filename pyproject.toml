@@ -27,7 +27,7 @@ classifiers = [
 
 dependencies = [
     "mcp>=2.0,<3",
-    "pymavlink>=2.4.49",
+    "pymavlink>=2.4.50",
     "numpy>=2.0",
     "pydantic>=2.12",
 ]
