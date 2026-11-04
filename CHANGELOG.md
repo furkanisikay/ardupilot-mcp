@@ -235,8 +235,9 @@ All notable changes to this project are documented here. The format is based on
   multirotor gets that estimate.
 - Real-crash benchmark on all 49 logs against 1.0.0: logs with a false critical 35 -> 23, false
   criticals 97 -> 36 (vibration 29 -> 0, ekf 25 -> 11, attitude 25 -> 17, gps 6 -> 1, events
-  5 -> 1), top-1 11 -> 13 of 41, top-3 22 -> 22. Gained top-1: 132194_0 (the ESC-overheating
+  5 -> 1), top-1 11 -> 14 of 41, top-3 22 -> 24. Gained top-1: 132194_0 (the ESC-overheating
   crash, through `esc`), 144337_0 (`thrust_loss`, once a lost heading stopped outranking it),
+  142129_1 (`landing`, with 142129_0 in the top 3),
   128873_2, 144427_0 (once a compass rejected alone stopped outranking them), 145429_0 (`config`)
   and 145616_0. Gained top-3: the two flights of 117787 through `param_audit`'s airspeed finding
   (flown at 27 m/s on a SCALING_SPEED of 13, which halves the surface throw; the labelled cause

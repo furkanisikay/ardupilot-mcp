@@ -2,8 +2,8 @@
  "summary": {
   "logs": 49,
   "scored": 41,
-  "top1_hits": 13,
-  "top3_hits": 22,
+  "top1_hits": 14,
+  "top3_hits": 24,
   "logs_with_false_critical": 23,
   "false_criticals_total": 36,
   "false_criticals_by_check": {
@@ -15,10 +15,10 @@
    "events": 1,
    "gps": 1
   },
-  "false_criticals_before_impact": 36,
+  "false_criticals_before_impact": 33,
   "measured_on": {
    "version": "1.0.0",
-   "revision": "0d70d20"
+   "revision": "392f969"
   }
  },
  "scores": [
@@ -28,6 +28,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -47,6 +48,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -97,6 +99,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -117,6 +120,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -195,6 +199,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -241,18 +246,19 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
    ],
    "top_check": "attitude",
    "hit": false,
-   "top3": false,
+   "top3": true,
    "onset_check": "attitude",
    "false_criticals": [
     "attitude"
    ],
-   "false_criticals_before_impact": 1
+   "false_criticals_before_impact": 0
   },
   {
    "id": "142129_1",
@@ -260,19 +266,20 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
    ],
-   "top_check": "attitude",
-   "hit": false,
-   "top3": false,
-   "onset_check": "attitude",
+   "top_check": "landing",
+   "hit": true,
+   "top3": true,
+   "onset_check": "landing",
    "false_criticals": [
     "attitude",
     "attitude"
    ],
-   "false_criticals_before_impact": 2
+   "false_criticals_before_impact": 0
   },
   {
    "id": "142202_0",
@@ -310,6 +317,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -333,6 +341,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -381,6 +390,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -458,6 +468,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -527,6 +538,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -561,6 +573,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -623,6 +636,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
@@ -640,6 +654,7 @@
    "expected": [
     "calibration",
     "config",
+    "landing",
     "param_audit",
     "prearm",
     "sensors"
