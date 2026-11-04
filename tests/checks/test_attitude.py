@@ -451,3 +451,47 @@ def test_copter_heading_is_not_judged_while_the_lean_error_is_over_30_deg():
         _copter(n, Roll=[0.0] * 10 + [90.0] * 30 + [0.0] * 10, Yaw=[0.0] * 10 + [90.0] * 30 + [0.0] * 10)
     )
     assert [x.title for x in f] == ["Attitude tracking failure (roll)"]
+
+
+def _plane_with_airspeed(airspeed):
+    n = 100
+    att = build_series(
+        0.0,
+        10.0,
+        DesRoll=[0.0] * n,
+        Roll=[0.0] * 50 + [40.0] * 20 + [0.0] * 30,
+        DesPitch=[0.0] * n,
+        Pitch=[0.0] * n,
+        DesYaw=[0.0] * n,
+        Yaw=[0.0] * n,
+    )
+    ctun = build_series(0.0, 10.0, As=airspeed)
+    return make_flight_log(
+        {"ATT": att, "CTUN": ctun},
+        vehicle_type="ArduPlane",
+        vehicle_kind="plane",
+        params={"AIRSPEED_MAX": 22.0, "AIRSPEED_MIN": 12.0, "SCALING_SPEED": 15.0},
+    )
+
+
+def test_plane_loss_of_control_above_airspeed_max_names_the_speed_and_surface_scaling():
+    # Flown at 30 m/s on AIRSPEED_MAX 22 and SCALING_SPEED 15: the surfaces get 15/30 = 0.5x.
+    f = [
+        x
+        for x in AttitudeTrackingCheck().run(_plane_with_airspeed([30.0] * 100))
+        if x.severity == Severity.CRITICAL
+    ]
+    assert f and f[0].evidence.samples["airspeed_at_onset"] == 30.0
+    assert f[0].evidence.samples["speed_scaler_at_onset"] == 0.5
+    assert "above AIRSPEED_MAX (22 m/s)" in f[0].explanation
+
+
+def test_plane_speed_note_needs_a_flight_spent_above_airspeed_max():
+    # Above AIRSPEED_MAX only in the dive that followed the loss of control: no note.
+    speeds = [15.0] * 50 + [30.0] * 10 + [15.0] * 40
+    f = [
+        x
+        for x in AttitudeTrackingCheck().run(_plane_with_airspeed(speeds))
+        if x.severity == Severity.CRITICAL
+    ]
+    assert f and "airspeed_at_onset" not in f[0].evidence.samples

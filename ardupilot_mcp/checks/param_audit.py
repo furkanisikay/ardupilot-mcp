@@ -134,20 +134,11 @@ class ParamAuditCheck(Check):
                 )
             )
             return out
-        if not vmax or vmax <= 0:
+        envelope = flew_above_airspeed_max(log)
+        if envelope is None:
             return out
-        times, aspd = log.series("CTUN", "As")
-        flying = log.flying_mask(times)
-        if flying is not None:
-            times, aspd = times[flying], aspd[flying]
-        ok = np.isfinite(aspd)
-        times, aspd = times[ok], aspd[ok]
-        if aspd.size < 20:
-            return out
+        max_name, vmax, frac, times, aspd = envelope
         over = aspd > vmax
-        frac = float(np.mean(over))
-        if frac < AIRSPEED_OVER_MAX_FRACTION:
-            return out
         scaling = _p(p, "SCALING_SPEED")
         scaler_txt = ""
         samples: dict[str, float] = {
@@ -156,9 +147,7 @@ class ParamAuditCheck(Check):
             "median_airspeed_above_max": round(float(np.median(aspd[over])), 1),
         }
         if scaling and scaling > 0:
-            lo = min(0.5, scaling / (2.0 * vmax))
-            hi = max(2.0, scaling / (0.7 * max(vmin or 0.0, 1.0)))
-            scaler = float(np.median(np.clip(scaling / aspd[over], lo, hi)))
+            scaler = float(np.median(speed_scaler(log, aspd[over])))
             scaler_txt = (
                 f" The surfaces are scaled by SCALING_SPEED ({scaling:.1f} m/s) / airspeed, so while above "
                 f"{max_name} they got a median {scaler:.2f}x of the deflection they were tuned at."
@@ -393,3 +382,44 @@ class ParamAuditCheck(Check):
                     )
                 )
         return out
+
+
+def flew_above_airspeed_max(log: FlightLog) -> tuple[str, float, float, np.ndarray, np.ndarray] | None:
+    """A plane that spent AIRSPEED_OVER_MAX_FRACTION of its flight above AIRSPEED_MAX.
+
+    Returns (parameter name, AIRSPEED_MAX, share of flight above it, in-flight CTUN times,
+    in-flight CTUN.As), or None.
+    """
+    p = log.params
+    max_name = "AIRSPEED_MAX" if "AIRSPEED_MAX" in p else "ARSPD_FBW_MAX"
+    vmax = _p(p, max_name)
+    if not vmax or vmax <= 0:
+        return None
+    times, aspd = log.series("CTUN", "As")
+    flying = log.flying_mask(times)
+    if flying is not None:
+        times, aspd = times[flying], aspd[flying]
+    ok = np.isfinite(aspd)
+    times, aspd = times[ok], aspd[ok]
+    if aspd.size < 20:
+        return None
+    frac = float(np.mean(aspd > vmax))
+    if frac < AIRSPEED_OVER_MAX_FRACTION:
+        return None
+    return max_name, vmax, frac, times, aspd
+
+
+def speed_scaler(log: FlightLog, aspd: np.ndarray) -> np.ndarray:
+    """Plane's surface speed scaler, SCALING_SPEED / airspeed within its limits.
+
+    Plane::calc_speed_scaler (ArduPlane/Attitude.cpp) holds it between
+    min(0.5, SCALING_SPEED / (2 AIRSPEED_MAX)) and max(2, SCALING_SPEED / (0.7 AIRSPEED_MIN)).
+    """
+    p = log.params
+    scaling = _p(p, "SCALING_SPEED") or 0.0
+    vmax = _p(p, "AIRSPEED_MAX") if "AIRSPEED_MAX" in p else _p(p, "ARSPD_FBW_MAX")
+    vmin = _p(p, "AIRSPEED_MIN") if "AIRSPEED_MIN" in p else _p(p, "ARSPD_FBW_MIN")
+    lo = min(0.5, scaling / (2.0 * vmax)) if vmax else 0.5
+    hi = max(2.0, scaling / (0.7 * max(vmin or 0.0, 1.0)))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.clip(scaling / aspd, lo, hi)

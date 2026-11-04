@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `attitude` (Plane): a loss of control that began above AIRSPEED_MAX, on a flight that spent
+  much of its time there, now says the speed it began at and how much of their tuned deflection
+  the surfaces had (SCALING_SPEED / airspeed, Plane::calc_speed_scaler). The report's first
+  finding then points at the airspeed parameters instead of leaving them four findings down:
+  forum logs 137589 (a wing at 50 m/s on AIRSPEED_MAX 28, surfaces at 0.30x) and 142491
+  (TAKEOFF at 27 m/s on AIRSPEED_MAX 22, 0.56x), where the thread traced the crash to
+  SCALING_SPEED and the airspeed range. It states the measurement only: forum log 136852, whose
+  thread blamed roll tuning, shows the same.
 - `esc` (QuadPlane): **VTOL motors lost power while still commanded**. A QuadPlane's VTOL motors
   run the multicopter motor library under Q_ parameters (Q_M_SPIN_MIN, Q_M_PWM_MIN/MAX) on the
   outputs whose SERVOn_FUNCTION is a motor; the copter power-cut test now runs on them, and ESC

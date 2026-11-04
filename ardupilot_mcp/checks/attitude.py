@@ -60,6 +60,8 @@ LEAN_CRIT_S = 1.0
 THRUST_ERROR_YAW_LIMIT_DEG = 30.0
 # Vehicles judged by that rule (Copter's crash_check runs for multirotors and helis alike).
 LEAN_KINDS = {"copter", "heli"}
+# Design choice: the airspeed note uses the last CTUN sample at most this old at the onset.
+SPEED_NOTE_MAX_AGE_S = 1.0
 
 # ArduPlane modes in which ATT.DesRoll/DesPitch (nav_roll_cd/nav_pitch_cd) is not the
 # attitude the pilot or autopilot asked for: MANUAL writes the current attitude, STABILIZE
@@ -322,6 +324,11 @@ class AttitudeTrackingCheck(Check):
             f"peak_err_deg_{key}": round(peak_err, 1),
             f"worst_duration_s_{key}": worst_dur,
         }
+        if sev == Severity.CRITICAL and log.meta.vehicle_kind == "plane":
+            note = _plane_speed_note(log, t0)
+            if note is not None:
+                msg += note[0]
+                samples.update(note[1])
         if axis_errs is not None and worst is not None:
             win = (times >= worst.start_s) & (times <= worst.end_s)
             for name, e in axis_errs.items():
@@ -366,6 +373,37 @@ def _body_axes(roll: np.ndarray, pitch: np.ndarray, yaw: np.ndarray) -> tuple[np
         ]
     )
     return x, z
+
+
+def _plane_speed_note(log: FlightLog, t0: float | None) -> tuple[str, dict[str, float]] | None:
+    """The airspeed a plane's loss of control began at, when the flight ran above AIRSPEED_MAX.
+
+    Only for a flight that spent much of its time above AIRSPEED_MAX (the param_audit finding),
+    so a dive after the loss of control does not count; the note states what was measured and
+    leaves the cause to the reader.
+    """
+    # Imported here so this module does not register param_audit ahead of the checks list order.
+    from .param_audit import flew_above_airspeed_max, speed_scaler
+
+    envelope = flew_above_airspeed_max(log)
+    if envelope is None or t0 is None:
+        return None
+    max_name, vmax, frac, times, aspd = envelope
+    k = int(np.searchsorted(times, t0, side="right")) - 1
+    if k < 0 or times[k] < t0 - SPEED_NOTE_MAX_AGE_S or aspd[k] <= vmax:
+        return None
+    speed = float(aspd[k])
+    text = (
+        f" It began at {speed:.0f} m/s, above {max_name} ({vmax:.0f} m/s), where this flight spent "
+        f"{frac * 100:.0f}% of its time"
+    )
+    samples = {"airspeed_at_onset": round(speed, 1)}
+    scaling = log.params.get("SCALING_SPEED")
+    if scaling and scaling > 0:
+        scaler = float(speed_scaler(log, np.array([speed]))[0])
+        text += f": with SCALING_SPEED {scaling:.0f} m/s the surfaces had {scaler:.2f}x the deflection they were tuned at"
+        samples["speed_scaler_at_onset"] = round(scaler, 2)
+    return text + f" (see 'Flew far above {max_name}').", samples
 
 
 def _dominant_axis(times: np.ndarray, axis_errs: dict[str, np.ndarray], iv: Interval) -> str:
