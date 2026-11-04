@@ -43,6 +43,18 @@ AIRSPEED_OVER_MAX_FRACTION = 0.20
 # EK3_SRC1_POSZ values (EKF sources wiki: 1 Baro, 2 RangeFinder, 3 GPS, 4 Beacon, 6 ExternalNav).
 HEIGHT_SRC_RANGEFINDER = 2
 HEIGHT_SRC_GPS = 3  # None = unknown kind, still evaluate
+# EK3_SRC1_YAW values (SourceYaw, libraries/AP_NavEKF/AP_NavEKF_Source.h): 0 None, 1 Compass, 2 GPS, 3 GPS with compass fallback,
+# 6 ExternalNav, 8 GSF. Those that work without a compass:
+YAW_SOURCE_NAMES = {
+    0: "None",
+    1: "Compass",
+    2: "GPS",
+    3: "GPS with compass fallback",
+    6: "ExternalNav",
+    8: "GSF",
+}
+COMPASSLESS_YAW_SOURCES = {2, 3, 6, 8}
+_COMPASS_USE = ("COMPASS_USE", "COMPASS_USE2", "COMPASS_USE3")
 
 
 def _p(params: dict[str, float], name: str) -> float | None:
@@ -72,7 +84,45 @@ class ParamAuditCheck(Check):
         if log.meta.vehicle_kind == "plane":
             out.extend(self._airspeed_envelope(log))
         out.extend(self._height_source(p))
+        if log.meta.vehicle_kind in ("copter", "heli"):
+            out.extend(self._compassless_yaw_source(p))
         return out
+
+    def _compassless_yaw_source(self, p: dict[str, float]) -> list[Finding]:
+        """Copter with no compass in use and no other EKF3 yaw source selected.
+
+        The EKF sources wiki: GSF (EK3_SRC1_YAW=8) "Plane will automatically use ... in
+        compass-less configurations, even if not selected. Copter requires this to be set
+        explicitly". The other sources that need no compass are GPS yaw (2, 3) and
+        ExternalNav (6).
+        """
+        if p.get("AHRS_EKF_TYPE", 3) != 3 or p.get("EK3_ENABLE", 1) == 0:
+            return []
+        no_compass = p.get("COMPASS_ENABLE") == 0 or all(p.get(k, 0) == 0 for k in _COMPASS_USE)
+        yaw = p.get("EK3_SRC1_YAW")
+        if not no_compass or yaw is None or int(yaw) in COMPASSLESS_YAW_SOURCES:
+            return []
+        name = YAW_SOURCE_NAMES.get(int(yaw), str(int(yaw)))
+        why = (
+            "COMPASS_ENABLE=0"
+            if p.get("COMPASS_ENABLE") == 0
+            else "COMPASS_USE, COMPASS_USE2 and COMPASS_USE3 are 0"
+        )
+        return [
+            make_finding(
+                self.id,
+                Severity.WARN,
+                "No EKF yaw source for compass-less flight",
+                f"No compass is in use ({why}), but the EKF3 yaw source is EK3_SRC1_YAW={int(yaw)} ({name}). The EKF "
+                "sources page says a Copter flying without a compass needs a yaw source set explicitly: GSF "
+                "(EK3_SRC1_YAW=8), GPS yaw from a receiver that supplies it (2 or 3) or ExternalNav (6). Without one "
+                "the heading is unknown until the estimator finds it in flight, and it can jump when it does.",
+                recommendation=(
+                    "Set EK3_SRC1_YAW=8 (GSF), or 2 / 3 when the GPS supplies yaw, or fit and enable a compass."
+                ),
+                samples={"ek3_src1_yaw": float(yaw)},
+            )
+        ]
 
     def _height_source(self, p: dict[str, float]) -> list[Finding]:
         """EKF3 primary height source other than the barometer, as the EKF sources wiki weighs it."""

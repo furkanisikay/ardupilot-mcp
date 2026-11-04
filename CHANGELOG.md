@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `param_audit` (Copter, heli): **no EKF yaw source for compass-less flight**. With no compass in
+  use, EK3_SRC1_YAW must name another yaw source on a Copter: GSF (8), GPS yaw (2, 3) or
+  ExternalNav (6). The EKF sources page says Copter needs it set explicitly, unlike Plane.
+  Benchmark log 138886 (an in-flight yaw reset that tilted the copter, EK3_SRC1_YAW=0 with every
+  compass off) now names it; the three compass-less copters among the validation logs that set
+  EK3_SRC1_YAW=8 stay clean.
 - `landing` (Plane): **a flare that did not slow the descent**. For each automatic-landing flare
   the firmware announces ("Flare 2.0m sink=1.92 ..."), the check follows TECS.dh to the
   touchdown and reports a flare that reached the ground still sinking at half its starting rate

@@ -193,3 +193,35 @@ def test_pinned_compensation_gain_follows_the_firmware_formula():
     log = _bat_log(volts, {"MOT_BAT_VOLT_MAX": 25.2, "MOT_BAT_VOLT_MIN": 19.8})
     f = [x for x in ParamAuditCheck().run(log) if "pinned" in x.title]
     assert f and "1.48x" in f[0].explanation
+
+
+def _yaw_log(**params):
+    base = {"AHRS_EKF_TYPE": 3, "COMPASS_ENABLE": 1, "COMPASS_USE": 0, "COMPASS_USE2": 0, "COMPASS_USE3": 0}
+    return make_flight_log({}, params={**base, **params}, vehicle_kind="copter")
+
+
+def test_compassless_copter_without_a_yaw_source_is_a_warning():
+    f = [
+        x
+        for x in ParamAuditCheck().run(_yaw_log(EK3_SRC1_YAW=0))
+        if x.title == "No EKF yaw source for compass-less flight"
+    ]
+    assert f and f[0].severity == Severity.WARN and "EK3_SRC1_YAW=0 (None)" in f[0].explanation
+
+
+def test_compassless_copter_with_gsf_or_gps_yaw_is_clean():
+    for yaw in (2, 3, 6, 8):
+        titles = [x.title for x in ParamAuditCheck().run(_yaw_log(EK3_SRC1_YAW=yaw))]
+        assert "No EKF yaw source for compass-less flight" not in titles
+
+
+def test_a_copter_with_a_compass_in_use_is_not_flagged():
+    titles = [x.title for x in ParamAuditCheck().run(_yaw_log(EK3_SRC1_YAW=1, COMPASS_USE=1))]
+    assert "No EKF yaw source for compass-less flight" not in titles
+
+
+def test_a_compassless_plane_is_not_flagged():
+    log = make_flight_log(
+        {}, params={"COMPASS_ENABLE": 0, "EK3_SRC1_YAW": 1}, vehicle_type="ArduPlane", vehicle_kind="plane"
+    )
+    assert "No EKF yaw source for compass-less flight" not in [x.title for x in ParamAuditCheck().run(log)]
