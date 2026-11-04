@@ -113,6 +113,11 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- An EKF rejection that began while the aircraft was already out of control (inside an attitude
+  tracking failure, or within 2 s of its end) was a second CRITICAL that read as an independent
+  fault. It began after the loss of control, so it cannot have caused it: it is now a WARN that
+  says how long after the loss it began. A tumbling aircraft makes the estimator's innovations
+  jump. On the benchmark this removes 6 false criticals (EKF 11 -> 5) and changes no hit.
 - `attitude` (Copter, heli): judged the way the firmware judges loss of control. Roll and pitch
   were two separate Euler errors critical at 25 deg; they are now one thrust-vector ("lean")
   error, named after the axis that carried most of it and critical at Copter's own line of
@@ -233,8 +238,8 @@ All notable changes to this project are documented here. The format is based on
   determined"; it now has no onset and says the vehicle never armed.
 - The vehicle profile estimated a hover throttle for a plane from its cruise throttle; only a
   multirotor gets that estimate.
-- Real-crash benchmark on all 49 logs against 1.0.0: logs with a false critical 35 -> 23, false
-  criticals 97 -> 36 (vibration 29 -> 0, ekf 25 -> 11, attitude 25 -> 17, gps 6 -> 1, events
+- Real-crash benchmark on all 49 logs against 1.0.0: logs with a false critical 35 -> 22, false
+  criticals 97 -> 30 (vibration 29 -> 0, ekf 25 -> 5, attitude 25 -> 17, gps 6 -> 1, events
   5 -> 1), top-1 11 -> 14 of 41, top-3 22 -> 24. Gained top-1: 132194_0 (the ESC-overheating
   crash, through `esc`), 144337_0 (`thrust_loss`, once a lost heading stopped outranking it),
   142129_1 (`landing`, with 142129_0 in the top 3),
