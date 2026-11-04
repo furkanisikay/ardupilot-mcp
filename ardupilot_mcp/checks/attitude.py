@@ -69,6 +69,18 @@ SPEED_NOTE_MAX_AGE_S = 1.0
 # ACRO writes a locked error or the current attitude (ArduPlane/mode_manual.cpp,
 # mode_stabilize.cpp, mode_training.cpp, mode_acro.cpp, Plane-4.6). Mode numbers: PLANE_MODES.
 PLANE_NO_TARGET_MODES = {0, 2, 3, 4}  # MANUAL, STABILIZE, TRAINING, ACRO
+# Plane's roll and pitch controllers follow their demand with a first-order time constant
+# (RLL2SRV_TCONST / PTCH2SRV_TCONST, "time constant in seconds from demanded to achieved" angle,
+# default 0.5 s; AP_RollController.cpp, AP_PitchController.cpp), so a demand that jumps
+# (a turn reversal in AUTO, a waypoint change) is followed by an error that closes over a few
+# time constants. Design choice: a Plane divergence that starts within STEP_LOOKBACK_S of the
+# demand moving more than CRIT_DEG, and is over within STEP_LAG_MAX_S, is that lag. Validation:
+# in completed flights of the forum landing logs all five such criticals were turn reversals in
+# AUTO (demand steps of 26-59 deg, 1.0-1.4 s); in the crash pools it changes no labelled loss.
+STEP_LOOKBACK_S = 1.0
+STEP_LAG_MAX_S = 1.5
+# ArduPlane VTOL modes run the multicopter attitude controller, not the fixed-wing one.
+PLANE_Q_MODES = {17, 18, 19, 20, 21, 22, 23, 25}  # QSTABILIZE..QACRO, LOITER_ALT_QLAND
 
 # (desired field, actual field, axis label, is-yaw-circular).
 _AXES = (
@@ -128,7 +140,11 @@ class AttitudeTrackingCheck(Check):
         err = self._axis_error(log, des_field, act_field, is_yaw=is_yaw)
         if err is None:
             return None
-        return self._judge(log, axis, *err, rule="axis")
+        demand = None
+        if log.meta.vehicle_kind == "plane" and not is_yaw:
+            td, (dv,) = log.series_many("ATT", [des_field])
+            demand = (td, dv)
+        return self._judge(log, axis, *err, rule="axis", demand=demand)
 
     def _axis_error(
         self, log: FlightLog, des_field: str, act_field: str, *, is_yaw: bool
@@ -207,6 +223,7 @@ class AttitudeTrackingCheck(Check):
         *,
         rule: str,
         axis_errs: dict[str, np.ndarray] | None = None,
+        demand: tuple[np.ndarray, np.ndarray] | None = None,
     ) -> Finding | None:
         """Severity and text for one error series.
 
@@ -230,6 +247,13 @@ class AttitudeTrackingCheck(Check):
         else:
             sustained_crit = [iv for iv in sustained if iv.peak > CRIT_DEG]
             crit_deg, crit_s = CRIT_DEG, SUSTAINED_S
+        lagged: list[tuple[Interval, float]] = []
+        if demand is not None:
+            for iv in sustained_crit:
+                step = _demand_step(log, demand, iv)
+                if step is not None:
+                    lagged.append((iv, step))
+            sustained_crit = [iv for iv in sustained_crit if all(iv is not lg for lg, _ in lagged)]
 
         worst: Interval | None
         if sustained_crit and rule == "heading":
@@ -271,6 +295,21 @@ class AttitudeTrackingCheck(Check):
             rec = (
                 "Inspect the airframe for mechanical failure (motor/ESC/prop, control linkage) and "
                 "review whether the craft is overweight or under-powered for the demanded maneuvers."
+            )
+        elif lagged:
+            worst, step = max(lagged, key=lambda x: (x[0].peak, x[0].duration_s))
+            sev = Severity.WARN
+            title = f"Attitude lagged a step in the demand ({axis})"
+            msg = (
+                f"{axis.capitalize()} fell up to {worst.peak:.0f} deg behind the demand for {worst.duration_s:.1f} s, "
+                f"right after the demand itself moved {step:.0f} deg within {STEP_LOOKBACK_S:.0f} s, and the error "
+                "then closed. Plane's attitude controller follows a demand with a time constant "
+                f"({'RLL2SRV_TCONST' if axis == 'roll' else 'PTCH2SRV_TCONST'}), so a sudden change such as a turn "
+                "reversal is followed by a lag like this; it is not a loss of control."
+            )
+            rec = (
+                "Nothing to do unless the lag is larger than the airframe should show: then check the time constant "
+                "and the rate limit for this axis, and the tune."
             )
         elif sustained:
             # Sustained above WARN_DEG, short of the critical rule.
@@ -404,6 +443,20 @@ def _plane_speed_note(log: FlightLog, t0: float | None) -> tuple[str, dict[str, 
         text += f": with SCALING_SPEED {scaling:.0f} m/s the surfaces had {scaler:.2f}x the deflection they were tuned at"
         samples["speed_scaler_at_onset"] = round(scaler, 2)
     return text + f" (see 'Flew far above {max_name}').", samples
+
+
+def _demand_step(log: FlightLog, demand: tuple[np.ndarray, np.ndarray], iv: Interval) -> float | None:
+    """The demand's move (deg) just before a short Plane divergence, when it explains it."""
+    if iv.duration_s >= STEP_LAG_MAX_S:
+        return None
+    td, dv = demand
+    before = (td >= iv.start_s - STEP_LOOKBACK_S) & (td <= iv.start_s) & np.isfinite(dv)
+    if not before.any():
+        return None
+    if log.mode_mask(np.array([iv.start_s]), PLANE_Q_MODES)[0]:
+        return None
+    step = float(np.ptp(dv[before]))
+    return step if step > CRIT_DEG else None
 
 
 def _dominant_axis(times: np.ndarray, axis_errs: dict[str, np.ndarray], iv: Interval) -> str:

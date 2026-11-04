@@ -495,3 +495,53 @@ def test_plane_speed_note_needs_a_flight_spent_above_airspeed_max():
         if x.severity == Severity.CRITICAL
     ]
     assert f and "airspeed_at_onset" not in f[0].evidence.samples
+
+
+def _plane_roll(des, roll, modes=None):
+    n = len(des)
+    att = build_series(
+        0.0,
+        10.0,
+        DesRoll=des,
+        Roll=roll,
+        DesPitch=[0.0] * n,
+        Pitch=[0.0] * n,
+        DesYaw=[0.0] * n,
+        Yaw=[0.0] * n,
+    )
+    msgs = {"ATT": att}
+    if modes:
+        msgs["MODE"] = [{"TimeUS": 0, "ModeNum": m, "Mode": m} for m in modes]
+    return make_flight_log(msgs, vehicle_type="ArduPlane", vehicle_kind="plane")
+
+
+def test_plane_lag_after_a_demand_step_is_a_warning():
+    # A turn reversal: the demand jumps from +45 to -45 deg and the roll follows over 1.6 s.
+    des = [45.0] * 20 + [-45.0] * 40
+    roll = [45.0] * 20 + [45.0 - 90.0 * min(1.0, i / 16) for i in range(40)]
+    f = AttitudeTrackingCheck().run(_plane_roll(des, roll, modes=[10]))
+    assert [(x.severity, x.title) for x in f] == [
+        (Severity.WARN, "Attitude lagged a step in the demand (roll)")
+    ]
+    assert "RLL2SRV_TCONST" in f[0].explanation
+
+
+def test_plane_divergence_without_a_demand_step_stays_critical():
+    des = [0.0] * 60
+    roll = [0.0] * 20 + [40.0] * 12 + [0.0] * 28
+    f = AttitudeTrackingCheck().run(_plane_roll(des, roll, modes=[10]))
+    assert [x.severity for x in f] == [Severity.CRITICAL]
+
+
+def test_plane_long_divergence_after_a_step_stays_critical():
+    des = [45.0] * 20 + [-45.0] * 60
+    roll = [45.0] * 80  # never follows the reversal
+    f = AttitudeTrackingCheck().run(_plane_roll(des, roll, modes=[10]))
+    assert [x.severity for x in f] == [Severity.CRITICAL]
+
+
+def test_plane_vtol_mode_step_is_not_excused():
+    des = [45.0] * 20 + [-45.0] * 40
+    roll = [45.0] * 20 + [45.0 - 90.0 * min(1.0, i / 16) for i in range(40)]
+    f = AttitudeTrackingCheck().run(_plane_roll(des, roll, modes=[19]))  # QLOITER
+    assert [x.severity for x in f] == [Severity.CRITICAL]

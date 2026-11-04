@@ -119,6 +119,14 @@ All notable changes to this project are documented here. The format is based on
   lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
 
 ### Fixed
+- `attitude` (Plane): a turn reversal in AUTO was a critical tracking failure. Plane's roll and
+  pitch controllers follow their demand with a time constant (RLL2SRV_TCONST, PTCH2SRV_TCONST),
+  so when the demand jumps from +45 to -45 deg the aircraft lags it for about a second. A
+  divergence in a fixed-wing mode that starts within 1 s of the demand moving more than 25 deg
+  and is over within 1.5 s is now a WARN ("Attitude lagged a step in the demand"). VTOL modes are
+  unchanged. In completed flights among the forum landing logs all five such criticals were
+  these reversals; in the crash pools no labelled loss of control changes, and where a flight
+  also had a real divergence that one stays critical.
 - An EKF rejection that began while the aircraft was already out of control (inside an attitude
   tracking failure, or within 2 s of its end) was a second CRITICAL that read as an independent
   fault. It began after the loss of control, so it cannot have caused it: it is now a WARN that
