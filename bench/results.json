@@ -2,12 +2,12 @@
  "summary": {
   "logs": 49,
   "scored": 41,
-  "top1_hits": 12,
+  "top1_hits": 13,
   "top3_hits": 22,
-  "logs_with_false_critical": 26,
-  "false_criticals_total": 44,
+  "logs_with_false_critical": 23,
+  "false_criticals_total": 36,
   "false_criticals_by_check": {
-   "attitude": 25,
+   "attitude": 17,
    "ekf": 11,
    "rcin": 3,
    "power": 2,
@@ -15,10 +15,10 @@
    "events": 1,
    "gps": 1
   },
-  "false_criticals_before_impact": 44,
+  "false_criticals_before_impact": 36,
   "measured_on": {
    "version": "1.0.0",
-   "revision": "334f959"
+   "revision": "0d70d20"
   }
  },
  "scores": [
@@ -169,11 +169,9 @@
    "onset_check": "err",
    "false_criticals": [
     "attitude",
-    "attitude",
-    "attitude",
     "ekf"
    ],
-   "false_criticals_before_impact": 4
+   "false_criticals_before_impact": 2
   },
   {
    "id": "141345_0",
@@ -361,11 +359,10 @@
    "onset_check": "timing",
    "false_criticals": [
     "attitude",
-    "attitude",
     "ekf",
     "ekf"
    ],
-   "false_criticals_before_impact": 4
+   "false_criticals_before_impact": 3
   },
   {
    "id": "143189_0",
@@ -388,15 +385,14 @@
     "prearm",
     "sensors"
    ],
-   "top_check": "attitude",
+   "top_check": "events",
    "hit": false,
    "top3": true,
    "onset_check": "attitude",
    "false_criticals": [
-    "attitude",
     "events"
    ],
-   "false_criticals_before_impact": 2
+   "false_criticals_before_impact": 1
   },
   {
    "id": "143223_0",
@@ -481,14 +477,12 @@
     "motors",
     "thrust_loss"
    ],
-   "top_check": "attitude",
-   "hit": false,
+   "top_check": "thrust_loss",
+   "hit": true,
    "top3": true,
    "onset_check": "ekf",
-   "false_criticals": [
-    "attitude"
-   ],
-   "false_criticals_before_impact": 1
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "144420_0",
@@ -542,10 +536,9 @@
    "top3": false,
    "onset_check": "power",
    "false_criticals": [
-    "attitude",
     "attitude"
    ],
-   "false_criticals_before_impact": 2
+   "false_criticals_before_impact": 1
   },
   {
    "id": "145222_0",
@@ -559,10 +552,8 @@
    "hit": true,
    "top3": true,
    "onset_check": "thrust_loss",
-   "false_criticals": [
-    "attitude"
-   ],
-   "false_criticals_before_impact": 1
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "145232_0",
@@ -697,7 +688,7 @@
    "top_check": "ekf",
    "hit": false,
    "top3": false,
-   "onset_check": "ekf",
+   "onset_check": "attitude",
    "false_criticals": [
     "ekf"
    ],
@@ -755,10 +746,8 @@
    "hit": null,
    "top3": null,
    "onset_check": "timing",
-   "false_criticals": [
-    "attitude"
-   ],
-   "false_criticals_before_impact": 1
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "145667_0",
