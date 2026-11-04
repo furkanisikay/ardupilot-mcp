@@ -385,3 +385,69 @@ def test_plane_fbwa_banked_against_zero_target_is_a_failure():
     # FBWA does command the bank angle, so the same divergence is a tracking failure.
     findings = AttitudeTrackingCheck().run(_plane_banked_turn(5))
     assert [f.severity for f in findings] == [Severity.CRITICAL]
+
+
+def _copter(n, **series):
+    fields = {"DesRoll": 0.0, "Roll": 0.0, "DesPitch": 0.0, "Pitch": 0.0, "DesYaw": 0.0, "Yaw": 0.0}
+    cols = {k: series.get(k, [v] * n) for k, v in fields.items()}
+    return make_flight_log({"ATT": build_series(0.0, 10.0, **cols)}, vehicle_kind="copter")
+
+
+def test_copter_lean_error_over_30_deg_for_1_s_is_critical_and_named_by_axis():
+    # Copter's parachute check: 30 deg off the target for 1 s is a loss of control.
+    n = 50
+    f = AttitudeTrackingCheck().run(_copter(n, Roll=[0.0] * 10 + [35.0] * 10 + [0.0] * 30))
+    assert [(x.severity, x.title) for x in f] == [(Severity.CRITICAL, "Attitude tracking failure (roll)")]
+    assert f[0].evidence.samples["peak_err_deg_lean"] == 35.0
+    assert f[0].evidence.samples["peak_err_deg_roll"] == 35.0
+    assert "loss-of-control" in f[0].explanation
+
+
+def test_copter_lean_error_under_30_deg_is_a_warning():
+    # 28 deg for 3 s is over the old 25 deg line but under the firmware's 30 deg.
+    n = 60
+    f = AttitudeTrackingCheck().run(_copter(n, Pitch=[0.0] * 10 + [28.0] * 30 + [0.0] * 20))
+    assert [(x.severity, x.title) for x in f] == [
+        (Severity.WARN, "Sustained attitude tracking error (pitch)")
+    ]
+
+
+def test_copter_roll_and_pitch_give_one_lean_finding():
+    n = 50
+    f = AttitudeTrackingCheck().run(
+        _copter(n, Roll=[0.0] * 10 + [40.0] * 20 + [0.0] * 20, Pitch=[0.0] * 10 + [35.0] * 20 + [0.0] * 20)
+    )
+    assert len(f) == 1 and f[0].severity == Severity.CRITICAL
+    assert f[0].evidence.samples["peak_err_deg_lean"] > 40.0
+
+
+def test_copter_heading_divergence_is_at_most_a_warning():
+    # The motor mixer gives yaw whatever room roll and pitch leave, and the crash check
+    # ignores heading: a held lean with a lost heading is not a loss of control.
+    n = 50
+    f = AttitudeTrackingCheck().run(_copter(n, Yaw=[0.0] * 10 + [60.0] * 30 + [0.0] * 10))
+    assert [(x.severity, x.title) for x in f] == [(Severity.WARN, "Heading not held (yaw)")]
+    assert f[0].evidence.samples["peak_err_deg_yaw"] == 60.0
+
+
+def test_copter_near_90_deg_pitch_euler_differences_are_not_errors():
+    # At -85 deg pitch, roll 30 / yaw -30 is within 3 deg of roll 0 / yaw 0: Euler roll and
+    # yaw turn about nearly the same axis there, so their differences mean nothing.
+    n = 50
+    log = _copter(
+        n,
+        DesPitch=[-85.0] * n,
+        Pitch=[-85.0] * n,
+        Roll=[0.0] * 10 + [30.0] * 30 + [0.0] * 10,
+        Yaw=[0.0] * 10 + [-30.0] * 30 + [0.0] * 10,
+    )
+    assert AttitudeTrackingCheck().run(log) == []
+
+
+def test_copter_heading_is_not_judged_while_the_lean_error_is_over_30_deg():
+    # The controller scales its yaw correction down above AC_ATTITUDE_THRUST_ERROR_ANGLE.
+    n = 50
+    f = AttitudeTrackingCheck().run(
+        _copter(n, Roll=[0.0] * 10 + [90.0] * 30 + [0.0] * 10, Yaw=[0.0] * 10 + [90.0] * 30 + [0.0] * 10)
+    )
+    assert [x.title for x in f] == ["Attitude tracking failure (roll)"]

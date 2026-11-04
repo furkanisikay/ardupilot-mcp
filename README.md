@@ -43,7 +43,7 @@ First anomaly while armed: Elevated VibeZ vibration @ 9s.
 [CRITICAL] vibration @ 9s: Elevated VibeZ vibration
            VibeZ vibration stayed above 60 m/s^2 for up to 5.0 s (peak 70 m/s^2; 17% of the flight above 60).
 [CRITICAL] attitude  @ 20s: Attitude tracking failure (roll)
-           Roll failed to track the demand for 3.0 s, error up to 35 deg (sustained >25 deg).
+           The thrust direction was 35 deg off the demand, mostly in roll, for 3.0 s (over 30 deg for 1 s is the firmware's own loss-of-control line).
 [CRITICAL] power     @ 25s: Battery reached critical voltage
            Pack voltage fell to 13.32 V, at or below the critical-voltage level (13.50 V, configured BATT_*_VOLT failsafe).
 ```
