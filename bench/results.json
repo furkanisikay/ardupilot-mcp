@@ -5,9 +5,9 @@
   "top1_hits": 14,
   "top3_hits": 24,
   "logs_with_false_critical": 22,
-  "false_criticals_total": 30,
+  "false_criticals_total": 29,
   "false_criticals_by_check": {
-   "attitude": 17,
+   "attitude": 16,
    "ekf": 5,
    "rcin": 3,
    "power": 2,
@@ -18,7 +18,7 @@
   "false_criticals_before_impact": 27,
   "measured_on": {
    "version": "1.0.0",
-   "revision": "698eaf4"
+   "revision": "fb06cd3"
   }
  },
  "scores": [
@@ -273,7 +273,6 @@
    "top3": true,
    "onset_check": "landing",
    "false_criticals": [
-    "attitude",
     "attitude"
    ],
    "false_criticals_before_impact": 0
