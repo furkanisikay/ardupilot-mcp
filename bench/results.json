@@ -4,21 +4,21 @@
   "scored": 41,
   "top1_hits": 14,
   "top3_hits": 24,
-  "logs_with_false_critical": 23,
-  "false_criticals_total": 36,
+  "logs_with_false_critical": 22,
+  "false_criticals_total": 30,
   "false_criticals_by_check": {
    "attitude": 17,
-   "ekf": 11,
+   "ekf": 5,
    "rcin": 3,
    "power": 2,
    "compass": 1,
    "events": 1,
    "gps": 1
   },
-  "false_criticals_before_impact": 33,
+  "false_criticals_before_impact": 27,
   "measured_on": {
    "version": "1.0.0",
-   "revision": "392f969"
+   "revision": "698eaf4"
   }
  },
  "scores": [
@@ -172,10 +172,9 @@
    "top3": null,
    "onset_check": "err",
    "false_criticals": [
-    "attitude",
-    "ekf"
+    "attitude"
    ],
-   "false_criticals_before_impact": 2
+   "false_criticals_before_impact": 1
   },
   {
    "id": "141345_0",
@@ -222,10 +221,8 @@
    "hit": true,
    "top3": true,
    "onset_check": "timing",
-   "false_criticals": [
-    "ekf"
-   ],
-   "false_criticals_before_impact": 1
+   "false_criticals": [],
+   "false_criticals_before_impact": 0
   },
   {
    "id": "141884_0",
@@ -328,12 +325,10 @@
    "onset_check": "attitude",
    "false_criticals": [
     "attitude",
-    "ekf",
     "attitude",
-    "ekf",
     "rcin"
    ],
-   "false_criticals_before_impact": 5
+   "false_criticals_before_impact": 3
   },
   {
    "id": "142491_1",
@@ -367,11 +362,9 @@
    "top3": null,
    "onset_check": "timing",
    "false_criticals": [
-    "attitude",
-    "ekf",
-    "ekf"
+    "attitude"
    ],
-   "false_criticals_before_impact": 3
+   "false_criticals_before_impact": 1
   },
   {
    "id": "143189_0",

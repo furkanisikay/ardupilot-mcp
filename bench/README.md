@@ -55,11 +55,11 @@ The changelog notes how each change moved these numbers. CI checks this table ag
 which renders this table from `bench/results.json`.
 
 <!-- gen:results -->
-Measured on ardupilot-mcp 1.0.0 (392f969).
+Measured on ardupilot-mcp 1.0.0 (698eaf4).
 
 | Scorable logs | Top-1 | Top-3 | Logs with a false critical | False criticals |
 |---|---|---|---|---|
-| 41 | 14 | 24 | 23 / 49 | 36 |
+| 41 | 14 | 24 | 22 / 49 | 30 |
 
-False criticals by check: `attitude` 17, `ekf` 11, `rcin` 3, `power` 2, `compass` 1, `events` 1, `gps` 1. 33 of the 36 start before the impact, so they reach the top of the report rather than the after-impact tail.
+False criticals by check: `attitude` 17, `ekf` 5, `rcin` 3, `power` 2, `compass` 1, `events` 1, `gps` 1. 27 of the 30 start before the impact, so they reach the top of the report rather than the after-impact tail.
 <!-- /gen:results -->
