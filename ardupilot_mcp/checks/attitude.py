@@ -79,6 +79,21 @@ PLANE_NO_TARGET_MODES = {0, 2, 3, 4}  # MANUAL, STABILIZE, TRAINING, ACRO
 # AUTO (demand steps of 26-59 deg, 1.0-1.4 s); in the crash pools it changes no labelled loss.
 STEP_LOOKBACK_S = 1.0
 STEP_LAG_MAX_S = 1.5
+# A demand that keeps moving after the divergence starts (a 90 deg turn reversal in RTL) is the
+# same lag seen later. Design choice: a Plane divergence is also that lag when the demand moved
+# more than CRIT_DEG from STEP_LOOKBACK_S before it to its end, the aircraft was rotating toward
+# the demand in at least TOWARD_MIN_FRACTION of the samples where it rotated faster than
+# MOVING_RATE_DEG_S, and it was over within LAG_TCONSTS time constants (4 x 0.5 s by default:
+# a first-order lag has closed 98% of a step by then). A loss of control rotates away from the
+# demand. Validation on the 100 Plane attitude criticals in the 215 real logs: in the crash logs
+# no fixed-wing critical rotated toward the demand more than 79% of the time, and no crash log's
+# findings change; every critical it turns into a warning is in a flight that ended normally
+# (turn reversals in FBWA, AUTO, RTL and TAKEOFF, AUTOTUNE twitches). The windy FBWA upset in forum 99954 rotated toward the demand 51% of the
+# time, with the aileron and elevator at their limits, and stays critical.
+TOWARD_MIN_FRACTION = 0.90
+MOVING_RATE_DEG_S = 5.0
+LAG_TCONSTS = 4.0
+TCONST_DEFAULT_S = 0.5  # RLL2SRV_TCONST / PTCH2SRV_TCONST default
 # ArduPlane VTOL modes run the multicopter attitude controller, not the fixed-wing one.
 PLANE_Q_MODES = {17, 18, 19, 20, 21, 22, 23, 25}  # QSTABILIZE..QACRO, LOITER_ALT_QLAND
 
@@ -142,8 +157,8 @@ class AttitudeTrackingCheck(Check):
             return None
         demand = None
         if log.meta.vehicle_kind == "plane" and not is_yaw:
-            td, (dv,) = log.series_many("ATT", [des_field])
-            demand = (td, dv)
+            td, (dv, av) = log.series_many("ATT", [des_field, act_field])
+            demand = (td, dv, av)
         return self._judge(log, axis, *err, rule="axis", demand=demand)
 
     def _axis_error(
@@ -223,7 +238,7 @@ class AttitudeTrackingCheck(Check):
         *,
         rule: str,
         axis_errs: dict[str, np.ndarray] | None = None,
-        demand: tuple[np.ndarray, np.ndarray] | None = None,
+        demand: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
     ) -> Finding | None:
         """Severity and text for one error series.
 
@@ -247,12 +262,12 @@ class AttitudeTrackingCheck(Check):
         else:
             sustained_crit = [iv for iv in sustained if iv.peak > CRIT_DEG]
             crit_deg, crit_s = CRIT_DEG, SUSTAINED_S
-        lagged: list[tuple[Interval, float]] = []
+        lagged: list[tuple[Interval, tuple[float, float | None]]] = []
         if demand is not None:
             for iv in sustained_crit:
-                step = _demand_step(log, demand, iv)
-                if step is not None:
-                    lagged.append((iv, step))
+                lag = _demand_step(log, demand, iv, axis)
+                if lag is not None:
+                    lagged.append((iv, lag))
             sustained_crit = [iv for iv in sustained_crit if all(iv is not lg for lg, _ in lagged)]
 
         worst: Interval | None
@@ -297,13 +312,19 @@ class AttitudeTrackingCheck(Check):
                 "review whether the craft is overweight or under-powered for the demanded maneuvers."
             )
         elif lagged:
-            worst, step = max(lagged, key=lambda x: (x[0].peak, x[0].duration_s))
+            worst, (step, toward) = max(lagged, key=lambda x: (x[0].peak, x[0].duration_s))
             sev = Severity.WARN
             title = f"Attitude lagged a step in the demand ({axis})"
+            when = (
+                f"right after the demand itself moved {step:.0f} deg within {STEP_LOOKBACK_S:.0f} s, and the error "
+                "then closed."
+                if toward is None
+                else f"while the demand itself moved {step:.0f} deg, and the aircraft kept rotating toward it "
+                f"({toward * 100:.0f}% of the time it was rotating), so the error closed."
+            )
             msg = (
                 f"{axis.capitalize()} fell up to {worst.peak:.0f} deg behind the demand for {worst.duration_s:.1f} s, "
-                f"right after the demand itself moved {step:.0f} deg within {STEP_LOOKBACK_S:.0f} s, and the error "
-                "then closed. Plane's attitude controller follows a demand with a time constant "
+                f"{when} Plane's attitude controller follows a demand with a time constant "
                 f"({'RLL2SRV_TCONST' if axis == 'roll' else 'PTCH2SRV_TCONST'}), so a sudden change such as a turn "
                 "reversal is followed by a lag like this; it is not a loss of control."
             )
@@ -445,18 +466,37 @@ def _plane_speed_note(log: FlightLog, t0: float | None) -> tuple[str, dict[str, 
     return text + f" (see 'Flew far above {max_name}').", samples
 
 
-def _demand_step(log: FlightLog, demand: tuple[np.ndarray, np.ndarray], iv: Interval) -> float | None:
-    """The demand's move (deg) just before a short Plane divergence, when it explains it."""
-    if iv.duration_s >= STEP_LAG_MAX_S:
-        return None
-    td, dv = demand
-    before = (td >= iv.start_s - STEP_LOOKBACK_S) & (td <= iv.start_s) & np.isfinite(dv)
-    if not before.any():
-        return None
+def _demand_step(
+    log: FlightLog, demand: tuple[np.ndarray, np.ndarray, np.ndarray], iv: Interval, axis: str
+) -> tuple[float, float | None] | None:
+    """(demand move in deg, share of rotation toward it) when a Plane divergence is the controller's lag.
+
+    The share is None when the move came before the divergence started (the step rule).
+    """
     if log.mode_mask(np.array([iv.start_s]), PLANE_Q_MODES)[0]:
         return None
-    step = float(np.ptp(dv[before]))
-    return step if step > CRIT_DEG else None
+    td, dv, av = demand
+    before = (td >= iv.start_s - STEP_LOOKBACK_S) & (td <= iv.start_s) & np.isfinite(dv)
+    if iv.duration_s < STEP_LAG_MAX_S and before.any():
+        step = float(np.ptp(dv[before]))
+        if step > CRIT_DEG:
+            return step, None
+    tconst = log.params.get("RLL2SRV_TCONST" if axis == "roll" else "PTCH2SRV_TCONST", TCONST_DEFAULT_S)
+    if iv.duration_s >= LAG_TCONSTS * tconst:
+        return None
+    around = (td >= iv.start_s - STEP_LOOKBACK_S) & (td <= iv.end_s) & np.isfinite(dv)
+    inside = (td >= iv.start_s) & (td <= iv.end_s) & np.isfinite(dv) & np.isfinite(av)
+    if not around.any() or np.count_nonzero(inside) < 4:
+        return None
+    step = float(np.ptp(dv[around]))
+    if step <= CRIT_DEG:
+        return None
+    rate = np.gradient(av[inside], td[inside])
+    moving = np.abs(rate) > MOVING_RATE_DEG_S
+    if np.count_nonzero(moving) < 3:
+        return None
+    toward = float(np.mean(np.sign(rate[moving]) == np.sign((dv[inside] - av[inside])[moving])))
+    return (step, toward) if toward >= TOWARD_MIN_FRACTION else None
 
 
 def _dominant_axis(times: np.ndarray, axis_errs: dict[str, np.ndarray], iv: Interval) -> str:

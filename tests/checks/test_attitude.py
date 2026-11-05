@@ -526,6 +526,37 @@ def test_plane_lag_after_a_demand_step_is_a_warning():
     assert "RLL2SRV_TCONST" in f[0].explanation
 
 
+def _reversal(roll_after):
+    # The demand swings from +45 to -45 deg over 1.6 s (a turn reversal in RTL), so most of its
+    # move comes after the error grows past the warning floor.
+    des = [45.0] * 20 + [45.0 - 5.625 * i for i in range(16)] + [-45.0] * 40
+    return _plane_roll(des, [45.0] * 24 + roll_after, modes=[11])
+
+
+def test_plane_lag_behind_a_moving_demand_is_a_warning():
+    # The roll keeps turning toward the demand the whole time, only slower than it moved.
+    f = AttitudeTrackingCheck().run(_reversal([45.0 - 4.5 * min(i, 20) for i in range(52)]))
+    assert [(x.severity, x.title) for x in f] == [
+        (Severity.WARN, "Attitude lagged a step in the demand (roll)")
+    ]
+    assert "kept rotating toward it (100% of the time" in f[0].explanation
+
+
+def test_plane_rotating_away_from_a_moving_demand_stays_critical():
+    # The aircraft rolls further right while the demand goes left, then recovers: an upset.
+    # Over within 1.2 s, so only the direction of the rotation decides.
+    roll = [45.0 + 3.0 * i for i in range(6)] + [60.0 - 15.0 * min(i, 7) for i in range(46)]
+    f = AttitudeTrackingCheck().run(_reversal(roll))
+    assert [x.severity for x in f] == [Severity.CRITICAL]
+    assert f[0].evidence.samples["worst_duration_s_roll"] < 2.0
+
+
+def test_plane_lag_longer_than_four_time_constants_stays_critical():
+    # Turning toward the demand, but far slower than RLL2SRV_TCONST allows.
+    f = AttitudeTrackingCheck().run(_reversal([45.0 - 2.0 * min(i, 45) for i in range(52)]))
+    assert [x.severity for x in f] == [Severity.CRITICAL]
+
+
 def test_plane_divergence_without_a_demand_step_stays_critical():
     des = [0.0] * 60
     roll = [0.0] * 20 + [40.0] * 12 + [0.0] * 28

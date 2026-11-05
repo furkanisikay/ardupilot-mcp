@@ -127,6 +127,14 @@ All notable changes to this project are documented here. The format is based on
   unchanged. In completed flights among the forum landing logs all five such criticals were
   these reversals; in the crash pools no labelled loss of control changes, and where a flight
   also had a real divergence that one stays critical.
+- `attitude` (Plane): a turn reversal whose demand keeps moving after the error has grown (a
+  90 deg reversal in RTL takes about 1.6 s) was still critical, because most of the step came
+  after the divergence began. A divergence is now also that lag when the demand moved more than
+  25 deg around it, the aircraft kept rotating toward the demand at least 90% of the time it was
+  rotating, and it was over within four time constants (RLL2SRV_TCONST / PTCH2SRV_TCONST, 2 s by
+  default). A loss of control rotates away from the demand: no fixed-wing critical in the crash
+  logs rotated toward it more than 79% of the time, and the windy FBWA upset of forum 99954 (51%,
+  aileron and elevator at their limits, 13 m of height lost) stays critical.
 - An EKF rejection that began while the aircraft was already out of control (inside an attitude
   tracking failure, or within 2 s of its end) was a second CRITICAL that read as an independent
   fault. It began after the loss of control, so it cannot have caused it: it is now a WARN that
@@ -253,14 +261,16 @@ All notable changes to this project are documented here. The format is based on
 - The vehicle profile estimated a hover throttle for a plane from its cruise throttle; only a
   multirotor gets that estimate.
 - Real-crash benchmark on all 49 logs against 1.0.0: logs with a false critical 35 -> 22, false
-  criticals 97 -> 29 (vibration 29 -> 0, ekf 25 -> 5, attitude 25 -> 16, gps 6 -> 1, events
-  5 -> 1), top-1 11 -> 14 of 41, top-3 22 -> 24. Gained top-1: 132194_0 (the ESC-overheating
+  criticals 97 -> 27 (vibration 29 -> 0, ekf 25 -> 5, attitude 25 -> 14, gps 6 -> 1, events
+  5 -> 1), top-1 11 -> 14 of 41, top-3 22 -> 25. Gained top-1: 132194_0 (the ESC-overheating
   crash, through `esc`), 144337_0 (`thrust_loss`, once a lost heading stopped outranking it),
   142129_1 (`landing`, with 142129_0 in the top 3),
   128873_2, 144427_0 (once a compass rejected alone stopped outranking them), 145429_0 (`config`)
   and 145616_0. Gained top-3: the two flights of 117787 through `param_audit`'s airspeed finding
   (flown at 27 m/s on a SCALING_SPEED of 13, which halves the surface throw; the labelled cause
-  is a V-tail MIXING_GAIN of 0.5, another shortfall of elevator authority) and 144128_0. Lost:
+  is a V-tail MIXING_GAIN of 0.5, another shortfall of elevator authority), 144128_0 and
+  142491_1 (through a pre-arm compass warning, once its turn reversals stopped outranking it;
+  the airspeed finding is fourth). Lost:
   142202_0, whose hit came from a rangefinder line unrelated to its GPS cause; 138886_0 and
   145352_0, whose hits came from an EKF variance written after the disarm or after landing;
   144203_1, whose top-1 now goes to its current sensor reading 0 A, a real fault but not the
