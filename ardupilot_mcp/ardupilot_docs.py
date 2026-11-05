@@ -133,6 +133,18 @@ DOC_URLS: dict[str, tuple[str, str]] = {
         "Complete parameter list",
         "https://ardupilot.org/copter/docs/parameters.html",
     ),
+    "esc_telemetry": (
+        "ESC Telemetry",
+        "https://ardupilot.org/copter/docs/common-esc-telemetry.html",
+    ),
+    "watchdog": (
+        "Independent Watchdog and Crash Dump",
+        "https://ardupilot.org/copter/docs/common-watchdog.html",
+    ),
+    "automatic_landing": (
+        "Automatic Landing",
+        "https://ardupilot.org/plane/docs/automatic-landing.html",
+    ),
 }
 
 # check id -> ordered topic keys (most specific first).
@@ -146,8 +158,13 @@ CHECK_TOPICS: dict[str, list[str]] = {
     "rcin": ["radio_failsafe"],
     "motors": ["thrust_loss", "motor_order", "esc_calibration"],
     "thrust_loss": ["thrust_loss", "motor_order", "esc_calibration"],
+    "esc": ["esc_telemetry", "thrust_loss"],
+    "circling": ["compass_interference", "compass_calibration"],
+    "baro": ["ekf_overview"],
     "events": ["log_diagnosis_general"],
     "timing": ["log_diagnosis_general"],
+    "health": ["watchdog", "log_diagnosis_general"],
+    "landing": ["automatic_landing"],
     "integrity": ["log_diagnosis_general"],
     "config": ["prearm_checks", "parameters_reference"],
     "param_audit": ["parameters_reference", "tuning"],

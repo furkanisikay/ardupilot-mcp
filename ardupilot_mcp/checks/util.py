@@ -61,6 +61,27 @@ def intervals_above(
     return out
 
 
+def longest_run_above(times: np.ndarray, vals: np.ndarray, threshold: float) -> float:
+    """Longest time ``vals`` stayed above ``threshold``, counting each sample as one period.
+
+    A run of n samples spans n sample periods (10 checks at 10 Hz is the firmware's 1 s), so
+    one median sample spacing is added to the first-to-last-sample time. Samples dropped by a
+    mask (on the ground, another core primary) end a run rather than join two.
+    """
+    if times.size == 0:
+        return 0.0
+    dt = float(np.median(np.diff(times))) if times.size > 1 else 0.0
+    idx = np.flatnonzero(vals > threshold)
+    if idx.size == 0:
+        return 0.0
+    t = times[idx]
+    # A run breaks where a sample in between was not above, or where time jumps.
+    breaks = np.flatnonzero((np.diff(idx) > 1) | (np.diff(t) > 3 * dt)) + 1
+    bounds = np.concatenate(([0], breaks, [idx.size]))
+    longest = max(float(t[b - 1] - t[a]) + dt for a, b in zip(bounds[:-1], bounds[1:], strict=True))
+    return round(longest, 6)  # 5 samples at 5 Hz is 1.0 s, not 0.9999999
+
+
 def fraction_at_or_above(values: np.ndarray, threshold: float) -> float:
     """Fraction of samples at or above threshold (0..1)."""
     if values.size == 0:

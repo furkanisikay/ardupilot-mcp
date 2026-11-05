@@ -12,6 +12,15 @@ failure (broken/slipping motor, control surface), wrong tuning, or an
 underpowered/overweight craft. A brief spike is far less alarming (a gust or a
 single aggressive stick input) than a multi-second divergence.
 
+Copter and heli are judged the way the firmware judges them. Their crash and parachute
+checks look at the thrust-vector ("lean") error, the angle between the demanded and the
+achieved thrust direction, and call 30 deg of it held for 1 s a loss of control; heading
+is not part of it (ArduCopter/crash_check.cpp, AC_AttitudeControl get_att_error_angle_deg).
+So roll and pitch are judged together as that lean error, named after the axis that
+carried most of it, and a yaw divergence is at most a warning: the motor mixer fits yaw
+into whatever room roll and pitch leave (AP_MotorsMatrix output_armed_stabilizing), so
+heading is the first thing a saturated or failing motor gives up.
+
 Enrichment: if ``RCOU`` motor outputs were saturated (any of C1..C4 averaging
 above ~1950 us) during the worst divergence window, the craft was likely simply
 underpowered for the demand, and we say so. This is deterministic and additive.
@@ -41,6 +50,69 @@ MOTOR_SATURATION_US = 1950.0
 # divergence, so a brief one still holds RCOU samples (RCOU logs at ~10 Hz and up).
 SATURATION_PAD_S = 0.5
 
+# Copter's own loss-of-control rule: a thrust-vector error over 30 deg ("30 degrees off from
+# target indicates a loss of control") held for 1 s (PARACHUTE_CHECK_ANGLE_DEVIATION_DEG,
+# PARACHUTE_CHECK_TRIGGER_SEC; the crash check uses the same 30 deg). ArduCopter/crash_check.cpp.
+LEAN_CRIT_DEG = 30.0
+LEAN_CRIT_S = 1.0
+# Above this lean error the attitude controller scales its yaw correction down, and above twice
+# it stops correcting heading (AC_ATTITUDE_THRUST_ERROR_ANGLE, AC_AttitudeControl.h/.cpp).
+THRUST_ERROR_YAW_LIMIT_DEG = 30.0
+# Vehicles judged by that rule (Copter's crash_check runs for multirotors and helis alike).
+LEAN_KINDS = {"copter", "heli"}
+# Design choice: the airspeed note uses the last CTUN sample at most this old at the onset.
+SPEED_NOTE_MAX_AGE_S = 1.0
+
+# ArduPlane modes in which ATT.DesRoll/DesPitch (nav_roll_cd/nav_pitch_cd) is not the
+# attitude the pilot or autopilot asked for: MANUAL writes the current attitude, STABILIZE
+# writes 0 while the pilot banks with stick mixing, TRAINING writes 0 inside its limits, and
+# ACRO writes a locked error or the current attitude (ArduPlane/mode_manual.cpp,
+# mode_stabilize.cpp, mode_training.cpp, mode_acro.cpp, Plane-4.6). Mode numbers: PLANE_MODES.
+PLANE_NO_TARGET_MODES = {0, 2, 3, 4}  # MANUAL, STABILIZE, TRAINING, ACRO
+# Plane's roll and pitch controllers follow their demand with a first-order time constant
+# (RLL2SRV_TCONST / PTCH2SRV_TCONST, "time constant in seconds from demanded to achieved" angle,
+# default 0.5 s; AP_RollController.cpp, AP_PitchController.cpp), so a demand that jumps
+# (a turn reversal in AUTO, a waypoint change) is followed by an error that closes over a few
+# time constants. Design choice: a Plane divergence that starts within STEP_LOOKBACK_S of the
+# demand moving more than CRIT_DEG, and is over within STEP_LAG_MAX_S, is that lag. Validation:
+# in completed flights of the forum landing logs all five such criticals were turn reversals in
+# AUTO (demand steps of 26-59 deg, 1.0-1.4 s); in the crash pools it changes no labelled loss.
+STEP_LOOKBACK_S = 1.0
+STEP_LAG_MAX_S = 1.5
+# A demand that keeps moving after the divergence starts (a 90 deg turn reversal in RTL) is the
+# same lag seen later. Design choice: a Plane divergence is also that lag when the demand moved
+# more than CRIT_DEG from STEP_LOOKBACK_S before it to its end, the aircraft was rotating toward
+# the demand in at least TOWARD_MIN_FRACTION of the samples where it rotated faster than
+# MOVING_RATE_DEG_S, and it was over within the time the controller itself needs. That time
+# follows the firmware: the demanded rate is the angle error over the time constant, capped at
+# RLL2SRV_RMAX (PTCH2SRV_RMAX_UP / _DN), so a step of S deg is rate-limited until the error is
+# down to RMAX x TCONST and then closes like a first-order lag; LAG_TCONSTS time constants
+# (98% closed) plus (S - RMAX x TCONST) / RMAX. A loss of control rotates away from the demand.
+# Validation on the 100 Plane attitude criticals in the 215 real logs: in the crash logs no
+# fixed-wing critical rotated toward the demand more than 79% of the time, so none of them
+# changes; every critical it turns into a warning is in a flight that ended normally (turn
+# reversals in FBWA, AUTO, RTL and TAKEOFF, AUTOTUNE's full-deflection roll steps). The windy
+# FBWA upset in forum 99954 rotated toward the demand 51% of the time, with the aileron and
+# elevator at their limits, and stays critical.
+TOWARD_MIN_FRACTION = 0.90
+MOVING_RATE_DEG_S = 5.0
+LAG_TCONSTS = 4.0
+TCONST_DEFAULT_S = 0.5  # RLL2SRV_TCONST / PTCH2SRV_TCONST default
+# RLL2SRV_RMAX, PTCH2SRV_RMAX_UP and _DN default to 0, which disables the rate limit.
+# ArduPlane VTOL modes run the multicopter attitude controller, not the fixed-wing one.
+PLANE_Q_MODES = {17, 18, 19, 20, 21, 22, 23, 25}  # QSTABILIZE..QACRO, LOITER_ALT_QLAND
+# Plane's roll and pitch rate controllers command the surface as the sum of their P, I, D, FF
+# and DFF terms, in degrees of deflection (AP_RollController / AP_PitchController
+# _get_rate_out), and log each term in PIDR / PIDP. When the integrator points the surface
+# against the demanded rotation and is larger than the other terms together, the surface stays
+# on the wrong side however the demand moves. Design choice: that is reported when it held for
+# INTEGRATOR_HELD_FRACTION of the first INTEGRATOR_WINDOW_S of a Plane critical (counting
+# samples whose demanded rate is above MOVING_RATE_DEG_S). Validation on the 100 Plane attitude
+# criticals in the 215 real logs: it holds in three, all crashes (forum 128317's dive that did
+# not pull out, and the benchmark's 117787_0 and 137589_1), and in no flight that ended normally.
+INTEGRATOR_WINDOW_S = 1.5
+INTEGRATOR_HELD_FRACTION = 0.75
+
 # (desired field, actual field, axis label, is-yaw-circular).
 _AXES = (
     ("DesRoll", "Roll", "roll", False),
@@ -62,6 +134,8 @@ class AttitudeTrackingCheck(Check):
     description = "Compares demanded vs achieved roll/pitch/yaw from ATT to catch loss of control."
 
     def run(self, log: FlightLog) -> list[Finding]:
+        if log.meta.vehicle_kind in LEAN_KINDS:
+            return self._multirotor_findings(log)
         findings: list[Finding] = []
         for des_field, act_field, axis, is_yaw in _AXES:
             # ArduPlane logs DesYaw as a constant 0 placeholder ("Plane does not have
@@ -74,6 +148,18 @@ class AttitudeTrackingCheck(Check):
                 findings.append(finding)
         return findings
 
+    def _multirotor_findings(self, log: FlightLog) -> list[Finding]:
+        """Copter/heli: one lean (thrust-vector) finding and one heading finding."""
+        errors = self._lean_heading_error(log)
+        if errors is None:
+            return []
+        times, lean_err, heading_err, axis_errs = errors
+        findings = [
+            self._judge(log, "lean", times, lean_err, rule="lean", axis_errs=axis_errs),
+            self._judge(log, "yaw", times, heading_err, rule="heading"),
+        ]
+        return [f for f in findings if f is not None]
+
     def _axis_finding(
         self,
         log: FlightLog,
@@ -82,6 +168,18 @@ class AttitudeTrackingCheck(Check):
         axis: str,
         is_yaw: bool,
     ) -> Finding | None:
+        err = self._axis_error(log, des_field, act_field, is_yaw=is_yaw)
+        if err is None:
+            return None
+        demand = None
+        if log.meta.vehicle_kind == "plane" and not is_yaw:
+            td, (dv, av) = log.series_many("ATT", [des_field, act_field])
+            demand = (td, dv, av)
+        return self._judge(log, axis, *err, rule="axis", demand=demand)
+
+    def _axis_error(
+        self, log: FlightLog, des_field: str, act_field: str, *, is_yaw: bool
+    ) -> tuple[np.ndarray, np.ndarray] | None:
         # Both fields from the same ATT records, so demand and actual stay paired.
         times, (des_v, act_v) = log.series_many("ATT", [des_field, act_field])
         if times.size == 0:
@@ -90,14 +188,80 @@ class AttitudeTrackingCheck(Check):
         if is_yaw:
             # Yaw is circular: wrap error into [-180, 180].
             err = ((err + 180.0) % 360.0) - 180.0
-        abs_err = np.abs(err)
+        return times, self._in_flight(log, times, np.abs(err))
+
+    def _lean_heading_error(
+        self, log: FlightLog
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, np.ndarray]] | None:
+        """Thrust-direction and heading error per ATT record, as AC_AttitudeControl splits them.
+
+        The lean error is the angle between the demanded and the achieved thrust direction
+        (the body z axes in the earth frame). The heading error is what remains once the
+        achieved frame is turned the shortest way onto the demanded thrust direction: the
+        angle between the two x axes about it (thrust_heading_rotation_angles). Both stay
+        exact near 90 deg of pitch, where Euler roll and yaw differences stop meaning anything.
+        The heading is not judged while the lean error is over AC_ATTITUDE_THRUST_ERROR_ANGLE,
+        where the firmware scales its yaw correction down (and drops it above twice that).
+        """
+        fields = ["DesRoll", "Roll", "DesPitch", "Pitch", "DesYaw", "Yaw"]
+        times, (dr, r, dp, p, dy, y) = log.series_many("ATT", fields)
+        if times.size == 0:
+            return None
+        x_d, z_d = _body_axes(dr, dp, dy)
+        x_a, z_a = _body_axes(r, p, y)
+        cos_t = np.clip(np.sum(z_a * z_d, axis=0), -1.0, 1.0)
+        lean = np.degrees(np.arccos(cos_t))
+        # Rodrigues: turn x_a about k = z_a x z_d by the lean angle.
+        k = np.cross(z_a, z_d, axis=0)
+        sin_t = np.linalg.norm(k, axis=0)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            k_hat = np.where(sin_t > 1e-9, k / sin_t, 0.0)
+        x_rot = (
+            x_a * cos_t
+            + np.cross(k_hat, x_a, axis=0) * sin_t
+            + k_hat * np.sum(k_hat * x_a, axis=0) * (1.0 - cos_t)
+        )
+        heading = np.degrees(
+            np.abs(
+                np.arctan2(np.sum(np.cross(x_rot, x_d, axis=0) * z_d, axis=0), np.sum(x_rot * x_d, axis=0))
+            )
+        )
+        heading = np.where(lean > THRUST_ERROR_YAW_LIMIT_DEG, 0.0, heading)
+        axis_errs = {
+            "roll": self._in_flight(log, times, np.abs(r - dr)),
+            "pitch": self._in_flight(log, times, np.abs(p - dp)),
+        }
+        return times, self._in_flight(log, times, lean), self._in_flight(log, times, heading), axis_errs
+
+    def _in_flight(self, log: FlightLog, times: np.ndarray, abs_err: np.ndarray) -> np.ndarray:
         # Judge flight only: on the ground (before take-off, after landing, a crashed
         # airframe lying on its side, disarmed) the targets are relaxed or frozen.
         # Zero the error there instead of dropping samples, so no interval spans a gap.
         flying = log.flying_mask(times)
         if flying is not None:
             abs_err = np.where(flying, abs_err, 0.0)
+        if log.meta.vehicle_kind == "plane":
+            # No attitude target in these modes, so there is nothing to track.
+            abs_err = np.where(log.mode_mask(times, PLANE_NO_TARGET_MODES), 0.0, abs_err)
+        return abs_err
 
+    def _judge(
+        self,
+        log: FlightLog,
+        axis: str,
+        times: np.ndarray,
+        abs_err: np.ndarray,
+        *,
+        rule: str,
+        axis_errs: dict[str, np.ndarray] | None = None,
+        demand: tuple[np.ndarray, np.ndarray, np.ndarray] | None = None,
+    ) -> Finding | None:
+        """Severity and text for one error series.
+
+        rule "axis": a sustained error over CRIT_DEG is critical (Plane, unknown vehicles).
+        rule "lean": Copter's own loss-of-control rule, LEAN_CRIT_DEG held for LEAN_CRIT_S.
+        rule "heading": a multirotor's heading, at most a warning.
+        """
         peak_err = safe_max(abs_err) or 0.0
         if peak_err <= WARN_DEG:
             return None
@@ -105,26 +269,90 @@ class AttitudeTrackingCheck(Check):
         # Sustained excursions above the WARN floor; their durations/peaks drive
         # the severity decision.
         sustained = intervals_above(times, abs_err, WARN_DEG, min_duration_s=SUSTAINED_S)
-        sustained_crit = [iv for iv in sustained if iv.peak > CRIT_DEG]
+        if rule == "lean":
+            # Counted like the firmware's check: each sample above holds for one period.
+            dt = float(np.median(np.diff(times))) if times.size > 1 else 0.0
+            over = intervals_above(times, abs_err, LEAN_CRIT_DEG)
+            sustained_crit = [iv for iv in over if round(iv.duration_s + dt, 6) >= LEAN_CRIT_S]
+            crit_deg, crit_s = LEAN_CRIT_DEG, LEAN_CRIT_S
+        else:
+            sustained_crit = [iv for iv in sustained if iv.peak > CRIT_DEG]
+            crit_deg, crit_s = CRIT_DEG, SUSTAINED_S
+        lagged: list[tuple[Interval, tuple[float, float | None]]] = []
+        if demand is not None:
+            for iv in sustained_crit:
+                lag = _demand_step(log, demand, iv, axis)
+                if lag is not None:
+                    lagged.append((iv, lag))
+            sustained_crit = [iv for iv in sustained_crit if all(iv is not lg for lg, _ in lagged)]
 
         worst: Interval | None
-        if sustained_crit:
+        if sustained_crit and rule == "heading":
+            worst = max(sustained_crit, key=lambda iv: (iv.peak, iv.duration_s))
+            sev = Severity.WARN
+            title = "Heading not held (yaw)"
+            msg = (
+                f"Yaw failed to track the demand for {worst.duration_s:.1f} s, error up to "
+                f"{worst.peak:.0f} deg. A multirotor gives heading the lowest priority: the motor "
+                "mixer fits yaw into whatever room roll and pitch leave, so heading is the first "
+                "thing given up when the motors saturate or one of them fails, and the firmware's "
+                "crash check does not count it. On its own this is not a loss of control."
+            )
+            rec = (
+                "Look at the motor outputs over the same window: one motor pinned high or low while "
+                "the heading drifts points at a failing motor or ESC, a damaged prop or a twisted arm; "
+                "all of them high points at an underpowered or overweight craft."
+            )
+        elif sustained_crit:
             worst = max(sustained_crit, key=lambda iv: (iv.peak, iv.duration_s))
             sev = Severity.CRITICAL
+            if rule == "lean" and axis_errs is not None:
+                axis = _dominant_axis(times, axis_errs, worst)
+                what = (
+                    f"The thrust direction was {worst.peak:.0f} deg off the demand, mostly in {axis}, "
+                    f"for {worst.duration_s:.1f} s (over {crit_deg:.0f} deg for {crit_s:.0f} s is the "
+                    "firmware's own loss-of-control line)."
+                )
+            else:
+                what = (
+                    f"{axis.capitalize()} failed to track the demand for {worst.duration_s:.1f} s, "
+                    f"error up to {worst.peak:.0f} deg (sustained >{crit_deg:.0f} deg)."
+                )
             title = f"Attitude tracking failure ({axis})"
             msg = (
-                f"{axis.capitalize()} failed to track the demand for {worst.duration_s:.1f} s, "
-                f"error up to {worst.peak:.0f} deg (sustained >{CRIT_DEG:.0f} deg). The aircraft "
-                "could not achieve the commanded attitude — consistent with loss of control, a "
-                "mechanical failure, or an underpowered/overweight craft."
+                f"{what} The aircraft could not achieve the commanded attitude — consistent with "
+                "loss of control, a mechanical failure, or an underpowered/overweight craft."
             )
             rec = (
                 "Inspect the airframe for mechanical failure (motor/ESC/prop, control linkage) and "
                 "review whether the craft is overweight or under-powered for the demanded maneuvers."
             )
+        elif lagged:
+            worst, (step, toward) = max(lagged, key=lambda x: (x[0].peak, x[0].duration_s))
+            sev = Severity.WARN
+            title = f"Attitude lagged a step in the demand ({axis})"
+            when = (
+                f"right after the demand itself moved {step:.0f} deg within {STEP_LOOKBACK_S:.0f} s, and the error "
+                "then closed."
+                if toward is None
+                else f"while the demand itself moved {step:.0f} deg, and the aircraft kept rotating toward it "
+                f"({toward * 100:.0f}% of the time it was rotating), so the error closed."
+            )
+            msg = (
+                f"{axis.capitalize()} fell up to {worst.peak:.0f} deg behind the demand for {worst.duration_s:.1f} s, "
+                f"{when} Plane's attitude controller follows a demand with a time constant "
+                f"({'RLL2SRV_TCONST' if axis == 'roll' else 'PTCH2SRV_TCONST'}), so a sudden change such as a turn "
+                "reversal is followed by a lag like this; it is not a loss of control."
+            )
+            rec = (
+                "Nothing to do unless the lag is larger than the airframe should show: then check the time constant "
+                "and the rate limit for this axis, and the tune."
+            )
         elif sustained:
-            # Sustained, in the 15-25 deg band (no sustained interval broke 25).
+            # Sustained above WARN_DEG, short of the critical rule.
             worst = max(sustained, key=lambda iv: (iv.peak, iv.duration_s))
+            if axis_errs is not None:
+                axis = _dominant_axis(times, axis_errs, worst)
             sev = Severity.WARN
             title = f"Sustained attitude tracking error ({axis})"
             msg = (
@@ -137,6 +365,8 @@ class AttitudeTrackingCheck(Check):
             # Large but brief (no interval held >= SUSTAINED_S): a transient.
             brief = intervals_above(times, abs_err, BRIEF_WARN_DEG)
             worst = max(brief, key=lambda iv: iv.peak) if brief else None
+            if axis_errs is not None and worst is not None:
+                axis = _dominant_axis(times, axis_errs, worst)
             sev = Severity.WARN
             title = f"Brief attitude tracking spike ({axis})"
             dur = worst.duration_s if worst else 0.0
@@ -165,10 +395,27 @@ class AttitudeTrackingCheck(Check):
                 "so the craft was likely underpowered/overweight for the demand."
             )
 
+        types = ["ATT", "RCOU"] if motors_saturated else ["ATT"]
+        key = "lean" if rule == "lean" else axis
         samples: dict[str, float] = {
-            f"peak_err_deg_{axis}": round(peak_err, 1),
-            f"worst_duration_s_{axis}": worst_dur,
+            f"peak_err_deg_{key}": round(peak_err, 1),
+            f"worst_duration_s_{key}": worst_dur,
         }
+        if sev == Severity.CRITICAL and log.meta.vehicle_kind == "plane":
+            note = _plane_speed_note(log, t0)
+            if note is not None:
+                msg += note[0]
+                samples.update(note[1])
+            held = _plane_integrator_note(log, axis, t0, t1)
+            if held is not None:
+                msg += held[0]
+                samples.update(held[1])
+                types.append("PIDR" if axis == "roll" else "PIDP")
+        if axis_errs is not None and worst is not None:
+            win = (times >= worst.start_s) & (times <= worst.end_s)
+            for name, e in axis_errs.items():
+                if win.any():
+                    samples[f"peak_err_deg_{name}"] = round(float(np.max(e[win])), 1)
         if motors_saturated:
             samples["motors_saturated"] = 1.0
 
@@ -180,7 +427,7 @@ class AttitudeTrackingCheck(Check):
             recommendation=rec,
             time_start_s=t0,
             time_end_s=t1,
-            message_types=["ATT", "RCOU"] if motors_saturated else ["ATT"],
+            message_types=types,
             samples=samples,
         )
 
@@ -194,3 +441,142 @@ class AttitudeTrackingCheck(Check):
             if vals.size and float(np.mean(vals)) >= MOTOR_SATURATION_US:
                 return True
         return False
+
+
+def _body_axes(roll: np.ndarray, pitch: np.ndarray, yaw: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Body x and z axes in the earth frame for ZYX Euler angles in degrees (3 x n each)."""
+    r, p, y = np.radians(roll), np.radians(pitch), np.radians(yaw)
+    x = np.stack([np.cos(p) * np.cos(y), np.cos(p) * np.sin(y), -np.sin(p)])
+    z = np.stack(
+        [
+            np.cos(r) * np.sin(p) * np.cos(y) + np.sin(r) * np.sin(y),
+            np.cos(r) * np.sin(p) * np.sin(y) - np.sin(r) * np.cos(y),
+            np.cos(r) * np.cos(p),
+        ]
+    )
+    return x, z
+
+
+def _plane_speed_note(log: FlightLog, t0: float | None) -> tuple[str, dict[str, float]] | None:
+    """The airspeed a plane's loss of control began at, when the flight ran above AIRSPEED_MAX.
+
+    Only for a flight that spent much of its time above AIRSPEED_MAX (the param_audit finding),
+    so a dive after the loss of control does not count; the note states what was measured and
+    leaves the cause to the reader.
+    """
+    # Imported here so this module does not register param_audit ahead of the checks list order.
+    from .param_audit import flew_above_airspeed_max, speed_scaler
+
+    envelope = flew_above_airspeed_max(log)
+    if envelope is None or t0 is None:
+        return None
+    max_name, vmax, frac, times, aspd = envelope
+    k = int(np.searchsorted(times, t0, side="right")) - 1
+    if k < 0 or times[k] < t0 - SPEED_NOTE_MAX_AGE_S or aspd[k] <= vmax:
+        return None
+    speed = float(aspd[k])
+    text = (
+        f" It began at {speed:.0f} m/s, above {max_name} ({vmax:.0f} m/s), where this flight spent "
+        f"{frac * 100:.0f}% of its time"
+    )
+    samples = {"airspeed_at_onset": round(speed, 1)}
+    scaling = log.params.get("SCALING_SPEED")
+    if scaling and scaling > 0:
+        scaler = float(speed_scaler(log, np.array([speed]))[0])
+        text += f": with SCALING_SPEED {scaling:.0f} m/s the surfaces had {scaler:.2f}x the deflection they were tuned at"
+        samples["speed_scaler_at_onset"] = round(scaler, 2)
+    return text + f" (see 'Flew far above {max_name}').", samples
+
+
+def _demand_step(
+    log: FlightLog, demand: tuple[np.ndarray, np.ndarray, np.ndarray], iv: Interval, axis: str
+) -> tuple[float, float | None] | None:
+    """(demand move in deg, share of rotation toward it) when a Plane divergence is the controller's lag.
+
+    The share is None when the move came before the divergence started (the step rule).
+    """
+    if log.mode_mask(np.array([iv.start_s]), PLANE_Q_MODES)[0]:
+        return None
+    td, dv, av = demand
+    before = (td >= iv.start_s - STEP_LOOKBACK_S) & (td <= iv.start_s) & np.isfinite(dv)
+    if iv.duration_s < STEP_LAG_MAX_S and before.any():
+        step = float(np.ptp(dv[before]))
+        if step > CRIT_DEG:
+            return step, None
+    around = (td >= iv.start_s - STEP_LOOKBACK_S) & (td <= iv.end_s) & np.isfinite(dv)
+    inside = (td >= iv.start_s) & (td <= iv.end_s) & np.isfinite(dv) & np.isfinite(av)
+    if not around.any() or np.count_nonzero(inside) < 4:
+        return None
+    step = float(np.ptp(dv[around]))
+    if step <= CRIT_DEG:
+        return None
+    if iv.duration_s >= _lag_time_s(log, axis, step, float(np.median(dv[inside] - av[inside]))):
+        return None
+    rate = np.gradient(av[inside], td[inside])
+    moving = np.abs(rate) > MOVING_RATE_DEG_S
+    if np.count_nonzero(moving) < 3:
+        return None
+    toward = float(np.mean(np.sign(rate[moving]) == np.sign((dv[inside] - av[inside])[moving])))
+    return (step, toward) if toward >= TOWARD_MIN_FRACTION else None
+
+
+def _plane_integrator_note(
+    log: FlightLog, axis: str, t0: float | None, t1: float | None
+) -> tuple[str, dict[str, float]] | None:
+    """Text and samples when the rate integrator held the surface against the demand."""
+    pid = {"roll": "PIDR", "pitch": "PIDP"}.get(axis)
+    if pid is None or t0 is None or t1 is None or not log.has(pid):
+        return None
+    terms = ["Tar", "P", "I", "D", "FF"]
+    has_dff = "DFF" in log.fields(pid)  # Plane 4.5+
+    times, values = log.series_many(pid, terms + (["DFF"] if has_dff else []))
+    win = (times >= t0) & (times <= min(t1, t0 + INTEGRATOR_WINDOW_S))
+    tar, p, i, d, ff = (v[win] for v in values[:5])
+    rest = p + d + ff + (values[5][win] if has_dff else 0.0)
+    demanded = np.isfinite(tar) & np.isfinite(i) & np.isfinite(rest) & (np.abs(tar) > MOVING_RATE_DEG_S)
+    if np.count_nonzero(demanded) < 3:
+        return None
+    sign = np.sign(tar[demanded])
+    against, toward = -i[demanded] * sign, rest[demanded] * sign
+    held = (against > 0) & (against >= toward)
+    frac = float(np.mean(held))
+    if frac < INTEGRATOR_HELD_FRACTION:
+        return None
+    surface, pre = ("aileron", "RLL") if axis == "roll" else ("elevator", "PTCH")
+    i_deg, rest_deg = float(np.median(against)), float(np.median(toward))
+    text = (
+        f" For {frac * 100:.0f}% of its first {INTEGRATOR_WINDOW_S:.1f} s the {axis} rate controller's integrator "
+        f"held the {surface} against the demanded rotation ({pid}.I, median {i_deg:.0f} deg of {surface}), more than "
+        f"the P, D and FF terms pushed toward it (median {rest_deg:.0f} deg), so the {surface} did not move the way "
+        f"the demand asked. Look at the tune of this axis ({pre}_RATE_P, _FF, _I and _IMAX) and at the trim."
+    )
+    return text, {
+        "integrator_against_deg": round(i_deg, 1),
+        "other_terms_toward_deg": round(rest_deg, 1),
+        "integrator_held_fraction": round(frac, 2),
+    }
+
+
+def _lag_time_s(log: FlightLog, axis: str, step: float, gap: float) -> float:
+    """How long Plane's attitude controller takes to close a step of ``step`` deg.
+
+    The demanded rate is the angle error over the time constant, capped at the rate limit
+    (AP_RollController / AP_PitchController); ``gap`` (demand minus actual) picks the pitch
+    direction.
+    """
+    p = log.params
+    if axis == "roll":
+        tconst, rmax = p.get("RLL2SRV_TCONST", TCONST_DEFAULT_S), p.get("RLL2SRV_RMAX", 0.0)
+    else:
+        tconst = p.get("PTCH2SRV_TCONST", TCONST_DEFAULT_S)
+        rmax = p.get("PTCH2SRV_RMAX_UP" if gap > 0 else "PTCH2SRV_RMAX_DN", 0.0)
+    limited = max(0.0, step - rmax * tconst) / rmax if rmax > 0 else 0.0
+    return LAG_TCONSTS * tconst + limited
+
+
+def _dominant_axis(times: np.ndarray, axis_errs: dict[str, np.ndarray], iv: Interval) -> str:
+    """The axis (roll or pitch) with the larger error inside the interval."""
+    win = (times >= iv.start_s) & (times <= iv.end_s)
+    if not win.any():
+        return "roll"
+    return max(axis_errs, key=lambda k: float(np.max(axis_errs[k][win])))

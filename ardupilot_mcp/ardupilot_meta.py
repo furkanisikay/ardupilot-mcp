@@ -91,9 +91,15 @@ CRITICAL_ERR_SUBSYSTEMS: set[int] = {
     16,  # EKFCHECK
     17,  # FAILSAFE_EKFINAV
     25,  # THRUST_LOSS_CHECK
-    29,  # FAILSAFE_VIBE
+    26,  # FAILSAFE_SENSORS (Sub: depth sensor failed, mode forced to MANUAL)
+    27,  # FAILSAFE_LEAK (Sub: water in the hull; ArduSub/failsafe.cpp)
     30,  # INTERNAL_ERROR
 }
+# Not FAILSAFE_VIBE (29): its only action is to switch the position controller to
+# vibration-resistant gains, with no mode change, and it fires on an EKF pattern (vertical
+# velocity and position innovations both positive, velocity variance above 1, for 1 s) that a
+# fall produces as well as vibration (Copter::check_vibration, ArduCopter/ekf_check.cpp,
+# Copter-4.6.3). It is reported as a warning, as its "Vibration compensation ON" text is.
 
 # EV (event) id -> name (useful subset). Values verified against ArduPilot's
 # LogEvent enum in AP_Logger.h (Copter-4.5.7):
@@ -214,6 +220,7 @@ SUB_MODES: dict[int, str] = {
     16: "POSHOLD",
     19: "MANUAL",
     20: "MOTOR_DETECT",
+    21: "SURFTRAK",  # ArduSub/mode.h (Copter-4.6.3 tree)
 }
 
 _MODES_BY_KIND: dict[str, dict[int, str]] = {
@@ -223,6 +230,76 @@ _MODES_BY_KIND: dict[str, dict[int, str]] = {
     "rover": ROVER_MODES,
     "sub": SUB_MODES,
 }
+
+
+# ARM.Method: how the vehicle was armed or disarmed (AP_Arming::Method, Copter-4.6.3
+# libraries/AP_Arming/AP_Arming.h). Methods 5 and up are written by disarms only.
+ARM_METHODS: dict[int, str] = {
+    0: "rudder stick",
+    1: "MAVLink command",
+    2: "RC switch",
+    3: "motor test",
+    4: "script",
+    5: "termination",
+    6: "CPU failsafe",
+    7: "battery failsafe",
+    8: "Solo pause when landed",
+    9: "advanced failsafe",
+    10: "ADS-B collision action",
+    11: "parachute release",
+    12: "crash",
+    13: "landed",
+    14: "mission exit",
+    15: "fence breach",
+    16: "radio failsafe",
+    17: "disarm delay",
+    18: "GCS failsafe",
+    19: "terrain failsafe",
+    20: "failsafe action terminate",
+    21: "terrain failsafe",
+    22: "motor detect done",
+    23: "bad flow of control",
+    24: "EKF failsafe",
+    25: "GCS failsafe surface failed",
+    26: "GCS failsafe hold failed",
+    27: "takeoff timeout",
+    28: "auto landed",
+    29: "pilot input failsafe",
+    30: "toy mode land throttle",
+    31: "toy mode land force",
+    32: "landing",
+    33: "dead-reckoning failsafe",
+    34: "black box",
+    35: "DDS",
+    100: "unknown",
+}
+# Disarms a person or a script commanded (their own choice, often an emergency stop).
+ARM_METHODS_COMMANDED = {0, 1, 2, 4}
+# Disarms that are normal on the ground (after landing) or are the crash check itself,
+# which the firmware check already reports.
+ARM_METHODS_GROUND_OR_CRASH = {8, 12, 13, 17, 22, 28, 30, 31, 32}
+ARM_METHOD_AUXSWITCH = 2
+
+# RCx_OPTION aux functions that arm and disarm (libraries/RC_Channel/RC_Channel.h, Copter-4.6.3):
+# 153 ARMDISARM, 154 ARMDISARM_AIRMODE, 165 ARM_EMERGENCY_STOP.
+ARM_DISARM_AUX = {153: "ArmDisarm", 154: "ArmDisarm with AirMode", 165: "Arm / Emergency Stop"}
+# The stick channels (RCMAP_*; default 1-4) and what they fly.
+_STICK_MAPS = (
+    ("RCMAP_ROLL", 1, "roll"),
+    ("RCMAP_PITCH", 2, "pitch"),
+    ("RCMAP_THROTTLE", 3, "throttle"),
+    ("RCMAP_YAW", 4, "yaw"),
+)
+
+
+def stick_arm_switch(params: dict[str, float]) -> tuple[int, str, str] | None:
+    """(channel, stick, function) when an arm/disarm aux function sits on a stick channel."""
+    for name, default, stick in _STICK_MAPS:
+        ch = int(params.get(name, default) or default)
+        option = params.get(f"RC{ch}_OPTION")
+        if option is not None and int(option) in ARM_DISARM_AUX:
+            return ch, stick, ARM_DISARM_AUX[int(option)]
+    return None
 
 
 def mode_name(mode_num: int | str, vehicle_kind: str | None = None) -> str:
@@ -315,19 +392,44 @@ def frame_type_name(frame_type: float | int | None) -> str | None:
     return FRAME_TYPES.get(int(frame_type), f"FrameType{int(frame_type)}")
 
 
-def estimate_cells(max_voltage: float | None) -> int | None:
-    """Estimate LiPo series-cell count from peak pack voltage (4.2 V/cell full).
+# A pack's peak voltage in a log (at arming, resting) per cell: a LiPo charged to 4.2 V
+# (LiHV 4.35) and not yet below 3.5 V. Every cell count that puts the peak in this band
+# is a candidate.
+CELL_V_MIN = 3.5
+CELL_V_MAX = 4.4
+# MOT_BAT_VOLT_MAX / _MIN are set to 4.2 V and 3.3 V per cell for standard LiPos ("Setting
+# up for tuning", ArduPilot Copter wiki); 4.35 V per cell covers a LiHV pack's MAX.
+_HINT_PER_CELL = (("MOT_BAT_VOLT_MAX", (4.2, 4.35)), ("MOT_BAT_VOLT_MIN", (3.3,)))
+# Design choice: with no hint, the candidate nearest 4.1 V per cell, a pack charged a little
+# while before arming. On the 48 benchmark logs it agrees with MOT_BAT_VOLT_MAX wherever that
+# parameter is consistent with the measured voltage.
+CELL_V_TYPICAL = 4.1
 
-    Returns None when the voltage is implausible (no real monitor / odd scale) or
-    the implied per-cell voltage is out of a sane resting range.
+
+def estimate_cells(max_voltage: float | None, params: dict[str, float] | None = None) -> int | None:
+    """Estimate the series-cell count from the pack's peak voltage.
+
+    Several cell counts can fit one voltage (47.6 V is 11S at 4.33 V or 12S at 3.97 V), so a
+    parameter that states the pack (MOT_BAT_VOLT_MAX / _MIN) decides when it is consistent
+    with the voltage; otherwise the candidate nearest CELL_V_TYPICAL per cell. Returns None
+    when the voltage is implausible (no real monitor / odd scale) or fits no cell count.
     """
     if max_voltage is None or max_voltage < 4.0 or max_voltage > 70.0:
         return None
-    cells = round(max_voltage / 4.2)
-    if cells < 1:
+    candidates = [n for n in range(1, 17) if CELL_V_MIN <= max_voltage / n <= CELL_V_MAX]
+    if not candidates:
         return None
-    per_cell = max_voltage / cells
-    return cells if 3.3 <= per_cell <= 4.4 else None
+    if len(candidates) == 1:
+        return candidates[0]
+    for name, per_cell in _HINT_PER_CELL:
+        v = (params or {}).get(name)
+        if not v or v <= 0:
+            continue
+        for pc in per_cell:
+            n = round(float(v) / pc)
+            if n in candidates and abs(float(v) / n - pc) <= 0.05:
+                return n
+    return min(candidates, key=lambda n: abs(max_voltage / n - CELL_V_TYPICAL))
 
 
 def vehicle_kind(vehicle_type: str | None, frame_class: float | int | None = None) -> str:

@@ -96,3 +96,132 @@ def test_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("param_audit") is not None
+
+
+def test_helicopter_default_rate_gain_is_not_flagged():
+    # Heli's default ATC_RAT_RLL_P is 0.024 (AC_AttitudeControl_Heli.h); it flies on FF.
+    log = make_flight_log(params={"ATC_RAT_RLL_P": 0.024, "ATC_RAT_PIT_P": 0.024}, vehicle_kind="heli")
+    assert not [f for f in ParamAuditCheck().run(log) if "rate gain" in f.title]
+
+
+def _bat_log(volts, params):
+    from tests.helpers import build_series
+
+    bat = build_series(0.0, 10.0, Volt=volts, VoltR=volts, Curr=[10.0] * len(volts))
+    return make_flight_log(
+        {"BAT": bat, "EV": [{"TimeUS": 0, "Id": 10}]}, params=params, vehicle_kind="copter"
+    )
+
+
+def test_voltage_compensation_set_for_a_smaller_pack_never_acts():
+    # A 12S pack (~47 -> 39 V) with MOT_BAT_VOLT_MAX left at 6S (25.2 V): the firmware clamps
+    # the voltage to 25.2 V (Thrust_Linearization), so compensation never acts.
+    volts = [47.0 - i * 0.02 for i in range(400)]
+    log = _bat_log(volts, {"MOT_BAT_VOLT_MAX": 25.2, "MOT_BAT_VOLT_MIN": 22.2})
+    f = [x for x in ParamAuditCheck().run(log) if "Voltage compensation" in x.title]
+    assert [x.severity for x in f] == [Severity.WARN] and "never active" in f[0].title
+
+
+def test_voltage_compensation_set_for_a_bigger_pack_is_pinned():
+    # A 6S pack with MOT_BAT_VOLT_* for 12S: clamped at the floor, gains raised all flight.
+    volts = [25.0 - i * 0.01 for i in range(400)]
+    log = _bat_log(volts, {"MOT_BAT_VOLT_MAX": 50.4, "MOT_BAT_VOLT_MIN": 39.6})
+    f = [x for x in ParamAuditCheck().run(log) if "Voltage compensation" in x.title]
+    assert len(f) == 1 and "pinned" in f[0].title
+
+
+def test_voltage_compensation_matching_the_pack_is_fine():
+    volts = [25.0 - i * 0.01 for i in range(400)]
+    log = _bat_log(volts, {"MOT_BAT_VOLT_MAX": 25.2, "MOT_BAT_VOLT_MIN": 19.8})
+    assert not [x for x in ParamAuditCheck().run(log) if "Voltage compensation" in x.title]
+
+
+def _plane_log(aspd, params):
+    from tests.helpers import build_series
+
+    ctun = build_series(0.0, 10.0, As=aspd)
+    stat = build_series(0.0, 10.0, isFlying=[1] * len(aspd))
+    return make_flight_log(
+        {"CTUN": ctun, "STAT": stat, "EV": [{"TimeUS": 0, "Id": 10}]},
+        params=params,
+        vehicle_type="ArduPlane",
+        vehicle_kind="plane",
+    )
+
+
+def test_plane_flying_far_above_airspeed_max():
+    # A wing at ~40 m/s with AIRSPEED_MAX 28 and SCALING_SPEED 15 (a real forum crash):
+    # the surfaces get SCALING_SPEED / airspeed of their deflection (calc_speed_scaler).
+    params = {"AIRSPEED_MAX": 28.0, "AIRSPEED_MIN": 12.0, "SCALING_SPEED": 15.0}
+    log = _plane_log([20.0] * 100 + [40.0] * 200, params)
+    f = [x for x in ParamAuditCheck().run(log) if x.title.startswith("Flew far above")]
+    assert [x.severity for x in f] == [Severity.WARN]
+    assert f[0].evidence.samples["median_speed_scaler"] == 0.38  # 15 / 40, above the 0.27 floor
+
+
+def test_plane_inside_its_airspeed_range_is_fine():
+    params = {"AIRSPEED_MAX": 32.0, "AIRSPEED_MIN": 12.0, "SCALING_SPEED": 24.0}
+    log = _plane_log([24.0] * 290 + [33.0] * 10, params)
+    assert not [x for x in ParamAuditCheck().run(log) if x.title.startswith("Flew far above")]
+
+
+def test_plane_airspeed_max_below_min():
+    log = _plane_log([0.0] * 50, {"AIRSPEED_MAX": 8.0, "AIRSPEED_MIN": 9.0})
+    f = [x for x in ParamAuditCheck().run(log) if x.title == "Airspeed maximum not above the minimum"]
+    assert [x.severity for x in f] == [Severity.WARN]
+
+
+def test_pre_4_5_airspeed_parameter_names():
+    params = {"ARSPD_FBW_MAX": 22.0, "ARSPD_FBW_MIN": 9.0, "SCALING_SPEED": 13.0}
+    log = _plane_log([28.0] * 300, params)
+    f = [x for x in ParamAuditCheck().run(log) if x.title.startswith("Flew far above")]
+    assert f and f[0].title == "Flew far above ARSPD_FBW_MAX"
+
+
+def test_gps_and_rangefinder_height_sources_are_noted():
+    for src in (2, 3):
+        log = make_flight_log(params={"EK3_SRC1_POSZ": src, "AHRS_EKF_TYPE": 3}, vehicle_kind="copter")
+        f = [x for x in ParamAuditCheck().run(log) if x.title == "EKF height source is not the barometer"]
+        assert [x.severity for x in f] == [Severity.INFO], src
+    baro = make_flight_log(params={"EK3_SRC1_POSZ": 1}, vehicle_kind="copter")
+    assert not [x for x in ParamAuditCheck().run(baro) if "height source" in x.title]
+
+
+def test_pinned_compensation_gain_follows_the_firmware_formula():
+    # 4S pack with 6S settings: r = 19.8 / 25.2, expo 0.65 -> gain 1 / (r*0.35 + 0.65*r^2) = 1.48.
+    volts = [16.4 - i * 0.005 for i in range(400)]
+    log = _bat_log(volts, {"MOT_BAT_VOLT_MAX": 25.2, "MOT_BAT_VOLT_MIN": 19.8})
+    f = [x for x in ParamAuditCheck().run(log) if "pinned" in x.title]
+    assert f and "1.48x" in f[0].explanation
+
+
+def _yaw_log(**params):
+    base = {"AHRS_EKF_TYPE": 3, "COMPASS_ENABLE": 1, "COMPASS_USE": 0, "COMPASS_USE2": 0, "COMPASS_USE3": 0}
+    return make_flight_log({}, params={**base, **params}, vehicle_kind="copter")
+
+
+def test_compassless_copter_without_a_yaw_source_is_a_warning():
+    f = [
+        x
+        for x in ParamAuditCheck().run(_yaw_log(EK3_SRC1_YAW=0))
+        if x.title == "No EKF yaw source for compass-less flight"
+    ]
+    assert f and f[0].severity == Severity.WARN and "EK3_SRC1_YAW=0 (None)" in f[0].explanation
+
+
+def test_compassless_copter_with_gsf_or_gps_yaw_is_clean():
+    for yaw in (2, 3, 6, 8):
+        titles = [x.title for x in ParamAuditCheck().run(_yaw_log(EK3_SRC1_YAW=yaw))]
+        assert "No EKF yaw source for compass-less flight" not in titles
+
+
+def test_a_copter_with_a_compass_in_use_is_not_flagged():
+    titles = [x.title for x in ParamAuditCheck().run(_yaw_log(EK3_SRC1_YAW=1, COMPASS_USE=1))]
+    assert "No EKF yaw source for compass-less flight" not in titles
+
+
+def test_a_compassless_plane_is_not_flagged():
+    log = make_flight_log(
+        {}, params={"COMPASS_ENABLE": 0, "EK3_SRC1_YAW": 1}, vehicle_type="ArduPlane", vehicle_kind="plane"
+    )
+    assert "No EKF yaw source for compass-less flight" not in [x.title for x in ParamAuditCheck().run(log)]

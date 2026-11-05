@@ -282,3 +282,9 @@ def test_parallel_calls_on_one_log_parse_it_once(monkeypatch, tmp_path):
     for t in threads:
         t.join()
     assert calls == [1]
+
+
+def test_query_timeseries_rejects_another_instance_of_a_single_instance_message(sample_log):
+    # This VIBE layout has one instance; instance=3 used to return its data silently.
+    ts = query_timeseries(sample_log, "VIBE", ["VibeZ"], instance=3)
+    assert ts.times_s == [] and "single instance" in (ts.note or "")

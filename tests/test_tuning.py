@@ -199,3 +199,43 @@ def test_pid_advice_ignores_a_missing_demand_sample():
     des[40] = float("nan")
     att = build_series(0.0, 50.0, Roll=roll, DesRoll=des, Pitch=[0.0] * n, DesPitch=[0.0] * n)
     assert analyze_tuning(make_flight_log({"ATT": att}), area="pid") == []
+
+
+def test_pid_advice_names_the_vehicles_own_parameters():
+    recs = _att_records(50.0, 200, roll_err_deg=8.0)
+    copter = analyze_tuning(make_flight_log({"ATT": recs}, vehicle_kind="copter"), area="pid")
+    plane = analyze_tuning(
+        make_flight_log({"ATT": recs}, vehicle_type="ArduPlane", vehicle_kind="plane"), area="pid"
+    )
+    assert "ATC_RAT_RLL_P" in copter[0].explanation
+    assert "RLL_RATE_P" in plane[0].explanation and "ATC_RAT" not in plane[0].explanation
+
+
+def test_no_pid_advice_for_rover_or_sub():
+    # A rover's roll follows the terrain against a 0 demand; Rover and Sub have no
+    # ATC_RAT_RLL_P to review (bundled parameter metadata).
+    recs = _att_records(50.0, 200, roll_err_deg=8.0)
+    for kind in ("rover", "sub"):
+        assert analyze_tuning(make_flight_log({"ATT": recs}, vehicle_kind=kind), area="pid") == []
+
+
+def test_plane_stabilize_is_not_tuning_evidence():
+    # In STABILIZE, Plane logs a 0 roll target while the pilot banks (mode_stabilize.cpp).
+    recs = _att_records(50.0, 200, roll_err_deg=8.0)
+    mode = [{"TimeUS": 0, "Mode": 2, "ModeNum": 2, "Rsn": 1}]
+    log = make_flight_log({"ATT": recs, "MODE": mode}, vehicle_type="ArduPlane", vehicle_kind="plane")
+    assert analyze_tuning(log, area="pid") == []
+
+
+def test_pid_advice_counts_only_the_samples_it_judged():
+    # 900 samples in MANUAL (no target) and 100 in FBWA: the RMS uses 100 and must say so.
+    recs = _att_records(50.0, 1000, roll_err_deg=8.0)
+    mode = [
+        {"TimeUS": 0, "Mode": 0, "ModeNum": 0, "Rsn": 1},
+        {"TimeUS": 18_000_000, "Mode": 5, "ModeNum": 5, "Rsn": 1},
+    ]
+    log = make_flight_log({"ATT": recs, "MODE": mode}, vehicle_type="ArduPlane", vehicle_kind="plane")
+    rec = analyze_tuning(log, area="pid")
+    assert rec and rec[0].evidence.samples["samples"] == 100.0
+    assert "over 100 samples" in rec[0].explanation
+    assert rec[0].evidence.time_start_s >= 18.0

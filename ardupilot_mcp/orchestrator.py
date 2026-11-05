@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from . import ardupilot_docs as docs
 from .checks.base import Check, get_checks
+from .consequences import downgrade_rejections_after_loss_of_control
 from .dedupe import merge_duplicates
 from .flight_log import FlightLog
 from .logging_advice import logging_advice
@@ -59,6 +60,8 @@ def diagnose(log: FlightLog, checks: list[Check] | None = None) -> DiagnosisRepo
         r.findings = []
     # One event, one finding: ERR/MODE/firmware echoes join the finding that measured it.
     findings = merge_duplicates(findings, log.params)
+    # An EKF rejection that began during a loss of control is its consequence, not a cause.
+    findings = downgrade_rejections_after_loss_of_control(findings)
     # Flags after-impact findings (it must run before sorting).
     timeline = build_timeline(log, findings)
     findings.sort(key=_finding_sort_key)

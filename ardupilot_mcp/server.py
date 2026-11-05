@@ -346,6 +346,17 @@ def query_timeseries(
             available_instances=insts,
             note=f"instance {instance} not present; available: {insts}.",
         )
+    if not multi and instance not in (None, 0):
+        # A single-instance message has only instance 0; returning it under another
+        # number would pass one sensor's data off as another's.
+        return TimeseriesResult(
+            path=path,
+            message_type=message_type,
+            fields=fields,
+            instance=instance,
+            available_instances=[0],
+            note=f"{message_type} has a single instance (0); instance {instance} is not present.",
+        )
     present = set(log.fields(message_type))
     missing = [f for f in fields if f not in present]
     if missing:

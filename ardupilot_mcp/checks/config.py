@@ -21,6 +21,7 @@ Watched parameters:
 
 from __future__ import annotations
 
+from ..ardupilot_meta import stick_arm_switch
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
@@ -44,14 +45,39 @@ class ConfigSafetyCheck(Check):
     title = "Configuration safety"
     category = "config"
     requires: set[str] = set()  # reads params; always runs, guards each param inside run()
-    description = "Risky safety configuration in parameters (ARMING_CHECK, BATT_MONITOR, FS_THR_ENABLE)."
+    description = (
+        "Risky safety configuration in parameters (ARMING_CHECK, BATT_MONITOR, FS_THR_ENABLE, an arm/disarm "
+        "switch on a stick channel)."
+    )
 
     def run(self, log: FlightLog) -> list[Finding]:
         findings: list[Finding] = []
         findings.extend(self._arming_check(log))
         findings.extend(self._batt_monitor(log))
         findings.extend(self._fs_thr_enable(log))
+        findings.extend(self._stick_arm_switch(log))
         return findings
+
+    def _stick_arm_switch(self, log: FlightLog) -> list[Finding]:
+        found = stick_arm_switch(log.params)
+        if found is None:
+            return []
+        ch, stick, func = found
+        return [
+            make_finding(
+                self.id,
+                Severity.WARN,
+                "Arm/disarm switch on a stick channel",
+                f"RC{ch}_OPTION is {func}, and RC{ch} is the {stick} stick (RCMAP_{stick.upper()}). A stick "
+                "movement past the switch threshold then arms or disarms the vehicle, in flight included.",
+                recommendation=(
+                    f"Move the arm/disarm function to a spare switch channel and set RC{ch}_OPTION to 0; to arm with "
+                    "the sticks, use rudder arming (ARMING_RUDDER) instead."
+                ),
+                message_types=["PARM"],
+                samples={"channel": ch},
+            )
+        ]
 
     def _arming_check(self, log: FlightLog) -> list[Finding]:
         val = log.params.get("ARMING_CHECK")

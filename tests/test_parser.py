@@ -119,6 +119,60 @@ def test_garbage_tail_flagged_truncated(tmp_path):
     assert "truncated" in (log.meta.integrity_detail or "").lower()
 
 
+def _splice(path: str, at_record: int, junk: bytes) -> None:
+    """Insert ``junk`` just before the ``at_record``-th ATT record of ``path``."""
+    from pymavlink import DFReader
+
+    from ardupilot_mcp.parser import _close, _open_reader
+
+    reader = _open_reader(DFReader, path)
+    ofs = reader.offsets[reader.name_to_id["ATT"]][at_record]
+    _close(reader)
+    data = open(path, "rb").read()
+    open(path, "wb").write(data[:ofs] + junk + data[ofs:])
+
+
+def test_garbage_inside_log_is_partial(tmp_path):
+    # The default (compiled) pymavlink indexer prints its "bad header" warnings below
+    # Python, so they cannot be captured; the gap in the record index must flag it.
+    p = str(tmp_path / "mid.bin")
+    build_bin(p, _basic_messages(), firmware="ArduCopter V4.5.7")
+    junk = bytes(range(7, 207)) * 3  # 600 bytes of garbage, as a bad SD write leaves
+    _splice(p, 10, junk)
+    log = parse_bin(p)
+    assert log.count("ATT") == 20  # every record around the garbage is still read
+    assert log.meta.integrity == LogIntegrity.PARTIAL
+    assert "600 byte(s) in 1 place(s)" in (log.meta.integrity_detail or "")
+
+
+def test_unknown_record_type_stops_reading_and_is_flagged(tmp_path):
+    # pymavlink stops indexing at a record whose type no FMT defines, so the rest of the
+    # log is never read. That must not pass as a clean, shorter log.
+    p = str(tmp_path / "unknown.bin")
+    build_bin(p, _basic_messages(), firmware="ArduCopter V4.5.7")
+    _splice(p, 10, b"\xa3\x95\xf0")
+    log = parse_bin(p)
+    assert log.count("ATT") < 20
+    assert log.meta.integrity == LogIntegrity.PARTIAL
+    assert "Reading stopped" in (log.meta.integrity_detail or "")
+
+
+def test_clean_log_has_no_gap(tmp_path):
+    p = str(tmp_path / "clean.bin")
+    build_bin(p, _basic_messages(), firmware="ArduCopter V4.5.7")
+    assert parse_bin(p).meta.integrity == LogIntegrity.OK
+
+
+@pytest.mark.parametrize("content", [os.urandom(5000), b"\x00" * 4096, b"\xff" * 4096, b"\xa3\x95"])
+def test_non_log_file_raises(tmp_path, content):
+    # Random bytes, a zeroed/erased card image or a stray header used to give an empty
+    # log with integrity OK, which analyze_log reported as "no issues detected".
+    p = str(tmp_path / "notalog.bin")
+    open(p, "wb").write(content)
+    with pytest.raises(ValueError, match="no DataFlash records"):
+        parse_bin(p)
+
+
 # ---- vectorised decoder == pymavlink's own per-message decoding ----
 
 
@@ -181,3 +235,56 @@ def test_parse_releases_the_log_file(tmp_path):
             return any("released.bin" in line for line in fh)
 
     assert not mapped()
+
+
+def test_records_without_a_time_field_take_their_place_in_the_file(tmp_path, monkeypatch):
+    # Copter 3.x wrote EV and ERR with no timestamp; ATT carried TimeMS (boot clock).
+    from tests import synth_bin
+
+    monkeypatch.setitem(synth_bin.FORMATS, "EV", (68, "B", ["Id"]))
+    monkeypatch.setitem(synth_bin.FORMATS, "ERR", (67, "BB", ["Subsys", "ECode"]))
+    msgs: list = [("ERR", {"Subsys": 12, "ECode": 1})]  # before any timed record
+    for i in range(30):
+        msgs.append(("ATT", {"TimeUS": 20_000_000 + i * 100_000, "Roll": 0.0}))
+        if i == 12:
+            msgs.append(("EV", {"Id": 10}))
+    p = str(tmp_path / "untimed.bin")
+    build_bin(p, msgs, firmware=None)
+    log = parse_bin(p)
+    assert [round(r["timestamp"], 3) for r in log.get("EV")] == [1.2]
+    assert [round(r["timestamp"], 3) for r in log.get("ERR")] == [0.0]
+    assert log.armed_intervals() == [(pytest.approx(1.2), pytest.approx(2.9))]
+
+
+def test_pre_4x_gps_is_timed_by_its_boot_clock(tmp_path, monkeypatch):
+    # Copter 3.2 GPS: TimeMS = GPS time of week, T = boot milliseconds.
+    from tests import synth_bin
+
+    tid = synth_bin.FORMATS["GPS"][0]
+    monkeypatch.setitem(synth_bin.FORMATS, "GPS", (tid, "BIHI", ["Status", "TimeMS", "Week", "T"]))
+    msgs: list = []
+    for i in range(20):
+        msgs.append(("ATT", {"TimeUS": 20_000_000 + i * 100_000, "Roll": 0.0}))
+        if i % 5 == 0:
+            msgs.append(
+                ("GPS", {"Status": 3, "TimeMS": 44_336_000 + i * 100, "Week": 2150, "T": 20_000 + i * 100})
+            )
+    p = str(tmp_path / "gps32.bin")
+    build_bin(p, msgs, firmware=None)
+    log = parse_bin(p)
+    assert [round(float(t), 3) for t in log.times("GPS")] == [0.0, 0.5, 1.0, 1.5]
+    assert log.meta.duration_s == pytest.approx(1.9)
+    assert log.get("GPS")[0]["TimeMS"] == 44_336_000  # the GPS field itself is kept
+
+
+def test_a_corrupt_stretch_does_not_flood_stderr(tmp_path, capfd):
+    # pymavlink's C indexer prints one "bad header" line per bad byte to fd 2 (146 MB for
+    # one forum log); an MCP client writes the server's stderr to its log file.
+    p = str(tmp_path / "mid.bin")
+    build_bin(p, _basic_messages(), firmware="ArduCopter V4.5.7")
+    _splice(p, 10, bytes(range(7, 207)) * 3)
+    capfd.readouterr()
+    log = parse_bin(p)
+    out, err = capfd.readouterr()
+    assert log.meta.integrity == LogIntegrity.PARTIAL
+    assert out == "" and "bad header" not in err

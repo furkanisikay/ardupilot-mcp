@@ -78,3 +78,38 @@ def test_announced_failsafes_are_verdicts_and_cleared_lines_are_not():
     assert set(found) == {"Firmware triggered a radio failsafe", "Firmware triggered a battery failsafe"}
     radio = found["Firmware triggered a radio failsafe"]
     assert radio.severity == Severity.CRITICAL and radio.evidence.samples["occurrences"] == 1
+
+
+def test_quadplane_transition_failure_and_assists():
+    # Messages as ArduPlane writes them (quadplane.cpp, VTOL_Assist.cpp); the texts are as
+    # forum logs 140907_0, 142096_0 and 143882_0 carry them.
+    log = make_flight_log(
+        {
+            "MSG": _msgs(
+                (0, "ArduPlane V4.6.3"),
+                (40, "Transition failed, exceeded time limit"),
+                (55, "Alt assist 4.2m"),
+                (60, "Angle assist r=45 p=-10"),
+            ),
+            "MODE": [{"TimeUS": 40_100_000, "Mode": 20, "ModeNum": 20, "Rsn": 23}],
+        },
+        vehicle_type="ArduPlane",
+        vehicle_kind="plane",
+    )
+    titles = {f.title: f.severity for f in FirmwareVerdictsCheck().run(log)}
+    assert titles["QuadPlane transition to forward flight failed"] == Severity.CRITICAL
+    assert titles["VTOL motors assisted: altitude too low"] == Severity.WARN
+    assert titles["VTOL motors assisted: attitude error"] == Severity.WARN
+    assert "Mode changed by failed VTOL transition" in titles
+
+
+def test_vtol_thrust_loss_is_reported_by_the_firmware_check():
+    # Plane 4.7 (quadplane.cpp thrust_loss_check), as forum logs 144992_0 and 145010_1 carry it.
+    log = make_flight_log(
+        {"MSG": _msgs((0, "ArduPlane V4.7.0"), (173, "Potential VTOL Thrust Loss (1)"))},
+        vehicle_type="ArduPlane",
+        vehicle_kind="plane",
+    )
+    f = [x for x in FirmwareVerdictsCheck().run(log) if "thrust loss" in x.title]
+    assert [(x.title, x.severity) for x in f] == [("Firmware detected VTOL thrust loss", Severity.CRITICAL)]
+    assert f[0].evidence.samples["motor"] == 1  # the suspect motor (index + 1)

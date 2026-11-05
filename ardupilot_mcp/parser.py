@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import functools
 import io
+import math
 import os
 
 import numpy as np
@@ -43,9 +44,17 @@ def parse_bin(path: str) -> FlightLog:
     capture = io.StringIO()
     with contextlib.redirect_stderr(capture):
         try:
-            reader = _open_reader(DFReader, path)
+            with _quiet_native_stderr():
+                reader = _open_reader(DFReader, path)
         except Exception as exc:  # noqa: BLE001
             raise ValueError(f"could not open DataFlash log {path!r}: {exc}") from exc
+        records, gap_bytes, gap_runs, tail_bytes = _coverage(reader)
+        if records == 0:
+            _close(reader)
+            raise ValueError(
+                f"{path!r} contains no DataFlash records: it is not an ArduPilot .bin log, or it is "
+                "empty or overwritten (a text .log export or a .tlog needs its own extension)"
+            )
         try:
             # A partially written final record is dropped silently: it is what any
             # log looks like when the battery is unplugged after landing, so on its
@@ -58,6 +67,9 @@ def parse_bin(path: str) -> FlightLog:
 
     integrity, integrity_detail = _assess_integrity(capture.getvalue(), integrity, integrity_detail)
     integrity, integrity_detail = _assess_tail(path, integrity, integrity_detail)
+    integrity, integrity_detail = _assess_gaps(
+        gap_bytes, gap_runs, tail_bytes, os.path.getsize(path), integrity, integrity_detail
+    )
 
     log = FlightLog(
         messages=messages,
@@ -82,12 +94,38 @@ def parse_bin(path: str) -> FlightLog:
     return log
 
 
+@contextlib.contextmanager
+def _quiet_native_stderr():
+    """Silence file descriptor 2 while pymavlink's compiled indexer runs.
+
+    Its C ``dfindexer`` prints a "bad header" line per bad byte straight to fd 2, below
+    Python's ``sys.stderr``: 146 MB for one 30 MB forum log with a corrupt stretch, which an
+    MCP client then writes to its server log on every call. Integrity is judged from the
+    index itself (``_coverage``), so nothing is lost.
+    """
+    try:
+        saved = os.dup(2)
+    except OSError:  # no usable fd 2 (a windowless process): nothing to silence
+        yield
+        return
+    try:
+        with open(os.devnull, "wb") as null:
+            os.dup2(null.fileno(), 2)
+            try:
+                yield
+            finally:
+                os.dup2(saved, 2)
+    finally:
+        os.close(saved)
+
+
 def _load_batches(path: str, log: FlightLog) -> list[ImuBatch]:
     """Re-open ``path`` and decode its batch-sampler captures for ``log``."""
     from pymavlink import DFReader
 
     with contextlib.redirect_stderr(io.StringIO()):
-        reader = _open_reader(DFReader, path)
+        with _quiet_native_stderr():
+            reader = _open_reader(DFReader, path)
         try:
             return _decode_batches(reader, log)
         finally:
@@ -156,6 +194,7 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
     """
     buf = np.frombuffer(reader.data_map, dtype=np.uint8)
     out: dict[str, dict[str, np.ndarray]] = {}
+    positions: dict[str, np.ndarray] = {}
     cut = 0
     for tid, fmt in reader.formats.items():
         if fmt.name in _SKIP_TYPES or tid >= len(reader.offsets):
@@ -166,6 +205,7 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
         whole = offs + fmt.len <= buf.size
         cut += int(offs.size - np.count_nonzero(whole))
         offs = offs[whole]
+        positions[fmt.name] = offs
         # A type the structured view can't express (``a`` arrays, a format char we have
         # no dtype for such as ``g`` half-floats, or a length mismatch) is decoded by
         # pymavlink on its own, so one odd type never sends the whole log down the slow path.
@@ -187,7 +227,60 @@ def _decode_columns(reader) -> tuple[dict[str, dict[str, np.ndarray]], int]:
                 v = v.copy()  # detach from the gather buffer
             cols[col] = v
         out[fmt.name] = cols
+    _gps_boot_clock(out)
+    _stamp_untimed(out, positions)
     return out, cut
+
+
+def _gps_boot_clock(columns: dict[str, dict[str, np.ndarray]]) -> None:
+    """Time pre-4.x GPS records by their boot clock, not by GPS time of week.
+
+    Before TimeUS, GPS and GPS2 logged ``TimeMS`` = GPS time of week (ms) and ``T`` =
+    ``hal.scheduler->millis()``, the boot clock every other message used
+    (libraries/DataFlash/LogFile.cpp, ArduCopter-3.2.1). ``T`` becomes their TimeUS.
+    """
+    for name, cols in columns.items():
+        if not name.startswith("GPS") or "TimeUS" in cols:
+            continue
+        boot, week = cols.get("T"), cols.get("Week")
+        if boot is not None and week is not None and "TimeMS" in cols and boot.dtype != object:
+            cols["TimeUS"] = boot.astype(np.float64) * 1e3
+
+
+# Records timed by the flight controller's boot clock, used to time records that carry no
+# time field. GPS is not one: pre-2015 logs put GPS time of week in GPS.TimeMS.
+_STAMP_REFERENCE = (*FlightLog._CLOCK_REFERENCE_MSGS, "RCIN")
+
+
+def _stamp_untimed(columns: dict[str, dict[str, np.ndarray]], positions: dict[str, np.ndarray]) -> None:
+    """Give records without TimeUS/TimeMS the time of the last boot-clock record before them.
+
+    Copter 3.x logged EV, ERR, MODE, MSG and PM with no timestamp at all: they are written
+    as they happen, so their place in the file times them. Each gets a ``TimeUS`` from the
+    nearest earlier reference record (or the first one, for records before any).
+    """
+    ref_pos, ref_t = [], []
+    for name in _STAMP_REFERENCE:
+        cols = columns.get(name)
+        if cols is None or name not in positions:
+            continue
+        for field, per_s in (("TimeUS", 1e6), ("TimeMS", 1e3)):
+            col = cols.get(field)
+            if col is not None and col.dtype != object:
+                ref_pos.append(positions[name])
+                ref_t.append(col.astype(np.float64) / per_s)
+                break
+    if not ref_pos:
+        return
+    pos = np.concatenate(ref_pos)
+    t = np.concatenate(ref_t)
+    order = np.argsort(pos, kind="stable")
+    pos, t = pos[order], t[order]
+    for name, cols in columns.items():
+        if "TimeUS" in cols or "TimeMS" in cols or name not in positions:
+            continue
+        idx = np.clip(np.searchsorted(pos, positions[name], side="right") - 1, 0, None)
+        cols["TimeUS"] = np.round(t[idx] * 1e6)
 
 
 # INS_LOG_BAT_OPT bits (AP_InertialSensor.h BatchSampler): 0 sensor-rate, 1 post-filter,
@@ -433,6 +526,71 @@ def _assess_tail(path: str, integrity: LogIntegrity, detail: str | None) -> tupl
     return integrity, detail
 
 
+def _coverage(reader) -> tuple[int, int, int, int]:
+    """(data records, bytes between records that no record covers, runs of such bytes,
+    bytes after the last record).
+
+    A DataFlash log is records laid end to end, so every byte from the first record to
+    the last belongs to one. Bytes that do not (a block of garbage, a record of a type no
+    FMT defines) are corruption the indexer stepped over. This reads pymavlink's index,
+    not its stderr warnings: the compiled indexer (``dfindexer``, the default) prints
+    those below Python, where redirect_stderr cannot see them. pymavlink stops indexing
+    at a record whose type has no FMT, so everything after it goes unread; the bytes
+    after the last record tell that apart from a partly written last record.
+    """
+    starts: list[np.ndarray] = []
+    lengths: list[np.ndarray] = []
+    records = 0
+    for tid, fmt in reader.formats.items():
+        if tid >= len(reader.offsets) or not reader.offsets[tid]:
+            continue
+        offs = np.asarray(reader.offsets[tid], dtype=np.int64)
+        starts.append(offs)
+        lengths.append(np.full(offs.size, fmt.len, dtype=np.int64))
+        if fmt.name != "FMT":
+            records += int(offs.size)
+    if not starts:
+        return 0, 0, 0, 0
+    s = np.concatenate(starts)
+    order = np.argsort(s, kind="stable")
+    s = s[order]
+    ends = s + np.concatenate(lengths)[order]
+    gaps = s[1:] - ends[:-1]
+    gaps = gaps[gaps > 0]
+    lead = int(s[0])  # bytes before the first record
+    tail = max(0, int(reader.data_len) - int(ends.max()))
+    return records, int(gaps.sum()) + lead, int(gaps.size) + (1 if lead else 0), tail
+
+
+def _assess_gaps(
+    gap_bytes: int, gap_runs: int, tail_bytes: int, size: int, integrity: LogIntegrity, detail: str | None
+) -> tuple[LogIntegrity, str | None]:
+    """Flag bytes inside the log that are not records, and a log whose reading stopped early.
+
+    A tail up to _PAD_TOLERANCE is block-logging page padding; a longer tail of fill bytes
+    is a truncation _assess_tail already reported (integrity no longer OK by then).
+    """
+    notes = []
+    if gap_bytes > 0:
+        notes.append(
+            f"{gap_bytes} byte(s) in {gap_runs} place(s) inside the log are not valid records "
+            "(corrupt write, SD card error or a message with no format); the records around them were read."
+        )
+    if tail_bytes > _PAD_TOLERANCE and integrity == LogIntegrity.OK:
+        pct = 100.0 * tail_bytes / max(1, size)
+        notes.append(
+            f"Reading stopped {tail_bytes} byte(s) ({pct:.0f}% of the file) before its end, at a record "
+            "the decoder could not place (corrupt data or a message with no format); nothing after it "
+            "was analysed."
+        )
+    if not notes:
+        return integrity, detail
+    note = " ".join(notes)
+    if integrity == LogIntegrity.OK:
+        return LogIntegrity.PARTIAL, note
+    return integrity, f"{detail} Also: {note}" if detail else note
+
+
 def _assess_integrity(
     stderr_text: str, integrity: LogIntegrity, detail: str | None
 ) -> tuple[LogIntegrity, str | None]:
@@ -459,16 +617,23 @@ def _extract_params(log: FlightLog, reader) -> dict[str, float]:
     out: dict[str, float] = {}
     for rec in log.get("PARM"):
         name, value = rec.get("Name"), rec.get("Value")
-        if isinstance(name, str) and isinstance(value, (int, float)) and not isinstance(value, bool):
+        if (
+            isinstance(name, str)
+            and isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value)  # a NaN/inf value is no setting, and breaks the JSON output
+        ):
             out[name] = float(value)
     if out:
         return out
     raw = getattr(reader, "params", None) or {}
     for k, v in raw.items():
         try:
-            out[str(k)] = float(v)
+            f = float(v)
         except (TypeError, ValueError):
             continue
+        if math.isfinite(f):
+            out[str(k)] = f
     return out
 
 

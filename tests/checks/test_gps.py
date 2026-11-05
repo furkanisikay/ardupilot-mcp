@@ -238,3 +238,98 @@ def test_primary_loss_stays_critical_when_auto_switch_disabled():
     log = make_flight_log({"GPS": recs}, params={"GPS_AUTO_SWITCH": 0})
     loss = [f for f in GpsCheck().run(log) if "lost 3D fix" in f.title]
     assert loss and loss[0].severity == Severity.CRITICAL
+
+
+def test_single_sample_dropout_is_a_warning():
+    # One 0.2 s sample with no fix and 3 satellites: a dropout the EKF rides through, not a loss.
+    status = [3] * 25 + [1] + [3] * 24
+    nsats = [12] * 25 + [3] + [12] * 24
+    recs = build_series(0.0, 5.0, Status=status, NSats=nsats, HDop=[0.8] * 50)
+    findings = GpsCheck().run(_log(recs))
+    assert findings and all(f.severity == Severity.WARN for f in findings)
+    assert any("dropped out briefly" in f.title for f in findings)
+
+
+def test_no_fix_ever_reports_the_fix_not_the_satellite_count():
+    # Indoors: 0 satellites and no fix for the whole flight. "Never achieved a 3D fix" says
+    # it; a separate critical "0 satellites" finding would only repeat it louder.
+    recs = build_series(0.0, 5.0, Status=[1] * 50, NSats=[0] * 50, HDop=[99.99] * 50)
+    findings = GpsCheck().run(_log(recs))
+    assert [f.title for f in findings] == ["GPS never achieved a 3D fix"]
+    assert findings[0].severity == Severity.WARN
+
+
+def test_ground_time_between_two_flights_is_not_judged():
+    # Two flights; the GPS loses its fix only while disarmed between them.
+    status = [3] * 20 + [1] * 20 + [3] * 20
+    nsats = [12] * 20 + [2] * 20 + [12] * 20
+    recs = build_series(0.0, 5.0, Status=status, NSats=nsats, HDop=[0.8] * 60)
+    ev = [
+        {"TimeUS": 0, "Id": 10},
+        {"TimeUS": 3_800_000, "Id": 11},
+        {"TimeUS": 8_200_000, "Id": 10},
+        {"TimeUS": 11_800_000, "Id": 11},
+    ]
+    log = make_flight_log({"GPS": recs, "EV": ev})
+    assert GpsCheck().run(log) == []
+
+
+def _rate_log(deltas):
+    from tests.helpers import build_series, make_flight_log
+
+    n = len(deltas)
+    gps = build_series(0.0, 5.0, Status=[3] * n, NSats=[12] * n, HDop=[0.8] * n)
+    gpa = build_series(0.0, 5.0, Delta=deltas)
+    return make_flight_log({"GPS": gps, "GPA": gpa, "EV": [{"TimeUS": 0, "Id": 10}]})
+
+
+def test_a_1hz_receiver_is_unhealthy_by_the_firmware_rule():
+    # Benchmark log 138886_0: two NMEA receivers at 1 Hz (GPA.Delta 1000 ms).
+    from ardupilot_mcp.checks.gps import GpsCheck
+
+    findings = GpsCheck().run(_rate_log([1000.0] * 60))
+    assert [(f.title, f.severity) for f in findings] == [
+        ("GPS updates too slowly for the autopilot", Severity.WARN)
+    ]
+    assert findings[0].evidence.samples == {"median_delta_ms": 1000, "unhealthy_share": 1.0}
+
+
+def test_a_5hz_receiver_with_an_odd_late_frame_is_healthy():
+    from ardupilot_mcp.checks.gps import GpsCheck
+
+    deltas = [200.0] * 30 + [260.0] + [200.0] * 29
+    assert GpsCheck().run(_rate_log(deltas)) == []
+
+
+def test_plane_armed_from_boot_is_not_judged_while_on_the_ground():
+    # Forum log 145430_0: ARMING_REQUIRE=0, so the plane is armed from boot; the GPS has no
+    # satellites for the first 30 s on the ground (STAT.isFlying 0), then a good fix.
+    gps = build_series(
+        0.0, 2.0, Status=[1] * 60 + [3] * 40, NSats=[0] * 60 + [14] * 40, HDop=[99.0] * 60 + [0.7] * 40
+    )
+    stat = [{"TimeUS": 0, "isFlying": 0}, {"TimeUS": 32_000_000, "isFlying": 1}]
+    log = make_flight_log({"GPS": gps, "STAT": stat, "EV": [{"TimeUS": 0, "Id": 10}]}, vehicle_kind="plane")
+    assert GpsCheck().run(log) == []
+
+
+def _hacc_log(hacc, params=None):
+    n = len(hacc)
+    gps = build_series(0.0, 5.0, Status=[3] * n, NSats=[12] * n, HDop=[0.8] * n)
+    gpa = build_series(0.0, 5.0, Delta=[200.0] * n, HAcc=hacc)
+    return make_flight_log({"GPS": gps, "GPA": gpa, "EV": [{"TimeUS": 0, "Id": 10}]}, params=params)
+
+
+def test_accuracy_outside_the_ekf_limit_for_long_is_a_warning():
+    # Benchmark log 141345_0: HAcc beyond 6.5 m for 30 s around the GPS glitch.
+    findings = GpsCheck().run(_hacc_log([1.0] * 50 + [40.0] * 100 + [1.0] * 50))
+    assert [(f.title, f.severity) for f in findings] == [
+        ("GPS reported poor accuracy in flight", Severity.WARN)
+    ]
+    assert findings[0].evidence.samples["limit_m"] == 6.5
+
+
+def test_accuracy_limit_follows_ek3_check_scale_and_ignores_brief_or_unreported():
+    hacc = [1.0] * 50 + [8.0] * 100 + [1.0] * 50
+    assert GpsCheck().run(_hacc_log(hacc, {"EK3_CHECK_SCALE": 150})) == []  # limit 9.75 m
+    assert GpsCheck().run(_hacc_log([1.0] * 50 + [40.0] * 30 + [1.0] * 120)) == []  # 6 s
+    assert GpsCheck().run(_hacc_log([655.35] * 200)) == []  # receiver does not report it

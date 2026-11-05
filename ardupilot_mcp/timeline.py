@@ -42,7 +42,11 @@ def _num(v: object) -> float | None:
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
 
 
-def _in_armed(t: float, armed: list[tuple[float, float]]) -> bool:
+def _in_armed(t: float, armed: list[tuple[float, float]], never_armed: bool = False) -> bool:
+    """Whether ``t`` falls in an armed interval. Unknown arming counts as armed; a log that
+    records arming and never armed (a .tlog of the vehicle on the bench) has no armed time."""
+    if never_armed:
+        return False
     return not armed or any(a <= t <= b for a, b in armed)
 
 
@@ -78,11 +82,21 @@ def log_ended_armed(log: FlightLog, armed: list[tuple[float, float]] | None = No
     start = armed[-1][0]
     disarms = [_num(r.get("timestamp")) for r in log.get("EV") if r.get("Id") == 11]
     disarms += [_num(r.get("timestamp")) for r in log.get("ARM") if r.get("ArmState") == 0]
+    # 4.x writes each arm twice (EV ARMED and ARM), so count the larger of the two.
+    arms = max(
+        sum(1 for r in log.get("EV") if r.get("Id") == 10),
+        sum(1 for r in log.get("ARM") if r.get("ArmState") == 1),
+    )
+    # Re-armed with no disarm in between: this log's disarm records did not reach the file
+    # (a Copter 3.2 log re-armed four times with none), so a missing last one proves nothing.
+    if arms >= 2 and not disarms:
+        return False
     return not any(t is not None and t >= start for t in disarms)
 
 
 def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
     armed = log.armed_intervals()
+    never_armed = log.never_armed
     events: list[TimelineEvent] = []
     anomalies: list[tuple[float, str, str]] = []  # (time, source, label)
     impacts: list[tuple[float, str]] = []
@@ -98,7 +112,7 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
         events.append(TimelineEvent(time_s=t, source="firmware", label=label, severity=v.severity, phase=""))
         if label.startswith("Crash: Disarming"):
             impacts.append((t, f'firmware "{label}"'))
-        elif _in_armed(t, armed):
+        elif _in_armed(t, armed, never_armed):
             anomalies.append((t, "firmware", label))
 
     for rec in log.get("ERR"):
@@ -117,7 +131,7 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
         events.append(TimelineEvent(time_s=t, source="err", label=label, severity=Severity.WARN, phase=""))
         if int(sub) == ERR_CRASH_CHECK and int(code) == ERR_CRASH_CODE_CRASH:
             impacts.append((t, label))
-        elif _in_armed(t, armed):
+        elif _in_armed(t, armed, never_armed):
             anomalies.append((t, "err", label))
 
     for rec in log.get("MODE"):
@@ -139,7 +153,7 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
                 time_s=t, source="mode", label=label, severity=Severity.WARN if reason else None, phase=""
             )
         )
-        if reason and _in_armed(t, armed):
+        if reason and _in_armed(t, armed, never_armed):
             anomalies.append((t, "mode", label))
 
     for rec in log.get("EV"):
@@ -154,6 +168,11 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
     if ended_armed and not telemetry_cut and log.meta.duration_s is not None:
         impacts.append((float(log.meta.duration_s), "log ended while armed"))
 
+    for f in findings:
+        # A hard touchdown at the end of the log's last automatic landing (checks/landing.py).
+        touchdown = f.evidence.samples.get("final_touchdown_s") if f.check_id == "landing" else None
+        if touchdown is not None:
+            impacts.append((float(touchdown), "hard touchdown after the flare"))
     impact = min(impacts) if impacts else None
     impact_s = impact[0] if impact else None
 
@@ -173,7 +192,11 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
                 time_s=t, source=f"finding:{f.check_id}", label=f.title, severity=f.severity, phase=""
             )
         )
-        if not f.after_impact and _in_armed(t, armed) and f.check_id not in ("integrity", "firmware"):
+        if (
+            not f.after_impact
+            and _in_armed(t, armed, never_armed)
+            and f.check_id not in ("integrity", "firmware")
+        ):
             anomalies.append((t, f.check_id, f.title))
 
     pre = [a for a in anomalies if impact_s is None or a[0] < impact_s]
@@ -203,7 +226,9 @@ def build_timeline(log: FlightLog, findings: list[Finding]) -> IncidentTimeline:
     caveats = [
         "Order in time is not proof of cause: an event listed first preceded the others, nothing more."
     ]
-    if not armed:
+    if never_armed:
+        caveats.append("The vehicle never armed in this log, so nothing in it happened in flight.")
+    elif not armed:
         caveats.append(
             "Arming could not be determined from this log, so the whole log was treated as flight."
         )

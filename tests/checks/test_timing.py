@@ -169,3 +169,16 @@ def test_gap_starting_in_flight_is_still_flagged():
     ev = [{"TimeUS": 0, "Id": 10}]  # armed throughout
     findings = TimingCheck().run(make_flight_log({"ATT": seg1 + seg2, "EV": ev}))
     assert [f for f in findings if "gap" in f.title.lower()]
+
+
+def test_gap_with_an_arm_inside_is_a_disarmed_pause():
+    # Copter 3.x logged only while armed and wrote no disarm: a gap ending in a re-arm is
+    # the vehicle sitting disarmed, not a stalled loop.
+    from ardupilot_mcp.checks.timing import TimingCheck
+    from tests.helpers import build_series, make_flight_log
+
+    att = build_series(0.0, 10.0, Roll=[0.0] * 100) + build_series(30.0, 10.0, Roll=[0.0] * 100)
+    ev = [{"TimeUS": 0, "Id": 10}, {"TimeUS": 9_900_000, "Id": 10}]
+    assert TimingCheck().run(make_flight_log({"ATT": att, "EV": ev})) == []
+    stalled = make_flight_log({"ATT": att, "EV": ev[:1]})
+    assert [f.title for f in TimingCheck().run(stalled)] == ["Logging gap / possible main-loop stall"]

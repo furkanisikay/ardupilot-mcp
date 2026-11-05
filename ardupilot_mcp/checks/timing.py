@@ -103,11 +103,18 @@ class TimingCheck(Check):
         # LOG_DISARMED=0 logging pauses at disarm and resumes at the next arm in the
         # same file, so a gap that starts while disarmed is expected, not a stall.
         armed = log.armed_intervals()
+        # An arm recorded inside a gap means the vehicle was disarmed during it, so logging
+        # had paused: Copter 3.x logged only while armed and wrote no disarm record. Records
+        # without a time field are timed by the record before them, i.e. the gap's start.
+        arms = [float(r["timestamp"]) for r in log.get("EV") if r.get("Id") == 10 and "timestamp" in r]
+        arms += [float(r["timestamp"]) for r in log.get("ARM") if r.get("ArmState") == 1 and "timestamp" in r]
         gaps: list[tuple[float, float, float]] = []  # (gap_s, start_s, end_s)
         for i in range(dt.size):
             if dt[i] > threshold:
                 start = float(times[i])
                 if armed and not any(a <= start < b for a, b in armed):
+                    continue
+                if any(start - median_dt <= t <= float(times[i + 1]) for t in arms):
                     continue
                 gaps.append((float(dt[i]), start, float(times[i + 1])))
         if not gaps:

@@ -15,8 +15,10 @@ alone misses most real losses. Firmware 4.x also logs ``RCI2.Flags`` right after
 ``RCIN``: bit 0 HAS_VALID_INPUT ("receiving good RC values") and bit 1
 IN_RC_FAILSAFE (Copter-4.6.3 libraries/AP_Logger/AP_Logger.h RCLoggingFlags,
 LogFile.cpp Write_RCIN). When RCI2 is present it is the authoritative signal; the
-PWM heuristic is the fallback for older logs. Only armed time is judged: a
-receiver with no transmitter on the bench before arming is not a link loss.
+PWM heuristic is the fallback for older logs. Only flight is judged
+(``FlightLog.flying_mask``: armed, and airborne where the log says so): a receiver
+with no transmitter on the bench, or a failsafe tested on the ground, is not an
+in-flight link loss; the firmware's failsafe mode change is still reported.
 """
 
 from __future__ import annotations
@@ -57,12 +59,36 @@ class RCInputCheck(Check):
         if log.has("RCI2"):
             times, flags = log.series("RCI2", "Flags")
             if flags.size:
-                return self._flag_findings(log, times, flags.astype(int))
+                found = self._flag_findings(log, times, flags.astype(int))
+                if found:
+                    return found
+                # The receiver kept reporting valid input; one that outputs its own failsafe
+                # values on a dropout (a preset, not "no pulses") is only visible in the PWM.
+                return self._pwm_findings(log, receiver_valid=True)
         return self._pwm_findings(log)
 
     def _flag_findings(self, log: FlightLog, times: np.ndarray, flags: np.ndarray) -> list[Finding]:
+        if not np.any((flags & FLAG_HAS_VALID_INPUT) != 0):
+            # Never a valid RC input in the whole log: no link was lost. The vehicle was driven
+            # without an RC receiver (ArduSub logs RCIN while piloted by a MAVLink joystick,
+            # ArduSub.cpp; a companion computer or GCS can fly any vehicle), or none was connected.
+            return [
+                make_finding(
+                    self.id,
+                    Severity.INFO,
+                    "No RC input in this log",
+                    "The autopilot never received a valid RC input in this log (RCI2.Flags HAS_VALID_INPUT "
+                    "never set). There was no RC link to lose: the vehicle was controlled another way (a "
+                    "MAVLink joystick, as ArduSub normally is, a ground station or a companion computer), or "
+                    "the receiver was not connected.",
+                    time_start_s=float(times[0]),
+                    time_end_s=float(times[-1]),
+                    message_types=["RCI2"],
+                    samples={"valid_input_samples": 0.0},
+                )
+            ]
         lost = (flags & FLAG_HAS_VALID_INPUT) == 0
-        armed = log.armed_mask(times)
+        armed = log.flying_mask(times)
         if armed is not None:
             lost &= armed
         intervals = [
@@ -108,16 +134,34 @@ class RCInputCheck(Check):
             )
         ]
 
-    def _pwm_findings(self, log: FlightLog) -> list[Finding]:
+    def _pwm_findings(self, log: FlightLog, *, receiver_valid: bool = False) -> list[Finding]:
         # The primary channels of each RCIN record, kept together.
         times, cols = log.series_many("RCIN", list(_PRIMARY))
         if times.size == 0:
             return []  # not enough channel data to reason about
         stack = np.vstack(cols)  # shape (4, n)
+        if not np.any(stack > NO_SIGNAL_US):
+            if receiver_valid:
+                return []
+            # No primary channel ever carried a stick value: no receiver, so no link to lose.
+            return [
+                make_finding(
+                    self.id,
+                    Severity.INFO,
+                    "No RC input in this log",
+                    f"No primary RC channel ever rose above {NO_SIGNAL_US:.0f} us in this log. There was no "
+                    "RC link to lose: the vehicle was controlled another way (a MAVLink joystick, a ground "
+                    "station or a companion computer), or the receiver was not connected.",
+                    time_start_s=float(times[0]),
+                    time_end_s=float(times[-1]),
+                    message_types=["RCIN"],
+                    samples={"max_primary_us": float(np.nanmax(stack)) if np.isfinite(stack).any() else 0.0},
+                )
+            ]
 
         # All four primary channels simultaneously below the no-signal threshold.
         all_low_b = np.all(stack <= NO_SIGNAL_US, axis=0)
-        armed = log.armed_mask(times)
+        armed = log.flying_mask(times)
         if armed is not None:
             all_low_b &= armed
         all_low = all_low_b.astype(float)
@@ -134,12 +178,29 @@ class RCInputCheck(Check):
 
         in_loss = (times >= worst.start_s) & (times <= worst.end_s)
         min_val = float(stack[:, in_loss].min()) if np.any(in_loss) else float(stack.min())
-        sev = Severity.CRITICAL if (lost_to_end or worst.duration_s >= 2.0) else Severity.WARN
+        # With FS_THR_ENABLE 0 nothing catches a throttle that low: it goes to the motors.
+        fs_off = log.params.get("FS_THR_ENABLE") == 0 and log.meta.vehicle_kind in ("copter", "heli")
+        sev = Severity.CRITICAL if (lost_to_end or worst.duration_s >= 2.0 or fs_off) else Severity.WARN
         tail = (
             " The link did not recover before the log ended, consistent with an RC-loss-induced crash."
             if lost_to_end
             else ""
         )
+        if receiver_valid:
+            tail += (
+                " The receiver kept reporting valid input (RCI2.Flags) throughout, so these are values it "
+                "sent itself: a failsafe preset or a glitch, which the autopilot flies as real stick inputs."
+            )
+        if fs_off:
+            tail += " FS_THR_ENABLE is 0, so the radio failsafe could not catch the low throttle."
+        modes = [
+            float(r["timestamp"])
+            for r in log.get("MODE")
+            if isinstance(r.get("timestamp"), (int, float))
+            and any(iv.start_s - 0.2 <= float(r["timestamp"]) <= iv.end_s + 0.5 for iv in intervals)
+        ]
+        if modes:
+            tail += f" The flight mode changed during a drop ({len(modes)} time(s)): the mode channel fell with it."
         return [
             make_finding(
                 self.id,
@@ -147,19 +208,21 @@ class RCInputCheck(Check):
                 "RC signal loss",
                 f"All primary RC channels (C1-C4) dropped together to ~{min_val:.0f} us "
                 f"(below the {NO_SIGNAL_US:.0f} us valid floor) for {worst.duration_s:.1f} s starting at "
-                f"{worst.start_s:.0f} s. Normal flight never drives roll, pitch, throttle and yaw all low "
-                f"at once, so this is the receiver losing signal or outputting a failsafe value.{tail}",
+                f"{worst.start_s:.0f} s ({len(intervals)} drop(s) of {SUSTAINED_S:.1f} s or more). Normal flight "
+                f"never drives roll, pitch, throttle and yaw all low at once, so this is the receiver losing "
+                f"signal or outputting a failsafe value.{tail}",
                 recommendation=(
                     "Check the RC link (receiver power, antenna, range, binding) and verify the throttle "
                     "failsafe (FS_THR_ENABLE/FS_THR_VALUE) actually triggers at this value."
                 ),
                 time_start_s=worst.start_s,
                 time_end_s=worst.end_s,
-                message_types=["RCIN"],
+                message_types=["RCIN", "RCI2"] if receiver_valid else ["RCIN"],
                 samples={
                     "min_pwm_us": round(min_val, 0),
                     "lost_duration_s": round(worst.duration_s, 1),
                     "lost_to_end": 1.0 if lost_to_end else 0.0,
+                    "drops": len(intervals),
                 },
             )
         ]

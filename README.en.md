@@ -39,11 +39,11 @@ An excerpt of `python examples/analyze.py demo.bin`. A client tells you the same
 <!-- gen:example -->
 ```text
 First anomaly while armed: Elevated VibeZ vibration @ 9s.
-6 critical, 2 warning, 3 info finding(s).
+4 critical, 4 warning, 3 info finding(s).
 [CRITICAL] vibration @ 9s: Elevated VibeZ vibration
-           VibeZ vibration peaks at 72 m/s^2 (>60); 20% of samples exceed 60 m/s^2.
+           VibeZ vibration stayed above 60 m/s^2 for up to 5.0 s (peak 70 m/s^2; 17% of the flight above 60).
 [CRITICAL] attitude  @ 20s: Attitude tracking failure (roll)
-           Roll failed to track the demand for 3.0 s, error up to 35 deg (sustained >25 deg).
+           The thrust direction was 35 deg off the demand, mostly in roll, for 3.0 s (over 30 deg for 1 s is the firmware's own loss-of-control line).
 [CRITICAL] power     @ 25s: Battery reached critical voltage
            Pack voltage fell to 13.32 V, at or below the critical-voltage level (13.50 V, configured BATT_*_VOLT failsafe).
 ```
@@ -68,7 +68,7 @@ Every tool is read-only.
 | `recommend_tuning` | Harmonic notch, PID and autotune advice. It applies nothing. |
 | `list_checks` | The registered checks. |
 
-Tool arguments and all <!-- gen:checks -->18<!-- /gen:checks --> checks are in [docs/reference.md](docs/reference.md). `scripts/gen_docs.py` generates that file from the code, and CI fails when it is out of date.
+Tool arguments and all <!-- gen:checks -->23<!-- /gen:checks --> checks are in [docs/reference.md](docs/reference.md). `scripts/gen_docs.py` generates that file from the code, and CI fails when it is out of date.
 
 ## How it works
 
@@ -82,7 +82,7 @@ The server runs on the MCP Python SDK 2. It speaks the 2026-07-28 protocol revis
 
 The engine is measured on <!-- gen:bench-logs -->49<!-- /gen:bench-logs --> real crash logs from the ArduPilot forum, each labelled with the cause that a developer or an experienced helper stated after reading the log. Current scores and the method are in [bench/README.md](bench/README.md).
 
-- Circular drift from a compass heading error (toilet bowl) is not detected yet.
+- Circular drift (toilet bowl) is detected in position-hold modes from the position controller log (PSCN/PSCE, 4.1 and later); a log without it cannot show it.
 - A log with corrupted format definitions fails with a clear error instead of a partial result.
 - A `.tlog` has no ERR records, batch sampler, fast IMU or mode-change reason.
 - Findings support a decision. They do not decide whether an aircraft is fit to fly.

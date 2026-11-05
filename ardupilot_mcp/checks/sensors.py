@@ -29,6 +29,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..flight_log import FlightLog
+from ..logging_advice import logging_disabled
 from ..model import Finding, Severity
 from .base import Check, register_check
 from .util import make_finding
@@ -83,6 +84,8 @@ class SensorsCheck(Check):
             return []  # not configured -> nothing to check
         if any(log.has(m) for m in RNGFND_MESSAGES):
             return []  # configured and logged data -> healthy
+        if log.meta.vehicle_kind in ("copter", "heli") and logging_disabled(log, "CTUN"):
+            return []  # Copter logs RFND under the CTUN bit (rangefinder.set_log_rfnd_bit, sensors.cpp)
         t = int(rng_type)
         return [
             make_finding(
@@ -110,6 +113,8 @@ class SensorsCheck(Check):
             return []  # not configured -> nothing to check
         if log.has(GPS_MESSAGE):
             return []  # configured and logged data -> healthy
+        if logging_disabled(log, GPS_MESSAGE):
+            return []  # LOG_BITMASK does not log GPS: no data says nothing (logging advice names the bit)
         t = int(gps_type)
         # GPS1_TYPE defaults to 1 (AUTO), so on a craft that never had a GPS the
         # parameter is "configured" by default. Only an explicitly chosen receiver

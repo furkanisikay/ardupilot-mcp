@@ -16,16 +16,45 @@ means "disabled" (not a contradiction), so those are not flagged.
 
 from __future__ import annotations
 
+import numpy as np
+
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
 from .util import make_finding
 
-# Copter rate-controller P gain reference (firmware default ~0.135).
+# Multicopter rate-controller P gain reference (AC_ATC_MULTI_RATE_RP_P 0.135,
+# AC_AttitudeControl_Multi.h). Not used for a helicopter: its default is 0.024 and its
+# rate loop flies mainly on feed-forward (AC_ATC_HELI_RATE_RP_P 0.024, _FF 0.15,
+# AC_AttitudeControl_Heli.h), so a low or zero P is normal there.
 RATE_P_DEFAULT = 0.135
 RATE_P_LOW = 0.04  # well below default -> unusually low
 RATE_P_HIGH = 0.5  # above the usual valid range -> unusually high
-_MULTIROTOR = {"copter", "heli", None}  # None = unknown kind, still evaluate
+_MULTIROTOR = {"copter", "heli", None}
+# Design choice: a pack is outside MOT_BAT_VOLT_MAX/_MIN only when it is 2% beyond it (the
+# 5th / 95th voltage percentile while armed), so sensor calibration error is not a finding.
+VOLT_COMP_MARGIN = 0.02
+# MOT_THST_EXPO default (AP_MOTORS_THST_EXPO_DEFAULT, AP_MotorsMulticopter.h).
+THST_EXPO_DEFAULT = 0.65
+# Design choice: a plane above AIRSPEED_MAX for this share of its flight flies outside its
+# configured speed range. On the benchmark planes the share was 0.33-0.86 where the thread
+# found the airspeed parameters wrong and at most 0.04 elsewhere.
+AIRSPEED_OVER_MAX_FRACTION = 0.20
+# EK3_SRC1_POSZ values (EKF sources wiki: 1 Baro, 2 RangeFinder, 3 GPS, 4 Beacon, 6 ExternalNav).
+HEIGHT_SRC_RANGEFINDER = 2
+HEIGHT_SRC_GPS = 3  # None = unknown kind, still evaluate
+# EK3_SRC1_YAW values (SourceYaw, libraries/AP_NavEKF/AP_NavEKF_Source.h): 0 None, 1 Compass, 2 GPS, 3 GPS with compass fallback,
+# 6 ExternalNav, 8 GSF. Those that work without a compass:
+YAW_SOURCE_NAMES = {
+    0: "None",
+    1: "Compass",
+    2: "GPS",
+    3: "GPS with compass fallback",
+    6: "ExternalNav",
+    8: "GSF",
+}
+COMPASSLESS_YAW_SOURCES = {2, 3, 6, 8}
+_COMPASS_USE = ("COMPASS_USE", "COMPASS_USE2", "COMPASS_USE3")
 
 
 def _p(params: dict[str, float], name: str) -> float | None:
@@ -47,9 +76,224 @@ class ParamAuditCheck(Check):
         out: list[Finding] = []
         if multirotor:
             out.extend(self._accel_limits(p))
-            out.extend(self._rate_gains(p))
+            if log.meta.vehicle_kind != "heli":
+                out.extend(self._rate_gains(p))
         out.extend(self._contradictions(p, multirotor))
+        if log.meta.vehicle_kind in ("copter", None):
+            out.extend(self._voltage_compensation(log))
+        if log.meta.vehicle_kind == "plane":
+            out.extend(self._airspeed_envelope(log))
+        out.extend(self._height_source(p))
+        if log.meta.vehicle_kind in ("copter", "heli"):
+            out.extend(self._compassless_yaw_source(p))
         return out
+
+    def _compassless_yaw_source(self, p: dict[str, float]) -> list[Finding]:
+        """Copter with no compass in use and no other EKF3 yaw source selected.
+
+        The EKF sources wiki: GSF (EK3_SRC1_YAW=8) "Plane will automatically use ... in
+        compass-less configurations, even if not selected. Copter requires this to be set
+        explicitly". The other sources that need no compass are GPS yaw (2, 3) and
+        ExternalNav (6).
+        """
+        if p.get("AHRS_EKF_TYPE", 3) != 3 or p.get("EK3_ENABLE", 1) == 0:
+            return []
+        no_compass = p.get("COMPASS_ENABLE") == 0 or all(p.get(k, 0) == 0 for k in _COMPASS_USE)
+        yaw = p.get("EK3_SRC1_YAW")
+        if not no_compass or yaw is None or int(yaw) in COMPASSLESS_YAW_SOURCES:
+            return []
+        name = YAW_SOURCE_NAMES.get(int(yaw), str(int(yaw)))
+        why = (
+            "COMPASS_ENABLE=0"
+            if p.get("COMPASS_ENABLE") == 0
+            else "COMPASS_USE, COMPASS_USE2 and COMPASS_USE3 are 0"
+        )
+        return [
+            make_finding(
+                self.id,
+                Severity.WARN,
+                "No EKF yaw source for compass-less flight",
+                f"No compass is in use ({why}), but the EKF3 yaw source is EK3_SRC1_YAW={int(yaw)} ({name}). The EKF "
+                "sources page says a Copter flying without a compass needs a yaw source set explicitly: GSF "
+                "(EK3_SRC1_YAW=8), GPS yaw from a receiver that supplies it (2 or 3) or ExternalNav (6). Without one "
+                "the heading is unknown until the estimator finds it in flight, and it can jump when it does.",
+                recommendation=(
+                    "Set EK3_SRC1_YAW=8 (GSF), or 2 / 3 when the GPS supplies yaw, or fit and enable a compass."
+                ),
+                samples={"ek3_src1_yaw": float(yaw)},
+            )
+        ]
+
+    def _height_source(self, p: dict[str, float]) -> list[Finding]:
+        """EKF3 primary height source other than the barometer, as the EKF sources wiki weighs it."""
+        if p.get("AHRS_EKF_TYPE", 3) != 3:
+            return []
+        src = p.get("EK3_SRC1_POSZ")
+        if src == HEIGHT_SRC_RANGEFINDER:
+            msg = (
+                "EK3_SRC1_POSZ=2 makes the rangefinder the EKF's primary height source. The EKF sources page "
+                "says this should almost never be used: it is only appropriate indoors over a flat floor with no "
+                "clutter, and surface tracking and terrain following do not need it."
+            )
+        elif src == HEIGHT_SRC_GPS:
+            msg = (
+                "EK3_SRC1_POSZ=3 makes GPS the EKF's primary height source. The EKF sources page recommends it "
+                "only for long flights where air pressure may change, with a high-quality GPS (e.g. a dual-band "
+                "UBlox F9P); a GPS glitch then corrupts the height estimate directly. Read any GPS finding in "
+                "this log with that in mind."
+            )
+        else:
+            return []
+        return [
+            make_finding(
+                self.id,
+                Severity.INFO,
+                "EKF height source is not the barometer",
+                msg,
+                recommendation="Unless the vehicle needs it, use the barometer (EK3_SRC1_POSZ=1), the default.",
+                samples={"ek3_src1_posz": float(src)},
+            )
+        ]
+
+    def _airspeed_envelope(self, log: FlightLog) -> list[Finding]:
+        """Plane: an airspeed range that contradicts itself, or that the flight ran far above.
+
+        AIRSPEED_MIN/MAX (ARSPD_FBW_MIN/MAX before 4.5) bound the speeds TECS flies, and the
+        surfaces are scaled by SCALING_SPEED / airspeed, held between
+        min(0.5, SCALING_SPEED / (2 AIRSPEED_MAX)) and max(2, SCALING_SPEED / (0.7 AIRSPEED_MIN))
+        (Plane::calc_speed_scaler, ArduPlane/Attitude.cpp). Flying well above AIRSPEED_MAX means
+        the parameters do not describe the airframe, and the surfaces got a fraction of the
+        deflection they were tuned at.
+        """
+        p = log.params
+        vmax = _p(p, "AIRSPEED_MAX") if "AIRSPEED_MAX" in p else _p(p, "ARSPD_FBW_MAX")
+        vmin = _p(p, "AIRSPEED_MIN") if "AIRSPEED_MIN" in p else _p(p, "ARSPD_FBW_MIN")
+        max_name = "AIRSPEED_MAX" if "AIRSPEED_MAX" in p else "ARSPD_FBW_MAX"
+        min_name = "AIRSPEED_MIN" if "AIRSPEED_MIN" in p else "ARSPD_FBW_MIN"
+        out: list[Finding] = []
+        if vmax and vmin and vmax > 0 and vmin > 0 and vmax <= vmin:
+            out.append(
+                make_finding(
+                    self.id,
+                    Severity.WARN,
+                    "Airspeed maximum not above the minimum",
+                    f"{max_name}={vmax:.1f} m/s is at or below {min_name}={vmin:.1f} m/s, so the speed range the "
+                    "autopilot flies (TECS, the speed scaling of the surfaces) is empty or inverted.",
+                    recommendation=f"Set {min_name} a margin above the stall speed and {max_name} to the airframe's maximum.",
+                    samples={max_name.lower(): round(vmax, 1), min_name.lower(): round(vmin, 1)},
+                )
+            )
+            return out
+        envelope = flew_above_airspeed_max(log)
+        if envelope is None:
+            return out
+        max_name, vmax, frac, times, aspd = envelope
+        over = aspd > vmax
+        scaling = _p(p, "SCALING_SPEED")
+        scaler_txt = ""
+        samples: dict[str, float] = {
+            max_name.lower(): round(vmax, 1),
+            "frac_above_max": round(frac, 2),
+            "median_airspeed_above_max": round(float(np.median(aspd[over])), 1),
+        }
+        if scaling and scaling > 0:
+            scaler = float(np.median(speed_scaler(log, aspd[over])))
+            scaler_txt = (
+                f" The surfaces are scaled by SCALING_SPEED ({scaling:.1f} m/s) / airspeed, so while above "
+                f"{max_name} they got a median {scaler:.2f}x of the deflection they were tuned at."
+            )
+            samples["median_speed_scaler"] = round(scaler, 2)
+        return out + [
+            make_finding(
+                self.id,
+                Severity.WARN,
+                f"Flew far above {max_name}",
+                f"In flight the airspeed estimate (CTUN.As) was above {max_name} ({vmax:.1f} m/s) for "
+                f"{frac * 100:.0f}% of the time, at a median {samples['median_airspeed_above_max']:.1f} m/s there. "
+                "The airspeed parameters do not describe this airframe's real speeds." + scaler_txt,
+                recommendation=(
+                    f"Set {min_name}, AIRSPEED_CRUISE and {max_name} to the airframe's measured speeds and "
+                    "SCALING_SPEED to the cruise speed, then re-tune (changing SCALING_SPEED scales every PID)."
+                ),
+                time_start_s=float(times[over][0]),
+                message_types=["CTUN"],
+                samples=samples,
+            )
+        ]
+
+    def _voltage_compensation(self, log: FlightLog) -> list[Finding]:
+        """MOT_BAT_VOLT_MAX / _MIN that the pack's voltage never enters.
+
+        The firmware clamps the pack's resting voltage into [MOT_BAT_VOLT_MIN,
+        MOT_BAT_VOLT_MAX] (MIN raised to 60% of MAX) and scales the thrust gains by
+        1 / lift_max from it (lift_max = r (1 - MOT_THST_EXPO) + MOT_THST_EXPO r^2, r = voltage / MAX);
+        MAX <= 0, MIN >= MAX or a voltage below 0.25 x MIN disables it
+        (Thrust_Linearization::update_lift_max_from_batt_voltage, AP_Motors). A pack that
+        stays above MAX all flight gets no compensation; one that stays below MIN gets its
+        gains raised by a constant factor all flight.
+        """
+        vmax, vmin = _p(log.params, "MOT_BAT_VOLT_MAX"), _p(log.params, "MOT_BAT_VOLT_MIN")
+        if not vmax or vmax <= 0 or vmin is None or vmin >= vmax:
+            return []
+        eff_min = max(vmin, 0.6 * vmax)
+        src = "BAT" if log.has("BAT") else ("CURR" if log.has("CURR") else None)
+        if src is None:
+            return []
+        insts = log.instances(src)
+        idx = int(log.params.get("MOT_BAT_IDX", 0))
+        inst = idx if idx in insts else (insts[0] if insts else None)
+        field = "VoltR" if "VoltR" in log.fields(src) else "Volt"
+        times, volts = log.series(src, field, inst)
+        armed = log.armed_mask(times)
+        if armed is not None:
+            volts = volts[armed]
+        volts = volts[np.isfinite(volts) & (volts > 0)]
+        if volts.size < 20:
+            return []
+        lo, hi = float(np.percentile(volts, 5)), float(np.percentile(volts, 95))
+        if lo > vmax * (1 + VOLT_COMP_MARGIN):
+            title = "Voltage compensation never active (MOT_BAT_VOLT_MAX below the pack)"
+            msg = (
+                f"While armed the pack's {'resting ' if field == 'VoltR' else ''}voltage stayed above "
+                f"{lo:.1f} V ({src}.{field}, 5th percentile), but MOT_BAT_VOLT_MAX is {vmax:.1f} V. The firmware "
+                "clamps the voltage to MOT_BAT_VOLT_MAX before scaling thrust, so the compensation did nothing "
+                "for the whole flight: the controller's gains did not follow the pack as it discharged."
+            )
+            rec = "Set MOT_BAT_VOLT_MAX to 4.2 V x cells and MOT_BAT_VOLT_MIN to 3.3 V x cells for this pack."
+        elif hi < eff_min * (1 - VOLT_COMP_MARGIN) and lo >= 0.25 * vmin:
+            # Below 0.25 x MOT_BAT_VOLT_MIN the firmware turns compensation off instead.
+            title = "Voltage compensation pinned at its minimum (MOT_BAT_VOLT_MIN above the pack)"
+            # gain = 1 / lift_max, lift_max = r (1 - expo) + expo r^2, r = voltage / MAX
+            # (Thrust_Linearization::update_lift_max_from_batt_voltage; MOT_THST_EXPO default 0.65).
+            expo = min(1.0, max(-1.0, float(log.params.get("MOT_THST_EXPO", THST_EXPO_DEFAULT))))
+            r = eff_min / vmax
+            gain = 1.0 / (r * (1 - expo) + expo * r * r)
+            msg = (
+                f"While armed the pack's {'resting ' if field == 'VoltR' else ''}voltage stayed below "
+                f"{hi:.1f} V ({src}.{field}, 95th percentile), but the compensation's floor is {eff_min:.1f} V "
+                f"(MOT_BAT_VOLT_MIN, at least 60% of MOT_BAT_VOLT_MAX {vmax:.1f} V). The firmware clamps the "
+                f"voltage there, so it raised the thrust gains by about {gain:.2f}x for the whole flight as if "
+                "the pack were nearly empty, which makes the controller over-respond."
+            )
+            rec = "Set MOT_BAT_VOLT_MAX to 4.2 V x cells and MOT_BAT_VOLT_MIN to 3.3 V x cells for this pack."
+        else:
+            return []
+        return [
+            make_finding(
+                self.id,
+                Severity.WARN,
+                title,
+                msg,
+                recommendation=rec,
+                message_types=[src],
+                samples={
+                    "mot_bat_volt_max": round(vmax, 2),
+                    "mot_bat_volt_min": round(vmin, 2),
+                    "pack_volt_p5": round(lo, 2),
+                    "pack_volt_p95": round(hi, 2),
+                },
+            )
+        ]
 
     def _accel_limits(self, p: dict[str, float]) -> list[Finding]:
         out: list[Finding] = []
@@ -188,3 +432,44 @@ class ParamAuditCheck(Check):
                     )
                 )
         return out
+
+
+def flew_above_airspeed_max(log: FlightLog) -> tuple[str, float, float, np.ndarray, np.ndarray] | None:
+    """A plane that spent AIRSPEED_OVER_MAX_FRACTION of its flight above AIRSPEED_MAX.
+
+    Returns (parameter name, AIRSPEED_MAX, share of flight above it, in-flight CTUN times,
+    in-flight CTUN.As), or None.
+    """
+    p = log.params
+    max_name = "AIRSPEED_MAX" if "AIRSPEED_MAX" in p else "ARSPD_FBW_MAX"
+    vmax = _p(p, max_name)
+    if not vmax or vmax <= 0:
+        return None
+    times, aspd = log.series("CTUN", "As")
+    flying = log.flying_mask(times)
+    if flying is not None:
+        times, aspd = times[flying], aspd[flying]
+    ok = np.isfinite(aspd)
+    times, aspd = times[ok], aspd[ok]
+    if aspd.size < 20:
+        return None
+    frac = float(np.mean(aspd > vmax))
+    if frac < AIRSPEED_OVER_MAX_FRACTION:
+        return None
+    return max_name, vmax, frac, times, aspd
+
+
+def speed_scaler(log: FlightLog, aspd: np.ndarray) -> np.ndarray:
+    """Plane's surface speed scaler, SCALING_SPEED / airspeed within its limits.
+
+    Plane::calc_speed_scaler (ArduPlane/Attitude.cpp) holds it between
+    min(0.5, SCALING_SPEED / (2 AIRSPEED_MAX)) and max(2, SCALING_SPEED / (0.7 AIRSPEED_MIN)).
+    """
+    p = log.params
+    scaling = _p(p, "SCALING_SPEED") or 0.0
+    vmax = _p(p, "AIRSPEED_MAX") if "AIRSPEED_MAX" in p else _p(p, "ARSPD_FBW_MAX")
+    vmin = _p(p, "AIRSPEED_MIN") if "AIRSPEED_MIN" in p else _p(p, "ARSPD_FBW_MIN")
+    lo = min(0.5, scaling / (2.0 * vmax)) if vmax else 0.5
+    hi = max(2.0, scaling / (0.7 * max(vmin or 0.0, 1.0)))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.clip(scaling / aspd, lo, hi)

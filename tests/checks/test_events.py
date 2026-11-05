@@ -159,3 +159,101 @@ def test_a_failed_switch_to_mode_zero_is_reported():
     log = make_flight_log({"ERR": [{"TimeUS": 1_000_000, "Subsys": 10, "ECode": 0}]})
     (finding,) = EventsCheck().run(log)
     assert "could not switch to STABILIZE" in finding.explanation
+
+
+def _disarm_log(method: int, land_events: list[dict]):
+    ev = [
+        {"TimeUS": 0, "Id": 10},
+        {"TimeUS": 2_000_000, "Id": 28},
+        *land_events,
+        {"TimeUS": 20_000_000, "Id": 11},
+    ]
+    arm = [{"TimeUS": 0, "ArmState": 1, "Method": 2}, {"TimeUS": 20_000_000, "ArmState": 0, "Method": method}]
+    return make_flight_log({"EV": ev, "ARM": arm}, vehicle_kind="copter")
+
+
+def test_failsafe_disarm_in_flight_is_a_warning():
+    # ARM.Method 7 = battery failsafe (AP_Arming::Method): the autopilot stopped the motors aloft.
+    f = [x for x in EventsCheck().run(_disarm_log(7, [])) if x.title.startswith("Disarmed in flight")]
+    assert [(x.title, x.severity) for x in f] == [("Disarmed in flight (battery failsafe)", Severity.WARN)]
+
+
+def test_switch_disarm_in_flight_is_info():
+    f = [x for x in EventsCheck().run(_disarm_log(2, [])) if x.title.startswith("Disarmed in flight")]
+    assert [x.severity for x in f] == [Severity.INFO]
+
+
+def test_switch_disarm_right_after_touchdown_is_not_in_flight():
+    # LAND_COMPLETE_MAYBE (17) a second before: the pilot disarmed on the ground.
+    land = [{"TimeUS": 19_000_000, "Id": 17}]
+    assert not [
+        x for x in EventsCheck().run(_disarm_log(2, land)) if x.title.startswith("Disarmed in flight")
+    ]
+
+
+def test_disarm_is_not_judged_without_a_land_detector_record():
+    ev = [{"TimeUS": 0, "Id": 10}, {"TimeUS": 20_000_000, "Id": 11}]
+    arm = [{"TimeUS": 20_000_000, "ArmState": 0, "Method": 7}]
+    log = make_flight_log({"EV": ev, "ARM": arm}, vehicle_kind="copter")
+    assert not [x for x in EventsCheck().run(log) if x.title.startswith("Disarmed in flight")]
+
+
+def test_land_events_written_by_the_disarm_itself_do_not_hide_it():
+    # The firmware writes LAND_COMPLETE (18) and LAND_COMPLETE_MAYBE (17) at the disarm instant,
+    # in the air too; only land events before the disarm put it on the ground.
+    land = [{"TimeUS": 20_000_000, "Id": 18}, {"TimeUS": 20_000_000, "Id": 17}]
+    f = [x for x in EventsCheck().run(_disarm_log(7, land)) if x.title.startswith("Disarmed in flight")]
+    assert [x.severity for x in f] == [Severity.WARN]
+
+
+def _vibe_trigger_log(vibe_z, clips):
+    from tests.helpers import build_series, make_flight_log
+
+    n = len(vibe_z)
+    vibe = build_series(0.0, 10.0, VibeX=[5.0] * n, VibeY=[5.0] * n, VibeZ=vibe_z, Clip=clips)
+    err = [{"TimeUS": 8_000_000, "Subsys": 29, "ECode": 1}]
+    return make_flight_log({"VIBE": vibe, "ERR": err, "EV": [{"TimeUS": 0, "Id": 10}]})
+
+
+def test_vibration_compensation_with_low_vibration_points_at_the_height_estimate():
+    # Forum logs 145303 (oscillating PSC) and 145599 (poor GPS): peak <= 15 m/s^2, no clips.
+    from ardupilot_mcp.checks.events import EventsCheck
+
+    f = [
+        x for x in EventsCheck().run(_vibe_trigger_log([8.0] * 100, [0] * 100)) if "FAILSAFE_VIBE" in x.title
+    ]
+    assert (
+        f and "vibration did not trigger it" in f[0].explanation and "VibeZ peak 8 m/s^2" in f[0].explanation
+    )
+
+
+def test_vibration_compensation_with_high_vibration_says_so():
+    from ardupilot_mcp.checks.events import EventsCheck
+
+    vz = [8.0] * 60 + [70.0] * 40
+    clips = [0] * 60 + list(range(40))
+    f = [x for x in EventsCheck().run(_vibe_trigger_log(vz, clips)) if "FAILSAFE_VIBE" in x.title]
+    assert f and "Vibration was high" in f[0].explanation and "did not trigger" not in f[0].explanation
+
+
+def test_disarm_by_an_arm_switch_on_the_yaw_stick_is_a_warning():
+    from tests.helpers import make_flight_log
+
+    ev = [{"TimeUS": 0, "Id": 10}, {"TimeUS": 1_000_000, "Id": 28}]
+    arm = [{"TimeUS": 0, "ArmState": 1, "Method": 2}, {"TimeUS": 30_000_000, "ArmState": 0, "Method": 2}]
+    log = make_flight_log({"EV": ev, "ARM": arm}, params={"RC4_OPTION": 153})
+    f = [x for x in EventsCheck().run(log) if x.title.startswith("Disarmed in flight")]
+    assert [x.severity for x in f] == [Severity.WARN] and "yaw stick" in f[0].explanation
+
+
+def test_a_failsafe_error_after_disarming_is_a_note():
+    # Benchmark log 145232_0: the transmitter switched off 80 s after the disarm (ERR RADIO).
+    from tests.helpers import make_flight_log
+
+    ev = [{"TimeUS": 10_000_000, "Id": 10}, {"TimeUS": 100_000_000, "Id": 11}]
+    err = [{"TimeUS": 180_000_000, "Subsys": 2, "ECode": 2}, {"TimeUS": 50_000_000, "Subsys": 6, "ECode": 1}]
+    found = EventsCheck().run(make_flight_log({"EV": ev, "ERR": err}))
+    f = {x.title: x for x in found if x.title.startswith("Error")}
+    radio, batt = f["Error: RADIO (ECode 2)"], f["Error: FAILSAFE_BATT (ECode 1)"]
+    assert radio.severity == Severity.INFO and "disarmed at the time" in radio.explanation
+    assert batt.severity == Severity.CRITICAL  # the battery failsafe in flight stays critical

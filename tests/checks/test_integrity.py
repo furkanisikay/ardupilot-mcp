@@ -102,3 +102,18 @@ def test_normal_disarm_is_clean():
     att = build_series(0.0, 10.0, Roll=[0.0] * 100)
     ev = [{"TimeUS": 2_000_000, "Id": 10}, {"TimeUS": 9_000_000, "Id": 11}]
     assert IntegrityCheck().run(make_flight_log({"ATT": att, "EV": ev})) == []
+
+
+def test_rearms_without_any_disarm_record_say_nothing_about_the_end():
+    # A Copter 3.2.1 forum log (143010_1) re-armed four times and holds no DISARMED event.
+    att = build_series(0.0, 10.0, Roll=[0.0] * 100)
+    ev = [{"TimeUS": 1_000_000, "Id": 10}, {"TimeUS": 5_000_000, "Id": 10}]
+    assert IntegrityCheck().run(make_flight_log({"ATT": att, "EV": ev})) == []
+
+
+def test_one_arm_written_as_ev_and_arm_still_counts_as_one():
+    att = build_series(0.0, 10.0, Roll=[0.0] * 100)
+    log = make_flight_log(
+        {"ATT": att, "EV": [{"TimeUS": 2_000_000, "Id": 10}], "ARM": [{"TimeUS": 2_000_000, "ArmState": 1}]}
+    )
+    assert [f.title for f in IntegrityCheck().run(log)] == ["Recording ended while armed"]

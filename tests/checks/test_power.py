@@ -181,11 +181,13 @@ def _armed(extra: dict) -> dict:
     return {"EV": [{"TimeUS": 1_000_000, "Id": 10}, {"TimeUS": 9_000_000, "Id": 11}], **extra}
 
 
-def test_vcc_brownout_while_armed_is_critical():
+def test_vcc_below_minimum_while_armed_is_a_warning():
+    # LogAnalyzer's FAIL level, reported as WARN like the PM long-loop check.
     vcc = [5.05] * 40 + [4.3] * 5 + [5.05] * 55
     log = make_flight_log(_armed({"POWR": build_series(0.0, 10.0, Vcc=vcc)}))
     f = [x for x in PowerCheck().run(log) if "Vcc" in x.title]
-    assert f and f[0].severity == Severity.CRITICAL
+    assert f and f[0].severity == Severity.WARN
+    assert f[0].title == "Flight-controller board voltage (Vcc) below 4.6 V"
     assert f[0].evidence.samples["min_vcc"] == 4.3
 
 
@@ -322,3 +324,81 @@ def test_a_zero_low_timer_still_requires_the_default_hold():
     params = {"BATT_LOW_VOLT": 14.0, "BATT_CRT_VOLT": 13.0, "BATT_LOW_TIMER": 0.0}
     findings = PowerCheck().run(_log(build_series(0.0, 10.0, Volt=volts, Curr=[40.0] * 300), params=params))
     assert not [f for f in findings if f.title == "Battery reached critical voltage"]
+
+
+def test_sag_under_a_current_spike_is_not_a_sudden_drop():
+    # 12S pack: current jumps 10 -> 120 A and the terminal voltage sags 49 -> 45.7 V for the
+    # rest of the climb. The firmware's resting voltage (BAT.VoltR = Volt + Curr x Res) stays
+    # flat, as on a real 50 kg copter log (0.03 ohm); that is load, not a loose connector.
+    volt = [49.0] * 25 + [45.7] * 25
+    curr = [10.0] * 25 + [120.0] * 25
+    rest = [49.3] * 25 + [49.3] * 25
+    recs = build_series(0.0, 10.0, Volt=volt, VoltR=rest, Curr=curr, Res=[0.03] * 50)
+    findings = PowerCheck().run(_log(recs, params={"BATT_LOW_VOLT": 40.0, "BATT_CRT_VOLT": 38.0}))
+    assert not [f for f in findings if "sudden" in f.title.lower()]
+
+
+def test_resting_voltage_collapse_is_still_a_sudden_drop():
+    # Current falls to zero and the resting voltage collapses: a disconnect, not load.
+    volt = [15.4] * 25 + [10.1] * 25
+    rest = [16.7] * 25 + [10.1] * 25
+    curr = [31.5] * 25 + [0.6] * 25
+    recs = build_series(0.0, 10.0, Volt=volt, VoltR=rest, Curr=curr, Res=[0.04] * 50)
+    findings = PowerCheck().run(_log(recs, params={"BATT_LOW_VOLT": 9.0, "BATT_CRT_VOLT": 8.0}))
+    drop = [f for f in findings if "sudden" in f.title.lower()]
+    assert drop and drop[0].severity == Severity.CRITICAL
+    assert drop[0].evidence.samples["load_compensated"] == 1.0
+
+
+def _flown(volt, curr, *, kind="copter", params=None):
+    recs = build_series(0.0, 10.0, Volt=volt, Curr=curr)
+    p = {"BATT_MONITOR": 4, **(params or {})}
+    return make_flight_log({"BAT": recs, "EV": [{"TimeUS": 0, "Id": 10}]}, params=p, vehicle_kind=kind)
+
+
+def test_monitor_reading_no_current_in_flight():
+    # The 141734 / 144203 benchmark logs: a hovering copter with BAT.Curr at 0.0-0.1 A.
+    findings = PowerCheck().run(_flown([16.0] * 300, [0.05] * 300))
+    assert [(f.title, f.severity) for f in findings] == [
+        ("Battery monitor reads no current in flight", Severity.WARN)
+    ]
+    assert findings[0].evidence.samples == {"max_curr": 0.05}
+
+
+def test_monitor_reading_no_voltage_in_flight():
+    # The 142576 forum log: BATT_MONITOR=4 reading 0.11 V while the copter flew.
+    findings = PowerCheck().run(_flown([0.11] * 300, [0.02] * 300))
+    assert [f.title for f in findings] == ["Battery monitor reads no pack voltage in flight"]
+
+
+def test_dead_monitor_needs_a_flying_copter_and_a_measuring_monitor():
+    low = ([16.0] * 300, [0.05] * 300)
+    assert PowerCheck().run(_flown(*low, kind="plane")) == []  # a plane glides with the motor off
+    assert PowerCheck().run(_flown(*low, params={"BATT_MONITOR": 3})) == []  # voltage-only monitor
+    assert PowerCheck().run(_flown(*low, params={"BATT_MONITOR": 11})) == []  # fuel flow
+    short = ([16.0] * 80, [0.05] * 80)  # 8 s of flight
+    assert PowerCheck().run(_flown(*short)) == []
+    assert PowerCheck().run(_flown([16.0] * 300, [0.05] * 299 + [6.0])) == []
+
+
+def test_low_vcc_then_the_log_stops_armed_is_a_brownout():
+    # The 144427_0 benchmark log: Vcc around 4.6 V, under it most of the flight, dipping to
+    # 4.42 V, then logging ends in flight.
+    vcc = [4.58, 4.62] * 30 + [4.42] * 5 + [4.6] * 35
+    log = make_flight_log({"POWR": build_series(0.0, 10.0, Vcc=vcc), "EV": [{"TimeUS": 0, "Id": 10}]})
+    f = [x for x in PowerCheck().run(log) if "Vcc" in x.title]
+    assert [(x.title, x.severity) for x in f] == [
+        ("Flight-controller board voltage (Vcc) low, then the log stopped in flight", Severity.CRITICAL)
+    ]
+    assert f[0].evidence.samples["low_share"] == 0.35
+
+
+def test_one_vcc_dip_at_impact_is_not_a_brownout():
+    # The 145881_0 forum log: Vcc steady at 4.64 V, one 4.44 V sample as the copter hits the
+    # ground, the log ends armed.
+    vcc = [4.64] * 99 + [4.44]
+    log = make_flight_log({"POWR": build_series(0.0, 10.0, Vcc=vcc), "EV": [{"TimeUS": 0, "Id": 10}]})
+    f = [x for x in PowerCheck().run(log) if "Vcc" in x.title]
+    assert [(x.title, x.severity) for x in f] == [
+        ("Flight-controller board voltage (Vcc) below 4.6 V", Severity.WARN)
+    ]

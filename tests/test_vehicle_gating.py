@@ -60,3 +60,23 @@ def test_attitude_skipped_on_rover():
 @pytest.mark.parametrize("kind", ["copter", "heli", "plane"])
 def test_attitude_runs_on_attitude_controlled_vehicles(kind):
     assert AttitudeTrackingCheck().execute(_att_log(kind)).status == CheckStatus.RAN
+
+
+def test_sub_surftrak_mode_is_named():
+    from ardupilot_mcp.ardupilot_meta import mode_name
+
+    assert mode_name(21, "sub") == "SURFTRAK"  # ArduSub/mode.h
+
+
+def test_sub_leak_and_depth_sensor_failsafes_are_critical():
+    from ardupilot_mcp.checks.events import EventsCheck
+    from ardupilot_mcp.model import Severity
+    from tests.helpers import make_flight_log
+
+    err = [{"TimeUS": 1_000_000, "Subsys": 27, "ECode": 1}, {"TimeUS": 2_000_000, "Subsys": 26, "ECode": 1}]
+    log = make_flight_log({"ERR": err}, vehicle_type="ArduSub", vehicle_kind="sub")
+    findings = EventsCheck().run(log)
+    assert {f.title for f in findings if f.severity == Severity.CRITICAL} >= {
+        "Error: FAILSAFE_LEAK (ECode 1)",
+        "Error: FAILSAFE_SENSORS (ECode 1)",
+    }

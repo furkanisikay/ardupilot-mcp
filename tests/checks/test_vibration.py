@@ -70,11 +70,11 @@ def test_warn_sustained_moderate_vibration():
 
 
 def test_clipping_detected():
-    # Clip0 ramps up -> clipping finding.
+    # Clip0 rises steadily for 25 s -> a critical clipping finding.
     clip0 = list(range(0, 150, 3))  # 50 samples, ends at 147
     recs = build_series(
         0.0,
-        10.0,
+        2.0,
         VibeX=[10.0] * 50,
         VibeY=[10.0] * 50,
         VibeZ=[10.0] * 50,
@@ -98,19 +98,19 @@ def test_check_is_registered():
 # ---- modern (4.x) layout: one VIBE stream per IMU with a single Clip counter ----
 
 
-def _modern(imu0: dict, imu1: dict, n: int = 50) -> list[dict]:
+def _modern(imu0: dict, imu1: dict, n: int = 50, rate_hz: float = 10.0) -> list[dict]:
     base = {"VibeX": [5.0] * n, "VibeY": [5.0] * n, "VibeZ": [8.0] * n, "Clip": [0] * n}
     return interleave_instances(
         "IMU",
         {
-            0: build_series(0.0, 10.0, **{**base, **imu0}),
-            1: build_series(0.0, 10.0, **{**base, **imu1}),
+            0: build_series(0.0, rate_hz, **{**base, **imu0}),
+            1: build_series(0.0, rate_hz, **{**base, **imu1}),
         },
     )
 
 
 def test_modern_clip_counter_detected_per_imu():
-    recs = _modern({"Clip": list(range(0, 250, 5))}, {})
+    recs = _modern({"Clip": list(range(0, 250, 5))}, {}, rate_hz=2.0)  # rising for 25 s
     findings = VibrationCheck().run(_log(recs))
     clip = [f for f in findings if "clipping" in f.title.lower()]
     assert len(clip) == 1
@@ -148,7 +148,63 @@ def test_modern_vibration_primary_imu_decides_severity():
 
 
 def test_secondary_imu_clipping_is_demoted():
-    recs = _modern({}, {"Clip": list(range(0, 250, 5))})
+    recs = _modern({}, {"Clip": list(range(0, 250, 5))}, rate_hz=2.0)
     clip = [f for f in VibrationCheck().run(_log(recs)) if "clipping" in f.title.lower()]
     assert clip and clip[0].title == "Accelerometer clipping (IMU1)"
     assert clip[0].severity == Severity.WARN
+
+
+def test_clipping_burst_is_a_warning_not_critical():
+    # 245 clips within 5 s (one tumble or impact): an event, not a steady rise.
+    recs = _modern({"Clip": list(range(0, 250, 5))}, {})
+    clip = [f for f in VibrationCheck().run(_log(recs)) if "clipping" in f.title.lower()]
+    assert [f.severity for f in clip] == [Severity.WARN]
+    assert clip[0].evidence.samples["clip_episodes"] == 1
+    assert "burst" in clip[0].explanation
+
+
+def test_clipping_in_three_separate_episodes_is_critical():
+    # Three bursts 10 s apart: the count keeps rising through the flight.
+    counts = [0] * 10 + [40] * 100 + [80] * 100 + [120] * 40
+    recs = _modern({"Clip": counts}, {}, n=250)
+    clip = [f for f in VibrationCheck().run(_log(recs)) if "clipping" in f.title.lower()]
+    assert [f.severity for f in clip] == [Severity.CRITICAL]
+    assert clip[0].evidence.samples["clip_episodes"] == 3
+
+
+def test_vibration_spike_is_info_not_critical():
+    # One second above 60 m/s^2 (a hard manoeuvre, touchdown or impact) is a spike, not a level.
+    vz = [12.0] * 140 + [75.0] * 10 + [12.0] * 150  # 1 s of a 30 s flight
+    recs = _modern({"VibeZ": vz}, {}, n=300)
+    vz_f = [f for f in VibrationCheck().run(_log(recs)) if f.title.startswith("Elevated VibeZ")]
+    assert [f.severity for f in vz_f] == [Severity.INFO]
+    assert "spike" in vz_f[0].explanation
+
+
+def test_vibration_on_the_ground_is_ignored():
+    # 70 m/s^2 before arming (handling the airframe on the bench) is not flight vibration.
+    from ardupilot_mcp.flight_log import FlightLog
+
+    recs = _modern({"VibeZ": [70.0] * 30 + [10.0] * 70}, {}, n=100)
+    log = make_flight_log({"VIBE": recs, "EV": [{"TimeUS": 4_000_000, "Id": 10}]})
+    assert isinstance(log, FlightLog)
+    assert not [f for f in VibrationCheck().run(log) if f.title.startswith("Elevated VibeZ")]
+
+
+def test_spikes_in_two_flights_are_not_joined_across_the_ground_time():
+    # Two flights (0-50 s, 100-150 s), each with a 0.5 s spike at 70 m/s^2 next to the gap.
+    n = 1500
+    vz = [12.0] * n
+    for i in range(495, 500):
+        vz[i] = 70.0
+    for i in range(1000, 1005):
+        vz[i] = 70.0
+    recs = _modern({"VibeZ": vz}, {}, n=n)
+    ev = [{"TimeUS": 0, "Id": 10}, {"TimeUS": 50_000_000, "Id": 11}, {"TimeUS": 100_000_000, "Id": 10}]
+    f = [
+        x
+        for x in VibrationCheck().run(make_flight_log({"VIBE": recs, "EV": ev}))
+        if x.title.startswith("Elevated VibeZ")
+    ]
+    assert [x.severity for x in f] == [Severity.INFO]
+    assert f[0].evidence.samples["longest_above_60_s"] <= 1.0

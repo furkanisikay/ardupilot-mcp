@@ -101,7 +101,7 @@ def test_critical_saturation_all_pinned():
     # One saturation finding per active motor.
     assert len(sat) == 4
     c1 = next(f for f in sat if "C1" in f.title)
-    assert c1.evidence.samples["frac_above_1950_C1"] == 1.0
+    assert c1.evidence.samples["frac_saturated_C1"] == 1.0
     # No imbalance finding since all means are equal.
     assert not any("imbalance" in f.title.lower() for f in findings)
 
@@ -122,7 +122,7 @@ def test_warn_saturation_partial():
     sat = [f for f in findings if "saturation" in f.title.lower()]
     assert sat, "expected a saturation finding"
     assert sat[0].severity == Severity.WARN
-    assert abs(sat[0].evidence.samples["frac_above_1950_C1"] - 0.36) < 1e-6
+    assert abs(sat[0].evidence.samples["frac_saturated_C1"] - 0.36) < 1e-6
 
 
 def test_no_saturation_below_threshold():
@@ -170,3 +170,29 @@ def test_a_motor_held_exactly_at_the_saturation_pwm_counts():
         _log(build_series(0.0, 10.0, C1=[1950.0] * n, C2=[1500.0] * n, C3=[1500.0] * n, C4=[1500.0] * n))
     )
     assert any(f.title == "Motor saturation (C1)" for f in findings)
+
+
+def test_tri_tail_servo_is_not_a_motor():
+    # Tri: motors 1, 2 and 4; the yaw servo sits on the Motor7 function (AP_MotorsTri.cpp).
+    n = 50
+    rcou = build_series(0.0, 10.0, C1=[1600] * n, C2=[1600] * n, C4=[1600] * n, C7=[1350] * n)
+    params = {
+        "FRAME_CLASS": 7,
+        "SERVO1_FUNCTION": 33,
+        "SERVO2_FUNCTION": 34,
+        "SERVO4_FUNCTION": 36,
+        "SERVO7_FUNCTION": 39,
+    }
+    log = make_flight_log({"RCOU": rcou}, params=params, vehicle_kind="copter")
+    assert MotorsCheck().run(log) == []
+
+
+def test_saturation_follows_mot_pwm_max():
+    # MOT_PWM_MAX 1900: a motor held at 1900 is at its maximum, though below 1950.
+    n = 50
+    rcou = build_series(0.0, 10.0, C1=[1900] * n, C2=[1700] * n, C3=[1700] * n, C4=[1700] * n)
+    params = {"FRAME_CLASS": 1, "MOT_PWM_MIN": 1000, "MOT_PWM_MAX": 1900}
+    log = make_flight_log({"RCOU": rcou}, params=params, vehicle_kind="copter")
+    sat = [f for f in MotorsCheck().run(log) if f.title.startswith("Motor saturation")]
+    assert [f.title for f in sat] == ["Motor saturation (C1)"]
+    assert sat[0].evidence.samples["saturation_pwm"] == 1855.0

@@ -157,3 +157,17 @@ def test_multiple_faults_each_reported_once():
     assert any("Compass" in t for t in titles)
     assert len(findings) == 3
     assert all(f.severity == Severity.WARN for f in findings)
+
+
+def test_gps_not_logged_by_log_bitmask_is_not_a_silent_receiver():
+    # Forum log 145362_0: GPS1_TYPE=2 but LOG_BITMASK=2496217 has the GPS bit (2) off.
+    log = make_flight_log({}, params={"GPS1_TYPE": 2, "LOG_BITMASK": 2496217}, vehicle_kind="copter")
+    assert [f for f in SensorsCheck().run(log) if "GPS" in f.title] == []
+    on = make_flight_log({}, params={"GPS1_TYPE": 2, "LOG_BITMASK": 2496217 | 4}, vehicle_kind="copter")
+    assert [f.title for f in SensorsCheck().run(on)] == ["GPS configured but no data logged"]
+
+
+def test_copter_rangefinder_not_logged_without_the_ctun_bit():
+    # Copter logs RFND under MASK_LOG_CTUN (bit 4; ArduCopter/sensors.cpp).
+    log = make_flight_log({}, params={"RNGFND1_TYPE": 8, "LOG_BITMASK": 0b1}, vehicle_kind="copter")
+    assert [f for f in SensorsCheck().run(log) if "Rangefinder" in f.title] == []

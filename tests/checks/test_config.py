@@ -119,3 +119,15 @@ def test_check_is_registered():
     from ardupilot_mcp.checks import get_check
 
     assert get_check("config") is not None
+
+
+def test_arm_disarm_switch_on_a_stick_channel():
+    # Forum log 144992_0: RC4_OPTION=153 (ArmDisarm) on the yaw stick disarmed a QuadPlane in flight.
+    from ardupilot_mcp.checks.config import ConfigSafetyCheck
+
+    log = make_flight_log({}, params={"RC4_OPTION": 153, "RCMAP_YAW": 4})
+    assert [f.title for f in ConfigSafetyCheck().run(log)] == ["Arm/disarm switch on a stick channel"]
+    spare = make_flight_log({}, params={"RC7_OPTION": 153})
+    assert ConfigSafetyCheck().run(spare) == []
+    remapped = make_flight_log({}, params={"RC7_OPTION": 153, "RCMAP_YAW": 7})
+    assert [f.evidence.samples for f in ConfigSafetyCheck().run(remapped)] == [{"channel": 7}]

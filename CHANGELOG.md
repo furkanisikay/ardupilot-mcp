@@ -6,11 +6,302 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `attitude` (Plane): a critical now says when the **rate controller's integrator held the surface
+  against the demand**. The roll and pitch controllers command the aileron and elevator as the sum
+  of their P, I, D and FF terms (PIDR / PIDP); when the I term pointed the other way and outweighed
+  the rest for most of the failure's first 1.5 s, the surface never moved the way the demand
+  asked. Forum 128317 (a FBWA dive that did not pull out): 13 deg of down elevator held by the
+  integrator against 10 deg of pull from the other terms, so the elevator only crept back to
+  neutral, as the pilot saw. It also appears on the benchmark's 117787_0 and 137589_1, and on no
+  flight that ended normally.
+- `param_audit` (Copter, heli): **no EKF yaw source for compass-less flight**. With no compass in
+  use, EK3_SRC1_YAW must name another yaw source on a Copter: GSF (8), GPS yaw (2, 3) or
+  ExternalNav (6). The EKF sources page says Copter needs it set explicitly, unlike Plane.
+  Benchmark log 138886 (an in-flight yaw reset that tilted the copter, EK3_SRC1_YAW=0 with every
+  compass off) now names it; the three compass-less copters among the validation logs that set
+  EK3_SRC1_YAW=8 stay clean.
+- `landing` (Plane): **a flare that did not slow the descent**. For each automatic-landing flare
+  the firmware announces ("Flare 2.0m sink=1.92 ..."), the check follows TECS.dh to the
+  touchdown and reports a flare that reached the ground still sinking at half its starting rate
+  or more, with the flare's height, its time to the ground, LAND_FLARE_ALT / LAND_FLARE_SEC,
+  the TECS_LAND_SINK target and the touchdown jolt. The touchdown of the log's last such flare
+  is the incident's impact, so what happens on the ground afterwards is listed after it. Forum
+  log 142129 (flare started too low, fixed by raising LAND_FLARE_ALT) now names its cause: 2.07
+  and 1.36 m/s at touchdown against a 0.25 m/s target. Validated on 26 flares in 23 Plane logs,
+  21 of them downloaded for this: the 12 soft touchdowns stay clean, all 8 reported flares hit
+  the ground at 26-81 m/s^2, and four hard touchdowns that kept less of the sink are missed. The
+  benchmark counts it towards the configuration category, as it names the flare parameters.
+- `attitude` (Plane): a loss of control that began above AIRSPEED_MAX, on a flight that spent
+  much of its time there, now says the speed it began at and how much of their tuned deflection
+  the surfaces had (SCALING_SPEED / airspeed, Plane::calc_speed_scaler). The report's first
+  finding then points at the airspeed parameters instead of leaving them four findings down:
+  forum logs 137589 (a wing at 50 m/s on AIRSPEED_MAX 28, surfaces at 0.30x) and 142491
+  (TAKEOFF at 27 m/s on AIRSPEED_MAX 22, 0.56x), where the thread traced the crash to
+  SCALING_SPEED and the airspeed range. It states the measurement only: forum log 136852, whose
+  thread blamed roll tuning, shows the same.
+- `esc` (QuadPlane): **VTOL motors lost power while still commanded**. A QuadPlane's VTOL motors
+  run the multicopter motor library under Q_ parameters (Q_M_SPIN_MIN, Q_M_PWM_MIN/MAX) on the
+  outputs whose SERVOn_FUNCTION is a motor; the copter power-cut test now runs on them, and ESC
+  temperatures are read on planes too. Forum log 142142 (a 4-in-1 ESC overheating in an enclosed
+  fuselage: 46 A to 0 A with the motors at 1800+ us) now opens with it; no other of the 38
+  plane logs triggers it.
+- `config`: **an arm/disarm switch on a stick channel** (RCx_OPTION ArmDisarm, ArmDisarm with
+  AirMode or Arm/Emergency Stop on the roll, pitch, throttle or yaw channel of RCMAP_*): a stick
+  movement then disarms the vehicle in flight. An in-flight disarm by RC switch with this set is
+  a WARN that names the stick, not a commanded INFO. Found by forum thread 144992 (RC4_OPTION 153
+  on the yaw stick of a QuadPlane); no other of the 145 validation logs has it.
+- `firmware` (QuadPlane, Plane 4.7+): **VTOL thrust loss** ("Potential VTOL Thrust Loss (n)",
+  CRITICAL, with the suspect motor). The copter `thrust_loss` check does not run on a plane, so
+  this message went unreported beyond its ERR record. The QuadPlane transition-failure and VTOL
+  assist messages are now confirmed on real forum logs (140907, 142096, 143642, 143882).
+- `gps`: **poor reported accuracy in flight**. EKF3 starts using a GPS only once its horizontal
+  accuracy is within 5 m and holds it to 1.3 times that once in use (EK3_CHECK_SCALE scales
+  both); GPA.HAcc outside that for 10 s at a stretch in flight is a WARN. On the benchmark it
+  fires only on 141345_0, the GPS glitch that corrupted the height before the crash.
+- Vibration compensation (FAILSAFE_VIBE, "Vibration compensation ON") now says what the measured
+  vibration was in the 3 s before. The firmware triggers it from the EKF's vertical innovations,
+  not from the vibration level, and on the benchmark and forum logs it split cleanly: peaks of
+  57 m/s^2 and more with clipping at crashes and tumbles, at most 15 m/s^2 with no clipping
+  where the helpers found a height-estimate cause (a GPS glitch, poor GPS accuracy, prop wash on
+  the barometer, an oscillating altitude controller). In the second case the finding says
+  vibration did not trigger it and points at those causes.
+- `gps`: **a receiver too slow for the autopilot**. AP_GPS counts a frame more than 245 ms after
+  the last as delayed and holds the receiver unhealthy after two in a row or with an average
+  of 215 ms; the same rule is applied to GPA.Delta, and a receiver unhealthy by it for 10% of the
+  armed time is a WARN. It fires on one benchmark log: two NMEA receivers at 1 Hz (138886_0),
+  which ArduPilot does not configure itself.
+- `power` (multirotor): **the battery monitor is not reading the flight pack**. A configured
+  voltage-and-current monitor whose current never reaches 1 A over 10 s of flight, or whose
+  voltage stays under 4 V, is wired or set up wrong, and the capacity failsafe, current-based
+  compass compensation and the voltage failsafe work from a wrong number (WARN). It fires on
+  two benchmark logs with unconfigured sensors (141734_0, 144203_1) and one forum log reading
+  0.11 V in flight.
+- `health` check: **the flight controller was reset by its watchdog**. The firmware writes
+  WDOG only on the boot after a watchdog reset; the finding names the fault type (a hard fault
+  is CRITICAL, as the wiki calls it extremely serious), the fault line and task, and whether
+  the vehicle was armed or its safety switch off at the reset. A telemetry log's `WDG:` text
+  is read too. The same check reports a main loop stalled while armed (MON, WARN at the
+  firmware's 500 ms main_loop_stuck line) and internal errors decoded by name from PM.InE or
+  the "Internal errors 0x.." message, which the startup-message check no longer repeats.
+  Validated on four forum watchdog logs; no benchmark log changes.
+- Logging advice for Plane and Rover. Which LOG_BITMASK bit to turn on for a missing message
+  was given for Copter only, as the bit numbers differ; Plane and Rover now get their own
+  (Plane RC bit 13 and COMPASS 10, Rover RC 14 and COMPASS 11, from each vehicle's defines.h).
+- `firmware` (QuadPlane): a forward transition that timed out ("Transition failed, exceeded time
+  limit", CRITICAL, with the QLAND/QRTL it triggers counted as a failsafe mode change) and the
+  VTOL motors assisting fixed-wing flight for low altitude or a large attitude error (WARN).
+- `baro` check (multirotor): **the barometer follows the throttle**. Against the GPS altitude,
+  with the slow drift between them removed, a baro reading that rises and falls with CTUN.ThO
+  is prop wash or duct airflow on the barometer, which makes altitude hold surge. It fires on
+  the two benchmark flights of the cinewhoop whose thread found exactly this (145480) and on no
+  other log.
+- `circling` check: **toilet bowling**, which the README listed as not detected. In LOITER,
+  POSHOLD or QLOITER, the position error (PSCN/PSCE) turning the same way around a still target
+  (a target the pilot moves faster than 2 m/s is not judged), orbit after orbit; the wiki ties it
+  to a compass problem. Validated on a forum QuadPlane that
+  toilet-bowled once a fan was fitted (3.8 turns) against its log without the fan (0.3) and the
+  48 benchmark logs (at most 0.8).
+- `esc` check (multirotor). **Motors lost power while still commanded**: the battery current
+  collapses in flight while the motor outputs still ask for thrust, the pack voltage holds and
+  the log keeps running, so only the ESCs stopped drawing power (an ESC protection shutdown or
+  a failed ESC power feed). This is the signature the forum's helpers diagnose by hand; on
+  the 48 benchmark logs it fires only on the labelled ESC-overheating crash (132194_0).
+  **Hot ESCs**: ESC telemetry temperatures held at or above 80 degC, the bottom of BLHeli_S's
+  programmable thermal-protection range (WARN above its 140 degC top); a reading already that
+  high on a stopped motor at power-on is named and not judged.
+- `param_audit`: MOT_BAT_VOLT_MAX / _MIN that the pack never enters. The firmware clamps the
+  resting voltage into that range before scaling thrust, so a pack above MAX all flight (a 12S
+  pack with the 6S default left in) gets no voltage compensation, and one below MIN gets its
+  gains raised all flight. Found on one benchmark log (140954_0).
+- `param_audit` (Plane): **flew far above AIRSPEED_MAX** (CTUN.As above it for 20% of the flight
+  or more), with the surface speed scaling that results (SCALING_SPEED / airspeed, as
+  `calc_speed_scaler` applies it), and **AIRSPEED_MAX not above AIRSPEED_MIN**. On the
+  benchmark it fires on the six plane logs whose threads found the airspeed parameters wrong
+  for the airframe and on one with MAX 8 below MIN 9, and on no other plane.
+- `param_audit`: an EKF3 primary height source of GPS or rangefinder (EK3_SRC1_POSZ 3 / 2) is
+  noted with what the EKF sources page says of it; a GPS glitch corrupts a GPS height directly.
+- `events`: a disarm while still flying, with who did it (ARM.Method decoded: switch, rudder,
+  GCS, a failsafe, ...). An autopilot-initiated one (a failsafe or termination) is a WARN; a
+  commanded one is INFO, since it is most often the pilot's emergency stop after control was
+  lost. A disarm right after a LAND_COMPLETE_MAYBE is a landing, not flight.
+
 ### Fixed
+- `attitude` (Plane): a turn reversal in AUTO was a critical tracking failure. Plane's roll and
+  pitch controllers follow their demand with a time constant (RLL2SRV_TCONST, PTCH2SRV_TCONST),
+  so when the demand jumps from +45 to -45 deg the aircraft lags it for about a second. A
+  divergence in a fixed-wing mode that starts within 1 s of the demand moving more than 25 deg
+  and is over within 1.5 s is now a WARN ("Attitude lagged a step in the demand"). VTOL modes are
+  unchanged. In completed flights among the forum landing logs all five such criticals were
+  these reversals; in the crash pools no labelled loss of control changes, and where a flight
+  also had a real divergence that one stays critical.
+- `attitude` (Plane): a turn reversal whose demand keeps moving after the error has grown (a
+  90 deg reversal in RTL takes about 1.6 s) was still critical, because most of the step came
+  after the divergence began. A divergence is now also that lag when the demand moved more than
+  25 deg around it, the aircraft kept rotating toward the demand at least 90% of the time it was
+  rotating, and it was over within the time the controller itself needs: four time constants
+  (RLL2SRV_TCONST / PTCH2SRV_TCONST, 2 s by default), plus the time the rate limit
+  (RLL2SRV_RMAX, PTCH2SRV_RMAX_UP / _DN) holds the rotation back on a large step, as
+  AP_RollController and AP_PitchController compute it. A loss of control rotates away from the
+  demand: no fixed-wing critical in the crash logs rotated toward it more than 79% of the time,
+  and the windy FBWA upset of forum 99954 (51%, aileron and elevator at their limits, 13 m of
+  height lost) stays critical.
+- An EKF rejection that began while the aircraft was already out of control (inside an attitude
+  tracking failure, or within 2 s of its end) was a second CRITICAL that read as an independent
+  fault. It began after the loss of control, so it cannot have caused it: it is now a WARN that
+  says how long after the loss it began. A tumbling aircraft makes the estimator's innovations
+  jump. On the benchmark this removes 6 false criticals (EKF 11 -> 5) and changes no hit.
+- `attitude` (Copter, heli): judged the way the firmware judges loss of control. Roll and pitch
+  were two separate Euler errors critical at 25 deg; they are now one thrust-vector ("lean")
+  error, named after the axis that carried most of it and critical at Copter's own line of
+  30 deg off the target for 1 s (crash_check.cpp). A heading divergence is at most a warning
+  ("Heading not held"): the motor mixer gives yaw only the room roll and pitch leave, and the
+  crash check does not count heading. The heading error is now the rotation left once the thrust
+  directions are aligned, as AC_AttitudeControl splits it, and is not judged while the lean
+  error is over 30 deg, where the controller stops holding heading. Near 90 deg of pitch the
+  Euler roll and yaw differences were reported as two critical tracking failures (forum log
+  145303_4, 28 deg each with the thrust direction on target); they are gone. Plane is unchanged.
+  On the 145 validation logs, attitude criticals fell from 107 to 80, none new.
+- An ERR record written while the vehicle was disarmed (the transmitter switched off after
+  landing, an EKF stopping its aiding at the disarm) was a CRITICAL fault at the top of the
+  report; with arming recorded it is now an INFO note saying the vehicle was disarmed. A failsafe
+  in flight is unchanged.
+- When an event reaches the log as both an ERR record and a firmware message, the firmware's
+  message now carries the merged finding ("Firmware detected a crash and disarmed" instead of
+  "Error: CRASH_CHECK (ECode 1)"): it names the suspect motor or the failsafe action, and the ERR
+  record stays listed under `related`. Benchmark top-3 22 -> 23 (144128_0).
+- A compass rejected by the EKF (XKF4.SM over 1 for a second) was CRITICAL on its own. The
+  firmware's EKF check (Copter and Plane) counts the compass only together with velocity or
+  position and never acts on it alone, so with SV and SP under FS_EKF_THRESH it is now a WARN
+  that says navigation carried on from GPS. Benchmark: top-1 10 -> 11, false criticals 48 -> 45.
+- GPS and RC input are judged in flight, not over all armed time. A plane with ARMING_REQUIRE=0
+  is armed from boot, so its GPS acquiring satellites and its receiver binding on the ground
+  were CRITICAL (forum log 145430_0); an RC failsafe tested on the ground was a CRITICAL link
+  loss (141676_0). Plane uses STAT.isFlying, Copter its land-detector events; the firmware's
+  failsafe mode change is still reported. Benchmark false criticals 49 -> 48.
+- "GPS / rangefinder configured but no data logged" when the data was simply not logged:
+  LOG_BITMASK without the GPS bit (2), or on a copter without the CTUN bit (4) that carries RFND,
+  says nothing about the sensor. The logging advice names the bit instead. Three benchmark and
+  three forum findings go. One benchmark top-1/top-3 hit went with them (142202_0, whose
+  labelled cause is a GNSS update rate, scored through the unrelated rangefinder line).
+- A log with a corrupt stretch flooded stderr: pymavlink's compiled indexer prints a "bad
+  header" line per bad byte below Python (146 MB for one 30 MB forum log), and MCP clients
+  write the server's stderr to a log file on every call. File descriptor 2 is now silenced
+  while the indexer runs; integrity is still judged from the record index.
+- RC dropouts the receiver did not report. With RCI2 in the log, only its "no valid input"
+  flag was read, so a receiver that sends its own failsafe values on a dropout (every channel
+  at 875 us while still flagged valid, a FrSky Fport link in forum thread 145881) went unseen
+  while the throttle and mode channel fell with it. The PWM signature is now checked too, and
+  it is CRITICAL when FS_THR_ENABLE is 0, since nothing then catches the low throttle; mode
+  changes during a drop are named.
+- A board-voltage dip as a vehicle hits the ground no longer reads as an in-flight brown-out:
+  CRITICAL also needs the rail under 4.6 V for 10% of the armed time (144427_0: 56%, 145881_0: 1%).
+- Board voltage (POWR.Vcc) below 4.6 V was always a CRITICAL "brown-out", including a 0.1 V dip
+  on a board running at 4.64 V that kept logging. 4.6 V is LogAnalyzer's FAIL level, which this
+  project reports as WARN elsewhere; it is CRITICAL now only when the recording then stops while
+  armed, the brown-out itself (benchmark log 144427_0).
+- Copter 3.x logs: EV, ERR, MODE, MSG and PM carry no timestamp there, so their events had
+  no time and a crash check never reached the incident timeline. Each such record now takes
+  the time of the last boot-clock record before it in the file. A logging gap that holds a
+  re-arm is a disarmed pause (3.x logged only while armed), not a stalled loop, and a log
+  re-armed with no disarm record at all no longer claims it "ended while armed".
+- Copter 3.x GPS records were timed by GPS time of week (GPS.TimeMS), hours away from the rest
+  of the log, so no GPS sample fell inside the flight; they now use their boot clock (GPS.T).
+- Bench logs judged as flights. An onboard log recorded from boot (LOG_DISARMED 1 or 3) with
+  no arm record was treated as "arming unknown", so a USB-powered bench session raised a
+  critical battery voltage and attitude failures. The firmware records every arm in such a
+  log, so it is now read as never armed (4.x firmware); this removes 10 false CRITICALs from
+  six forum logs and changes no benchmark log.
+- A bare "PreArm:" line no longer becomes its own startup warning.
+- Vibration false alarms. A single VIBE sample above 60 m/s^2 made the axis CRITICAL, and
+  samples before arming and after landing counted. Levels are now judged in flight only, and
+  CRITICAL needs 2 s above 60 m/s^2 or 10% of the flight (the wiki's levels are sustained
+  levels); a shorter run is reported as a spike (INFO). 100 or more clips are a WARN, and
+  CRITICAL only when the count keeps rising (3+ episodes, or one lasting 8 s or more): one
+  burst of clipping is the tumble or impact, not its cause. On the 48 benchmark crash logs
+  no run above 60 m/s^2 before the impact lasted more than 0.6 s, and every 100+ clip count
+  came from bursts of at most 4.6 s.
+- ERR FAILSAFE_VIBE was CRITICAL. The firmware only switches the altitude controller to
+  vibration-resistant gains (no mode change), and it fires on an EKF pattern that a fall
+  produces too (ekf_check.cpp); it is now a WARN, as the "Vibration compensation ON" text
+  already was.
+- EKF test ratios were judged on every sample, on the ground too, and a single sample above
+  1.0 was CRITICAL. They are now judged in flight, and a rejection is CRITICAL when it lasts
+  1 s, as long as Copter's own EKF failsafe waits (EKF_CHECK_ITERATIONS_MAX); a shorter one
+  is a WARN.
+- GPS: a single sample without a fix or with fewer than 4 satellites was CRITICAL, the time
+  on the ground between two flights of one log was judged as flight, and a receiver that
+  never had a fix (indoors) got a CRITICAL "0 satellites" on top of "never achieved a 3D
+  fix". A fix loss, satellite drop or HDOP excursion is now CRITICAL when it lasts 1 s, each
+  armed interval is judged on its own, and a receiver with no fix in flight gets the fix
+  finding only.
+- Plane: in MANUAL, STABILIZE, TRAINING and ACRO the logged roll/pitch target is no target
+  (STABILIZE logs 0 while the pilot banks), so a normal banked turn was a CRITICAL "attitude
+  tracking failure" and a "poor roll tracking" tuning advice. Those modes are no longer
+  judged. PID advice names the vehicle's own parameters (Plane RLL_RATE_* / PTCH_RATE_*,
+  not ATC_RAT_*) and is not given for Rover or Sub, which have no such parameters.
+- A vehicle with no RC receiver (an ArduSub piloted by joystick, a GCS- or companion-flown
+  vehicle) got a CRITICAL "RC signal loss" for the whole flight. A log that never had a
+  valid RC input now gets an INFO "No RC input in this log".
+- Helicopters were advised a throttle-based notch; a governed rotor does not follow throttle,
+  and the helicopter wiki sets a static notch (REF 0) without an RPM sensor or ESC telemetry.
+- A helicopter's default rate P (0.024; it flies on feed-forward) was "unusually low".
+- A Tri's tail servo (Motor7 function) was counted as a motor, so it showed as a motor
+  imbalance. Motor saturation is now judged at 95% of the vehicle's own MOT_PWM_MIN..MAX
+  range instead of a fixed 1950 us, which a motor limited to 1900 us never reached; the
+  evidence key `frac_above_1950_Cn` is now `frac_saturated_Cn`, with `saturation_pwm`.
+- ArduSub: mode 21 (SURFTRAK) is named, the leak and depth-sensor failsafes (ERR 27, 26) are
+  CRITICAL, and a "bad depth" mode change (ModeReason 28) counts as a failsafe.
+- The battery cell count rounded the peak voltage at 4.2 V per cell, so a 12S pack at
+  3.97 V per cell read 11S (and the derived low-voltage thresholds 11S), and a 6S pack at
+  3.84 V per cell gave no estimate. Every cell count that fits 3.5-4.4 V per cell is now a
+  candidate; MOT_BAT_VOLT_MAX / _MIN (4.2 / 3.3 V x cells, Copter wiki) decide between them
+  when they agree with the voltage, else the one nearest 4.1 V per cell. On the 48 benchmark
+  logs this matches MOT_BAT_VOLT_MAX on all 26 where that parameter fits the measured voltage.
+- "Sudden voltage drop" fired on a pack sagging under a current spike (a 50 kg copter at
+  120 A). When BAT.VoltR (the firmware's load-compensated resting voltage) is logged, a drop
+  it does not share is now treated as load, not a loose connector.
+- A non-finite parameter value (NaN or inf) in a log became `null` in `get_params`, which
+  broke the tool's output schema and failed the whole call; such values are dropped, in logs
+  and in `.param` files.
+- A `.param` file saved with a UTF-8 byte-order mark lost its first parameter.
+- `query_timeseries` with `instance` on a single-instance message returned the data anyway,
+  as if it were that instance; it now says the instance is not present.
+- A `.tlog` of a vehicle that never armed got an onset and the caveat "arming could not be
+  determined"; it now has no onset and says the vehicle never armed.
+- The vehicle profile estimated a hover throttle for a plane from its cruise throttle; only a
+  multirotor gets that estimate.
+- Real-crash benchmark on all 49 logs against 1.0.0: logs with a false critical 35 -> 22, false
+  criticals 97 -> 27 (vibration 29 -> 0, ekf 25 -> 5, attitude 25 -> 14, gps 6 -> 1, events
+  5 -> 1), top-1 11 -> 14 of 41, top-3 22 -> 25. Gained top-1: 132194_0 (the ESC-overheating
+  crash, through `esc`), 144337_0 (`thrust_loss`, once a lost heading stopped outranking it),
+  142129_1 (`landing`, with 142129_0 in the top 3),
+  128873_2, 144427_0 (once a compass rejected alone stopped outranking them), 145429_0 (`config`)
+  and 145616_0. Gained top-3: the two flights of 117787 through `param_audit`'s airspeed finding
+  (flown at 27 m/s on a SCALING_SPEED of 13, which halves the surface throw; the labelled cause
+  is a V-tail MIXING_GAIN of 0.5, another shortfall of elevator authority), 144128_0 and
+  142491_1 (through a pre-arm compass warning, once its turn reversals stopped outranking it;
+  the airspeed finding is fourth). Lost:
+  142202_0, whose hit came from a rangefinder line unrelated to its GPS cause; 138886_0 and
+  145352_0, whose hits came from an EKF variance written after the disarm or after landing;
+  144203_1, whose top-1 now goes to its current sensor reading 0 A, a real fault but not the
+  labelled one; 139371_0 (top-1 now its compass finding) and 145616_2 (no longer in the top 3).
+- Corrupt logs passed as clean. Integrity was judged from pymavlink's "bad header"
+  warnings, but its default compiled indexer prints them below Python, where they cannot be
+  captured. A log with garbage in the middle, or random bytes named `.bin`, came back with
+  integrity `ok` (the latter as "no issues detected"). The parser now reads pymavlink's
+  record index instead: bytes inside the log that belong to no record make it `partial`;
+  so does a log whose reading stopped early (pymavlink stops at a record whose type has no
+  format, which used to drop the rest of the flight without a word); and a file with no
+  records at all is an error. On the 48 benchmark logs, no record gap exists and no finding
+  changed.
 - `python examples/generate_demo_log.py --help` wrote a log file named `--help`. It now
   prints its usage; the output path stays an optional argument.
 
 ### Changed
+- `pymavlink>=2.4.50` (was 2.4.49). The compiled log indexer in 2.4.49 ends the whole process
+  with exit status 1 when it meets an FMT record with an invalid length, so one corrupt log
+  stopped the server; 2.4.50 reports it and stops reading instead (pymavlink commit 20774b3).
 - `scripts/gen_docs.py` now generates the README example output, the check and
   benchmark-log counts, and the benchmark table in `bench/README.md` (from the new
   `bench/results.json`). CI fails when these sections drift from the code and

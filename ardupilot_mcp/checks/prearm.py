@@ -23,6 +23,7 @@ from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
 from .firmware import verdict_for
+from .health import health_owns
 from .util import make_finding
 
 # Substrings (case-insensitive) that mark a line as worth surfacing. Order does
@@ -182,6 +183,10 @@ class StartupMessagesCheck(Check):
                 continue
             if verdict_for(stripped) is not None:
                 continue  # reported by the firmware-verdicts check
+            if health_owns(stripped):
+                continue  # internal errors and watchdog lines: the health check decodes them
+            if _is_arming_failure(low) and not low.split(":", 1)[1].strip():
+                continue  # a bare "PreArm:" (the reason went out in a separate line)
             if _is_routine(low):
                 continue
             key = stripped

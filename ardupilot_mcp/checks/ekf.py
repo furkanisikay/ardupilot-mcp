@@ -13,9 +13,13 @@ Fields (the dimensionless squared-innovation test ratios from XKF4/NKF4):
   SV  velocity     SP  position     SH  height     SM  magnetometer
 (SVT is intentionally not used — it is not a normalised test ratio; see SENSOR_FIELDS.)
 
-For each present field we take the peak ratio over the log:
-  > 1.0 -> CRITICAL (sensor was being rejected)
-  > 0.8 -> WARN     (sensor variance high, approaching rejection)
+For each present field we take the ratio in flight (armed and not landed: the
+estimator on the bench or after a crash is not navigating anything):
+  > 1.0 for 1 s or more -> CRITICAL (sensor was being rejected, as long as the
+                                     firmware's own EKF failsafe waits)
+  > 1.0 briefly, > 0.8  -> WARN     (variance high, approaching or touching rejection)
+A compass (SM) rejection while velocity and position stay under FS_EKF_THRESH is a WARN:
+the firmware's EKF check never acts on the compass alone (ekf_over_threshold).
 We prefer XKF4 and fall back to NKF4; if neither is present the check is a no-op.
 
 Cores: EKF3 runs one core ("lane") per IMU and logs them all under XKF4, told
@@ -33,13 +37,17 @@ import numpy as np
 from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
-from .util import intervals_above, make_finding
+from .util import intervals_above, longest_run_above, make_finding
 
 # Variance test ratios are normalised: 1.0 is the rejection boundary, so a peak
 # above it means the EKF actually distrusted/rejected that sensor's data.
 CRIT_RATIO = 1.0
 # Below the rejection line but high enough to warn — the filter is straining.
 WARN_RATIO = 0.8
+# Copter's EKF failsafe acts only once its (filtered) variances have stayed over the
+# threshold for 10 checks at 10 Hz, 1 s (EKF_CHECK_ITERATIONS_MAX, ArduCopter/ekf_check.cpp).
+# A rejection is critical when it lasts that long; a shorter one is a warning.
+CRIT_MIN_DURATION_S = 1.0
 
 # EKF3 message preferred; EKF2 (NKF4) is the legacy fallback. Same field layout.
 PREFERRED_MSG = "XKF4"
@@ -89,11 +97,17 @@ class EKFCheck(Check):
             primary = (
                 (pi == core) if (len(cores) > 1 and np.isfinite(pi).any()) else np.ones(times.size, bool)
             )
+            flying = log.flying_mask(times)
+            if flying is not None:
+                times, primary = times[flying], primary[flying]
+                cols = {k: v[flying] for k, v in cols.items()}
             for field, sensor in SENSOR_FIELDS:
                 vals = cols[field]
                 f = self._field_finding(mtype, field, sensor, times, vals, primary)
                 if f is None:
                     continue
+                if field == "SM" and f.severity == Severity.CRITICAL:
+                    _compass_alone(log, f, times, cols, primary)
                 if len(cores) > 1:
                     f.title += f" (core {core})"
                     f.evidence.samples["ekf_core"] = core
@@ -129,11 +143,24 @@ class EKFCheck(Check):
                 "while it was NOT the primary core flying the vehicle, so it did not affect navigation."
             )
             rec = None
+        elif vmax > CRIT_RATIO and longest_run_above(t_sel, v_sel, CRIT_RATIO) < CRIT_MIN_DURATION_S:
+            sev = Severity.WARN
+            threshold = CRIT_RATIO
+            msg = (
+                f"EKF {sensor} variance peaked at {vmax:.2f} in {mtype}.{field}, above the "
+                f"{CRIT_RATIO:.1f} rejection boundary for at most {longest_run_above(t_sel, v_sel, CRIT_RATIO):.1f} s. "
+                f"The firmware's EKF failsafe acts only after {CRIT_MIN_DURATION_S:.0f} s, so this was a brief "
+                f"rejection of {sensor} data, not a lasting loss of trust."
+            )
+            rec = (
+                f"Check what the {sensor} sensor was doing at that moment (a manoeuvre, a glitch, an impact)."
+            )
         elif vmax > CRIT_RATIO:
             sev = Severity.CRITICAL
             threshold = CRIT_RATIO
             msg = (
-                f"EKF {sensor} variance peaked at {vmax:.2f} (>{CRIT_RATIO:.1f}) in {mtype}.{field} "
+                f"EKF {sensor} variance peaked at {vmax:.2f} (>{CRIT_RATIO:.1f}) in {mtype}.{field} and stayed "
+                f"above it for {longest_run_above(t_sel, v_sel, CRIT_RATIO):.1f} s "
                 f"— the estimator was rejecting {sensor} data. A test ratio above {CRIT_RATIO:.1f} "
                 f"means the {sensor} innovation exceeded the filter's modelled uncertainty, so that "
                 "sensor was distrusted; sustained rejection leads to position/altitude drift or an EKF failsafe."
@@ -188,3 +215,28 @@ class EKFCheck(Check):
                 samples={"lane_switches": int(changes.size)},
             )
         ]
+
+
+# Copter's and Plane's EKF check count the compass only alongside velocity or position: the
+# failsafe needs position over FS_EKF_THRESH with one other, or two counts (compass +
+# velocity, or velocity over twice the threshold); compass alone never trips it
+# (ekf_over_threshold, ArduCopter/ekf_check.cpp, ArduPlane/ekf_check.cpp, Copter-4.6.3).
+FS_EKF_THRESH_DEFAULT = 0.8
+
+
+def _compass_alone(log: FlightLog, f: Finding, times: np.ndarray, cols: dict, primary: np.ndarray) -> None:
+    """CRITICAL -> WARN when the compass was rejected while velocity and position stayed trusted."""
+    thresh = float(log.params.get("FS_EKF_THRESH", FS_EKF_THRESH_DEFAULT) or FS_EKF_THRESH_DEFAULT)
+    sm, sv, sp = cols["SM"], cols.get("SV"), cols.get("SP")
+    rejecting = primary & np.isfinite(sm) & (sm > CRIT_RATIO)
+    if sv is None or sp is None or not rejecting.any():
+        return
+    others = (np.nan_to_num(sv[rejecting]) >= thresh) | (np.nan_to_num(sp[rejecting]) >= thresh)
+    if others.any():
+        return
+    f.severity = Severity.WARN
+    f.explanation += (
+        f" Velocity and position stayed trusted throughout (SV and SP under FS_EKF_THRESH {thresh:.2f}), and the "
+        "firmware's EKF check never acts on the compass alone, so navigation carried on from GPS and the "
+        "IMU: a compass problem to fix, not an estimator failure."
+    )

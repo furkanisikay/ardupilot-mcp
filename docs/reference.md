@@ -2,7 +2,7 @@
 
 # Reference
 
-ardupilot-mcp 1.0.0: 12 MCP tools and 18 checks. Every tool is read-only.
+ardupilot-mcp 1.0.0: 12 MCP tools and 23 checks. Every tool is read-only.
 
 ## Tools
 
@@ -131,20 +131,25 @@ Each check runs only when its messages are in the log and the vehicle and log ty
 | Check | Category | Vehicles | Logs | Needs | What it reports |
 |---|---|---|---|---|---|
 | `integrity` | integrity | all | `.bin` | — | Reports whether the log parsed cleanly, was truncated/partial, or stopped while armed. |
+| `vibration` | vibration | all | `.bin`, `.tlog` | `VIBE` | Per-axis vibration magnitude and accelerometer clipping from VIBE. |
 | `events` | events | all | `.bin`, `.tlog` | — | Errors, failsafes and the flight mode/event timeline from ERR/MODE/EV. |
 | `firmware` | events | all | `.bin`, `.tlog` | — | In-flight conclusions the autopilot logged itself: crash disarm, EKF failsafe, yaw imbalance, vibration compensation, and failsafe-driven mode changes (MODE.Rsn). |
 | `ekf` | estimator | all | `.bin`, `.tlog` | — | EKF innovation/variance test ratios (XKF4/NKF4) per sensor. |
-| `vibration` | vibration | all | `.bin`, `.tlog` | `VIBE` | Per-axis vibration magnitude and accelerometer clipping from VIBE. |
 | `power` | power | all | `.bin`, `.tlog` | — | Per-battery voltage vs failsafe thresholds, sudden brown-out drops and sag under load (BAT/CURR), plus flight-controller board voltage (POWR.Vcc). |
 | `gps` | gps | all | `.bin`, `.tlog` | `GPS` | GPS fix quality, satellite count and HDOP from the GPS message. |
 | `compass` | compass | all | `.bin`, `.tlog` | `MAG` | Per-compass field-strength stability and throttle-correlated interference from MAG + CTUN (offsets are covered by the calibration check). |
+| `circling` | compass | copter, plane | `.bin`, `.tlog` | `MODE`, `PSCE`, `PSCN` | Toilet bowling: the position error turning the same way, orbit after orbit, in LOITER / POSHOLD / QLOITER, the circling a heading (compass) error causes. |
 | `attitude` | attitude | copter, heli, plane | `.bin`, `.tlog` | `ATT` | Compares demanded vs achieved roll/pitch/yaw from ATT to catch loss of control. |
+| `landing` | landing | plane | `.bin`, `.tlog` | `MSG`, `TECS` | Automatic-landing flares (the firmware's Flare message) that left most of the sink rate in place, so the aircraft met the ground at nearly its approach descent rate. |
 | `motors` | motors | copter | `.bin`, `.tlog` | `RCOU` | Per-motor PWM output balance and saturation from RCOU (multirotor only). |
 | `thrust_loss` | motors | copter, heli | `.bin`, `.tlog` | — | Firmware thrust-loss detection (message, ERR, MOTB thrust boost) and the same signature in the motor outputs: one motor at maximum, its geometric opposite lowest, sinking at high throttle. |
+| `esc` | motors | copter, plane | `.bin`, `.tlog` | — | Motors losing power while still commanded (battery current collapses, voltage holds, the log continues) and ESC temperatures against the ESC firmware's thermal-protection range. |
 | `rcin` | rc | all | `.bin`, `.tlog` | `RCIN` | Detects RC link loss while armed: RCI2.Flags 'no valid input' (4.x), else all primary channels dropping to a low/no-pulse value together. |
 | `timing` | performance | all | `.bin` | — | Logging gaps / main-loop stalls (IMU/ATT/VIBE timing) and PM scheduler long-loop overruns. |
-| `config` | config | all | `.bin`, `.tlog` | — | Risky safety configuration in parameters (ARMING_CHECK, BATT_MONITOR, FS_THR_ENABLE). |
+| `health` | integrity | all | `.bin`, `.tlog` | — | The autopilot's own record of a watchdog reset (WDOG / WDG:), a stalled main loop (MON) and internal errors (PM.InE, 'Internal errors 0x..'). |
+| `config` | config | all | `.bin`, `.tlog` | — | Risky safety configuration in parameters (ARMING_CHECK, BATT_MONITOR, FS_THR_ENABLE, an arm/disarm switch on a stick channel). |
 | `calibration` | calibration | all | `.bin`, `.tlog` | — | Compass offset magnitudes and accelerometer calibration from parameters. |
 | `sensors` | sensors | all | `.bin`, `.tlog` | — | Configured-but-silent sensors and unhealthy sensors from params + RFND/GPS/MAG. |
+| `baro` | sensors | copter | `.bin`, `.tlog` | `BARO`, `CTUN`, `GPS` | Barometer altitude that rises and falls with the throttle against the GPS altitude: prop wash or duct airflow on the barometer, which makes altitude hold surge. |
 | `prearm` | config | all | `.bin`, `.tlog` | — | Notable startup / pre-arm status lines the firmware logged in MSG/STATUSTEXT. |
 | `param_audit` | config | all | `.bin`, `.tlog` | — | Flags self-contradictory, disabled or implausible parameter settings. |

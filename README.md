@@ -39,11 +39,11 @@ Claude Code için tek satır yeterli: `claude mcp add ardupilot-mcp -- uvx ardup
 <!-- gen:example -->
 ```text
 First anomaly while armed: Elevated VibeZ vibration @ 9s.
-6 critical, 2 warning, 3 info finding(s).
+4 critical, 4 warning, 3 info finding(s).
 [CRITICAL] vibration @ 9s: Elevated VibeZ vibration
-           VibeZ vibration peaks at 72 m/s^2 (>60); 20% of samples exceed 60 m/s^2.
+           VibeZ vibration stayed above 60 m/s^2 for up to 5.0 s (peak 70 m/s^2; 17% of the flight above 60).
 [CRITICAL] attitude  @ 20s: Attitude tracking failure (roll)
-           Roll failed to track the demand for 3.0 s, error up to 35 deg (sustained >25 deg).
+           The thrust direction was 35 deg off the demand, mostly in roll, for 3.0 s (over 30 deg for 1 s is the firmware's own loss-of-control line).
 [CRITICAL] power     @ 25s: Battery reached critical voltage
            Pack voltage fell to 13.32 V, at or below the critical-voltage level (13.50 V, configured BATT_*_VOLT failsafe).
 ```
@@ -68,7 +68,7 @@ Bütün araçlar salt okunurdur.
 | `recommend_tuning` | Harmonik notch, PID ve autotune önerisi. Hiçbir şeyi uygulamaz. |
 | `list_checks` | Kayıtlı kontrollerin listesi. |
 
-Araçların argümanları ve <!-- gen:checks -->18<!-- /gen:checks --> kontrolün tamamı [docs/reference.md](docs/reference.md)'de. Bu dosyayı `scripts/gen_docs.py` koddan üretir, CI da güncel olup olmadığını denetler.
+Araçların argümanları ve <!-- gen:checks -->23<!-- /gen:checks --> kontrolün tamamı [docs/reference.md](docs/reference.md)'de. Bu dosyayı `scripts/gen_docs.py` koddan üretir, CI da güncel olup olmadığını denetler.
 
 ## Nasıl çalışır
 
@@ -82,7 +82,7 @@ Sunucu MCP Python SDK 2 üzerinde çalışır. Hem 2026-07-28 protokol sürümü
 
 Motor, forumdaki <!-- gen:bench-logs -->49<!-- /gen:bench-logs --> gerçek kaza logu üzerinde ölçülür; logların sebebini o logu inceleyen bir geliştirici ya da deneyimli bir kullanıcı yazmıştır. Güncel skorlar ve yöntem [bench/README.md](bench/README.md)'de.
 
-- Pusula yön hatasından kaynaklanan dairesel sürüklenme (toilet-bowl) henüz tespit edilmiyor.
+- Dairesel sürüklenme (toilet-bowl) konum tutma modlarında konum kontrolcüsü kaydından (PSCN/PSCE, 4.1 ve sonrası) tespit edilir; bu kayıt olmayan loglarda tespit edilemez.
 - Format tanımları bozulmuş bir log, kısmi sonuç yerine açık bir hata verir.
 - `.tlog` dosyasında ERR kaydı, batch sampler, hızlı IMU ve mod değişikliği nedeni yoktur.
 - Bulgular karar desteğidir. Uçuşa elverişlilik kararı vermez.

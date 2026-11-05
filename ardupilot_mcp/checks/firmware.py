@@ -31,6 +31,7 @@ from ..flight_log import FlightLog
 from ..model import Finding, Severity
 from .base import Check, register_check
 from .util import make_finding
+from .vibration import trigger_note
 
 
 @dataclass(frozen=True)
@@ -108,8 +109,43 @@ VERDICTS: tuple[Verdict, ...] = (
         re.compile(r"Vibration compensation ON"),
         Severity.WARN,
         "Firmware switched on vibration compensation",
-        "high vibration made the EKF's vertical estimate unreliable, so the firmware changed its "
-        "altitude control to cope",
+        "for over a second the EKF's vertical velocity and position disagreed with the accelerometers "
+        "(the pattern high vibration produces, though a fall produces it too), so the firmware switched "
+        "the altitude controller to vibration-resistant gains; read it with the measured vibration levels",
+    ),
+    # QuadPlane (ArduPlane/quadplane.cpp, VTOL_Assist.cpp).
+    # Plane 4.7+ runs Copter's thrust-loss test on the VTOL motors (QuadPlane::thrust_loss_check:
+    # throttle at 90% or saturated, above 25%, descending, attitude error under 30 deg, for 1 s);
+    # the copter `thrust_loss` check does not run on a plane, so this one reports it.
+    Verdict(
+        re.compile(r"Potential VTOL Thrust Loss \((\d+)\)"),
+        Severity.CRITICAL,
+        "Firmware detected VTOL thrust loss",
+        "the VTOL motors were at full throttle while the aircraft still descended with its attitude under "
+        "control, for a second; the number is the motor the firmware suspects (motor index + 1), and the "
+        "mixer switched to thrust boost to fly on the others",
+    ),
+    Verdict(
+        re.compile(r"Transition failed, exceeded time limit"),
+        Severity.CRITICAL,
+        "QuadPlane transition to forward flight failed",
+        "the plane did not reach its transition airspeed within Q_TRANS_FAIL seconds, so the firmware "
+        "took the Q_TRANS_FAIL_ACT action (QLAND or QRTL); look at the forward thrust, the airspeed "
+        "reading and AIRSPEED_MIN",
+    ),
+    Verdict(
+        re.compile(r"Alt assist"),
+        Severity.WARN,
+        "VTOL motors assisted: altitude too low",
+        "in fixed-wing flight the plane fell below Q_ASSIST_ALT above the ground, so the VTOL motors "
+        "switched on to hold it up",
+    ),
+    Verdict(
+        re.compile(r"Angle assist"),
+        Severity.WARN,
+        "VTOL motors assisted: attitude error",
+        "in fixed-wing flight the roll or pitch error stayed above Q_ASSIST_ANGLE for Q_ASSIST_DELAY, so "
+        "the VTOL motors switched on to recover control",
     ),
     Verdict(
         re.compile(r"EKF variance"),
@@ -143,7 +179,10 @@ FAILSAFE_REASONS: dict[int, str] = {
     11: "terrain failsafe",
     17: "terminate",
     19: "crash failsafe",
+    23: "failed VTOL transition",
+    24: "failed VTOL takeoff",
     25: "failsafe",
+    28: "bad depth failsafe",  # Sub: depth sensor failed (ArduSub/failsafe.cpp)
     29: "leak failsafe",
     50: "dead-reckoning failsafe",
     51: "takeoff failsafe",
@@ -194,7 +233,8 @@ class FirmwareVerdictsCheck(Check):
             samples: dict[str, float] = {"occurrences": len(seen)}
             m = v.pattern.match(first_text)
             if m and m.groups() and m.group(1).isdigit():
-                samples["value_pct"] = int(m.group(1))
+                # The captured number: a motor for thrust loss, a percentage for yaw imbalance.
+                samples["motor" if "Thrust Loss" in v.pattern.pattern else "value_pct"] = int(m.group(1))
             when = f" first at t={min(times):.1f}s" if times else ""
             out.append(
                 make_finding(
@@ -203,7 +243,12 @@ class FirmwareVerdictsCheck(Check):
                     v.title,
                     f'The autopilot logged "{first_text}"{when}'
                     + (f" ({len(seen)} times)" if len(seen) > 1 else "")
-                    + f": {v.meaning}. This is the firmware's own on-board conclusion, not an inference.",
+                    + f": {v.meaning}. This is the firmware's own on-board conclusion, not an inference."
+                    + (
+                        trigger_note(log, min(times) if times else None)
+                        if v.title.startswith("Firmware switched on vibration")
+                        else ""
+                    ),
                     recommendation=_recommendation(v),
                     time_start_s=min(times) if times else None,
                     time_end_s=max(times) if times else None,

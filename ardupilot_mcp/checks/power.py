@@ -59,6 +59,10 @@ SAG_MIN_V = 1.0
 # https://ardupilot.org/copter/docs/common-diagnosing-problems-using-logs.html
 VCC_MIN_V = 4.6
 VCC_MAX_SPREAD_V = 0.3
+# Design choice: a brown-out is a rail low for at least this share of the armed time before
+# the log stops armed (144427_0: 56%); a single dip as a vehicle hits the ground is not
+# (145881_0: 1%, the motors cut by an RC glitch and the log ending on impact).
+VCC_BROWNOUT_LOW_SHARE = 0.10
 # Design choice: a median outside this is not a 5 V rail reading, so skip.
 VCC_PLAUSIBLE_MIN_V = 3.0
 VCC_PLAUSIBLE_MAX_V = 6.0
@@ -68,6 +72,20 @@ VCC_PLAUSIBLE_MAX_V = 6.0
 # noise — skip power analysis rather than emit nonsense.
 PLAUSIBLE_MIN_V = 4.0
 PLAUSIBLE_MAX_V = 70.0
+
+# BATT_MONITOR types that measure the pack's voltage, and of those the ones that also
+# measure its current (AP_BattMonitor_Params.cpp @Values, Copter-4.6.3): 3 analog voltage
+# only, 4 analog voltage and current, 5 Solo, 6 Bebop, 7/13/14/16 SMBus, 8 DroneCAN, 9 ESC
+# telemetry, 15 NeoDesign, 19 Rotoye, 21 INA2XX, 22 LTC2946, 26 INA239, 28 AD7091R5. Fuel,
+# generator, solar, Torqeedo, synthetic-current and scripting monitors are not judged.
+VOLTAGE_MONITORS = {3, 4, 5, 6, 7, 8, 9, 13, 14, 15, 16, 19, 21, 22, 26, 28}
+CURRENT_MONITORS = VOLTAGE_MONITORS - {3}
+# Design choice: an electric multirotor cannot fly on this little current; on the 48
+# benchmark logs every copter whose monitor works peaked at 6.9 A or more in flight.
+DEAD_CURRENT_A = 1.0
+# ...judged over at least this much flight, so a hop off the ground is not enough.
+DEAD_MONITOR_MIN_FLIGHT_S = 10.0
+NO_VOLTAGE_TITLE = "Battery monitor reads no pack voltage in flight"
 
 
 @register_check
@@ -102,23 +120,88 @@ class PowerCheck(Check):
             # payload battery against the 4S main pack's thresholds is meaningless.
             insts = log.instances(src)
             for inst in insts:
+                found = self._dead_monitor_findings(log, src, inst)
                 # Guard against monitors with no real sensor / an odd voltage scale.
                 _, volts = log.series(src, "Volt", inst)
-                if volts.size:
-                    med = float(np.median(volts))
-                    if med < PLAUSIBLE_MIN_V or med > PLAUSIBLE_MAX_V:
-                        continue
-                for f in (
-                    self._min_voltage_findings(log, src, inst)
-                    + self._sudden_drop_findings(log, src, inst)
-                    + self._sag_findings(log, src, inst)
-                ):
+                med = float(np.median(volts)) if volts.size else None
+                plausible = med is None or PLAUSIBLE_MIN_V <= med <= PLAUSIBLE_MAX_V
+                if plausible and not any(f.title == NO_VOLTAGE_TITLE for f in found):
+                    found += (
+                        self._min_voltage_findings(log, src, inst)
+                        + self._sudden_drop_findings(log, src, inst)
+                        + self._sag_findings(log, src, inst)
+                    )
+                for f in found:
                     if len(insts) > 1:
                         f.title += f" (battery {inst + 1})"
                         f.evidence.samples["battery_instance"] = inst
                     findings.append(f)
         findings.extend(self._vcc_findings(log))
         return findings
+
+    # -- a monitor that does not read the flight pack --------------------------
+
+    def _dead_monitor_findings(self, log: FlightLog, src: str, inst: int) -> list[Finding]:
+        """A configured battery monitor reading no voltage or no current while a multirotor flew."""
+        if log.meta.vehicle_kind != "copter":
+            return []  # a plane glides, a heli may run on fuel: low current proves nothing
+        prefix = "BATT_" if inst == 0 else f"BATT{inst + 1}_"
+        kind = log.params.get(prefix + "MONITOR")
+        if kind is None or int(kind) not in VOLTAGE_MONITORS:
+            return []
+        t, (volts, curr) = log.series_many(src, ["Volt", "Curr"], inst)
+        flying = log.flying_mask(t)
+        if flying is None or t.size < 2:
+            return []
+        dt = float(np.median(np.diff(t)))
+        if not np.isfinite(dt) or dt <= 0 or flying.sum() * dt < DEAD_MONITOR_MIN_FLIGHT_S:
+            return []
+        v, c = volts[flying], curr[flying]
+        label = f"{prefix}MONITOR={int(kind)}"
+        span = (float(t[flying][0]), float(t[flying][-1]))
+        if np.isfinite(v).any() and float(np.nanpercentile(v, 95)) < PLAUSIBLE_MIN_V:
+            vmax = float(np.nanmax(v))
+            return [
+                make_finding(
+                    self.id,
+                    Severity.WARN,
+                    NO_VOLTAGE_TITLE,
+                    f"While the vehicle flew ({flying.sum() * dt:.0f} s) the battery monitor ({label}) read at most "
+                    f"{vmax:.2f} V, which no flying pack gives: it is not measuring the flight battery. The voltage "
+                    "failsafe and the voltage compensation of the motor output have nothing to work with.",
+                    recommendation=(
+                        f"Check the power module's wiring and {prefix}VOLT_PIN / {prefix}VOLT_MULT for this board, then "
+                        "compare the reading with a multimeter on the pack."
+                    ),
+                    time_start_s=span[0],
+                    time_end_s=span[1],
+                    message_types=[src],
+                    samples={"max_volt": round(vmax, 2)},
+                )
+            ]
+        if int(kind) in CURRENT_MONITORS and np.isfinite(c).any() and float(np.nanmax(c)) < DEAD_CURRENT_A:
+            cmax = float(np.nanmax(c))
+            return [
+                make_finding(
+                    self.id,
+                    Severity.WARN,
+                    "Battery monitor reads no current in flight",
+                    f"While the vehicle flew ({flying.sum() * dt:.0f} s) the battery current ({src}.Curr, {label}) never "
+                    f"exceeded {cmax:.2f} A. A flying multirotor draws several amps, so the current sensor is not "
+                    "measuring the flight current: consumed mAh and the capacity failsafe (BATT_LOW_MAH / "
+                    "BATT_CRT_MAH), current-based compass compensation (COMPASS_MOTCT=2) and the MOT_BAT_CURR_MAX "
+                    "limit all work from a wrong number.",
+                    recommendation=(
+                        f"Check the power module's current wiring and {prefix}CURR_PIN / {prefix}AMP_PERVLT / "
+                        f"{prefix}AMP_OFFSET for this sensor, then calibrate the current against a known load."
+                    ),
+                    time_start_s=span[0],
+                    time_end_s=span[1],
+                    message_types=[src],
+                    samples={"max_curr": round(cmax, 3)},
+                )
+            ]
+        return []
 
     # -- flight-controller board voltage (POWR.Vcc) ---------------------------
 
@@ -137,14 +220,31 @@ class PowerCheck(Check):
         t_min = float(times[int(np.argmin(vcc))])
         samples = {"min_vcc": round(vmin, 3), "max_vcc": round(vmax, 3), "spread_v": round(spread, 3)}
         if vmin < VCC_MIN_V:
+            # LogAnalyzer's FAIL level, which this project reports as WARN (as for PM long loops).
+            # A low rail and a recording that then stops while armed is the brown-out itself: the
+            # autopilot lost its supply in flight.
+            from ..timeline import log_ended_armed  # local: timeline imports the checks package
+
+            low_share = float(np.mean(vcc < VCC_MIN_V))
+            browned_out = log_ended_armed(log) and low_share >= VCC_BROWNOUT_LOW_SHARE
             return [
                 make_finding(
                     self.id,
-                    Severity.CRITICAL,
-                    "Flight-controller board voltage (Vcc) brown-out",
-                    f"The flight controller's board supply (POWR.Vcc) fell to {vmin:.2f} V while armed, "
-                    f"below the {VCC_MIN_V:.1f} V minimum. A 5 V rail this low can brown out or reset the "
-                    "autopilot and its sensors mid-flight.",
+                    Severity.CRITICAL if browned_out else Severity.WARN,
+                    "Flight-controller board voltage (Vcc) low, then the log stopped in flight"
+                    if browned_out
+                    else f"Flight-controller board voltage (Vcc) below {VCC_MIN_V:.1f} V",
+                    f"The flight controller's board supply (POWR.Vcc) fell to {vmin:.2f} V while armed "
+                    f"(median {med:.2f} V), below the {VCC_MIN_V:.1f} V minimum ArduPilot's LogAnalyzer "
+                    "applied."
+                    + (
+                        f" The rail sat below {VCC_MIN_V:.1f} V for {low_share * 100:.0f}% of the armed time and the "
+                        "recording then stopped while still armed: the signature of the autopilot browning "
+                        "out (losing its supply) in flight."
+                        if browned_out
+                        else " A 5 V rail running this low leaves little margin before the autopilot or "
+                        "its sensors brown out."
+                    ),
                     recommendation=(
                         "Check the power module / BEC feeding the autopilot and the servo rail; avoid powering "
                         "servos or peripherals from the same regulator."
@@ -152,7 +252,7 @@ class PowerCheck(Check):
                     time_start_s=t_min,
                     time_end_s=t_min,
                     message_types=["POWR"],
-                    samples={**samples, "min_threshold_v": VCC_MIN_V},
+                    samples={**samples, "min_threshold_v": VCC_MIN_V, "low_share": round(low_share, 2)},
                 )
             ]
         if spread > VCC_MAX_SPREAD_V:
@@ -275,7 +375,7 @@ class PowerCheck(Check):
         low = low if (low and low > 0.0) else None
         if crt is not None or low is not None:
             return crt, low, f"configured {prefix}*_VOLT failsafe"
-        cells = meta.estimate_cells(safe_max(volts))
+        cells = meta.estimate_cells(safe_max(volts), log.params)
         if cells:
             return (
                 cells * PER_CELL_CRIT_V,
@@ -287,10 +387,23 @@ class PowerCheck(Check):
     # -- sudden fast voltage drop (connector dropout / brown-out) ------------
 
     def _sudden_drop_findings(self, log: FlightLog, src: str, inst: int = 0) -> list[Finding]:
+        # BAT.VoltR is the firmware's resting-voltage estimate, the terminal voltage plus
+        # current x the pack's estimated resistance (AP_BattMonitor "estimated resting
+        # voltage"). A sag under a current spike leaves it flat; a disconnect or a failing
+        # cell does not. Steps are found on the terminal voltage; when VoltR is logged, a step
+        # it does not share is load, not a fault. VoltR is compared as the median of the half
+        # second either side: single samples swing with current x resistance.
         times, volts = log.series(src, "Volt", inst)
+        rest: np.ndarray | None = None
+        if src == "BAT" and "VoltR" in log.fields(src):
+            t_r, (v_r, r_r) = log.series_many(src, ["Volt", "VoltR"], inst)
+            if r_r.size and np.all(np.isfinite(r_r)) and float(np.min(r_r)) > 0.0:
+                times, volts, rest = t_r, v_r, r_r
         armed = log.armed_mask(times)
         if armed is not None:
             times, volts = times[armed], volts[armed]
+            if rest is not None:
+                rest = rest[armed]
         if volts.size < 2:
             return []
         # Fast steps: a voltage fall larger than DROP_WARN_V between samples closer than
@@ -311,6 +424,8 @@ class PowerCheck(Check):
             lo, hi = int(post_lo[i]), int(post_hi[i])
             if hi > lo and float(np.max(volts[lo:hi])) >= float(volts[i - 1]) - drops[i - 1] / 2.0:
                 continue
+            if rest is not None and _resting_drop(times, rest, int(i)) < DROP_WARN_V / 2.0:
+                continue  # the resting voltage held: sag under load
             worst_i = int(i)
             break
         if worst_i < 1:
@@ -328,9 +443,14 @@ class PowerCheck(Check):
                 sev,
                 "Sudden voltage drop",
                 f"Pack voltage dropped {worst_drop:.2f} V in {dt_txt} (a step larger than the "
-                f"{DROP_WARN_V:.1f} V/{DROP_MAX_DT_S:.1f} s threshold). A collapse this fast is not "
-                "normal discharge sag; it points to a loose battery connector, a failing cell, or a "
-                "momentary brown-out of the power system.",
+                f"{DROP_WARN_V:.1f} V/{DROP_MAX_DT_S:.1f} s threshold)"
+                + (
+                    f", and the firmware's load-compensated resting voltage ({src}.VoltR) fell with it"
+                    if rest is not None
+                    else ""
+                )
+                + ". A collapse this fast is not normal discharge sag; it points to a loose battery "
+                "connector, a failing cell, or a momentary brown-out of the power system.",
                 recommendation="Inspect the battery connector/leads and pack health; a brown-out can reset peripherals or the flight controller.",
                 time_start_s=worst_t0,
                 time_end_s=worst_t1,
@@ -339,6 +459,7 @@ class PowerCheck(Check):
                     "drop_volt": round(worst_drop, 2),
                     "drop_dt_s": round(worst_dt, 4),
                     "drop_threshold_volt": DROP_WARN_V,
+                    "load_compensated": 1.0 if rest is not None else 0.0,
                 },
             )
         ]
@@ -390,3 +511,13 @@ class PowerCheck(Check):
                 },
             )
         ]
+
+
+def _resting_drop(times: np.ndarray, rest: np.ndarray, i: int) -> float:
+    """Fall of the median resting voltage from the half second before step ``i`` to the one after."""
+    t = float(times[i])
+    before = rest[(times >= t - 0.5) & (times < t)]
+    after = rest[(times >= t) & (times <= t + 0.5)]
+    if before.size == 0 or after.size == 0:
+        return float("inf")  # nothing to compare: keep the step
+    return float(np.median(before) - np.median(after))

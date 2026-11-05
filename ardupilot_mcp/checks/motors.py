@@ -48,8 +48,16 @@ ACTIVE_MIN_PWM = 1100.0
 IMBALANCE_WARN_PWM = 150.0
 IMBALANCE_CRIT_PWM = 300.0
 
-# Saturation: a sample at/above this PWM is "near maximum" (typical max ~2000).
+# Saturation: a sample at/above this PWM is "near maximum" on the default 1000-2000 range.
 SATURATION_PWM = 1950.0
+# The same level as a fraction of the vehicle's own output range (MOT_PWM_MIN..MOT_PWM_MAX):
+# a craft limited to 1900 us is saturated at 1855, not at an unreachable 1950.
+SATURATION_FRACTION_OF_RANGE = 0.95
+# Tri: motors 1, 2 and 4 spin props; the yaw servo is driven through the Motor7 output
+# function (AP_MotorsTri.cpp: add_motor_num(AP_MOTORS_MOT_1/2/4), tail servo k_motor7).
+FRAME_TRI = 7
+TRI_SERVO_FUNCTION = 39  # k_motor7
+TRI_MOTOR_CHANNELS = ("C1", "C2", "C4")
 # Fraction of the flight a motor may spend saturated before it is a concern.
 SATURATION_WARN_FRACTION = 0.20
 SATURATION_CRIT_FRACTION = 0.50
@@ -70,13 +78,17 @@ class MotorsCheck(Check):
     @staticmethod
     def _motor_channels(log: FlightLog) -> tuple[list[str], bool]:
         """(RCOU channel names that drive motors, identified-from-config?)."""
+        tri = log.params.get("FRAME_CLASS") == FRAME_TRI
+        motor_functions = MOTOR_FUNCTIONS - {TRI_SERVO_FUNCTION} if tri else MOTOR_FUNCTIONS
         by_function = [
             f"C{n}"
             for n in range(1, RCOU_MAX_CHANNEL + 1)
-            if int(log.params.get(f"SERVO{n}_FUNCTION", -1)) in MOTOR_FUNCTIONS
+            if int(log.params.get(f"SERVO{n}_FUNCTION", -1)) in motor_functions
         ]
         if by_function:
             return by_function, True
+        if tri:
+            return list(TRI_MOTOR_CHANNELS), True
         count = meta.motor_count_for_frame(log.params.get("FRAME_CLASS"))
         if count:
             return [f"C{n}" for n in range(1, count + 1)], True
@@ -105,7 +117,7 @@ class MotorsCheck(Check):
         findings: list[Finding] = []
         means = {ch: float(np.mean(vals)) for ch, (_, vals) in active.items()}
         findings.extend(self._imbalance_findings(means))
-        findings.extend(self._saturation_findings(active))
+        findings.extend(self._saturation_findings(active, self._saturation_pwm(log)))
         return findings
 
     def _imbalance_findings(self, means: dict[str, float]) -> list[Finding]:
@@ -148,17 +160,27 @@ class MotorsCheck(Check):
             )
         ]
 
-    def _saturation_findings(self, active: dict[str, tuple[np.ndarray, np.ndarray]]) -> list[Finding]:
+    @staticmethod
+    def _saturation_pwm(log: FlightLog) -> float:
+        """PWM at which a motor is near its maximum, from the vehicle's own output range."""
+        from .thrust_loss import pwm_range
+
+        pmin, pmax = pwm_range(log)
+        return round(pmin + SATURATION_FRACTION_OF_RANGE * (pmax - pmin), 1)
+
+    def _saturation_findings(
+        self, active: dict[str, tuple[np.ndarray, np.ndarray]], sat_pwm: float
+    ) -> list[Finding]:
         out: list[Finding] = []
         for ch in sorted(active):
             times, vals = active[ch]
-            frac = fraction_at_or_above(vals, SATURATION_PWM)
+            frac = fraction_at_or_above(vals, sat_pwm)
             if frac <= SATURATION_WARN_FRACTION:
                 continue
             sev = Severity.CRITICAL if frac > SATURATION_CRIT_FRACTION else Severity.WARN
             msg = (
                 f"motor {ch} spent {frac * 100:.0f}% of the flight near maximum "
-                f"(>={SATURATION_PWM:.0f} PWM, threshold {SATURATION_WARN_FRACTION * 100:.0f}%) "
+                f"(>={sat_pwm:.0f} PWM, 95% of its output range; threshold {SATURATION_WARN_FRACTION * 100:.0f}%) "
                 "— the craft may be underpowered/overweight."
             )
             out.append(
@@ -176,7 +198,8 @@ class MotorsCheck(Check):
                     message_types=["RCOU"],
                     samples={
                         f"mean_{ch}": round(float(np.mean(vals)), 1),
-                        f"frac_above_{int(SATURATION_PWM)}_{ch}": round(frac, 3),
+                        f"frac_saturated_{ch}": round(frac, 3),
+                        "saturation_pwm": sat_pwm,
                     },
                 )
             )

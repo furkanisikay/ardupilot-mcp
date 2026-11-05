@@ -119,3 +119,22 @@ def test_ekf_primary_lane_switch_is_context_not_onset():
     tl = build_timeline(log, [])
     assert tl.onset_s is None
     assert [e.label for e in tl.events if e.source == "err"] == ["EKF primary core changed to 1"]
+
+
+def test_never_armed_log_has_no_onset_and_says_so():
+    # A .tlog of a vehicle on the bench: arming is recorded (heartbeats) and never set.
+    log = make_flight_log({"ATT": build_series(0.0, 10.0, Roll=[0.0] * 50)})
+    log.meta.arming_recorded = True
+    from ardupilot_mcp.model import Evidence, Finding, Severity
+
+    f = Finding(
+        check_id="ekf",
+        severity=Severity.WARN,
+        title="x",
+        explanation="y",
+        evidence=Evidence(time_start_s=2.0),
+    )
+    tl = build_timeline(log, [f])
+    assert tl.onset_s is None
+    assert any("never armed" in c for c in tl.caveats)
+    assert not any("could not be determined" in c for c in tl.caveats)

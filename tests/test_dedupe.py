@@ -60,12 +60,21 @@ def test_different_topics_never_merge():
     assert merge_duplicates([rc, batt]) == [rc, batt]
 
 
-def test_echoes_without_a_measurement_collapse_into_the_first():
+def test_echoes_without_a_measurement_collapse_into_the_firmware_message():
+    # The firmware's own message names more than its ERR record, so it carries the event;
+    # the event still starts at the earliest echo.
     a = _f("events", Severity.CRITICAL, "Error: CRASH_CHECK (ECode 1)", 50.0)
     b = _f("firmware", Severity.CRITICAL, "Firmware detected a crash and disarmed", 50.1)
     c = _f("firmware", Severity.CRITICAL, "Mode changed by crash failsafe", 50.2)
     out = merge_duplicates([a, b, c])
-    assert out == [a] and len(a.related) == 2
+    assert out == [b] and len(b.related) == 2
+    assert b.evidence.time_start_s == 50.0
+
+
+def test_echoes_of_equal_rank_collapse_into_the_first():
+    a = _f("events", Severity.CRITICAL, "Error: CRASH_CHECK (ECode 1)", 50.0)
+    b = _f("events", Severity.CRITICAL, "Error: CRASH_CHECK (ECode 1)", 50.3)
+    assert merge_duplicates([a, b]) == [a]
 
 
 def test_an_info_finding_never_hosts_a_failsafe():
