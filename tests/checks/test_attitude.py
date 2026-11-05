@@ -497,7 +497,7 @@ def test_plane_speed_note_needs_a_flight_spent_above_airspeed_max():
     assert f and "airspeed_at_onset" not in f[0].evidence.samples
 
 
-def _plane_roll(des, roll, modes=None):
+def _plane_roll(des, roll, modes=None, params=None, extra=None):
     n = len(des)
     att = build_series(
         0.0,
@@ -509,10 +509,60 @@ def _plane_roll(des, roll, modes=None):
         DesYaw=[0.0] * n,
         Yaw=[0.0] * n,
     )
-    msgs = {"ATT": att}
+    msgs = {"ATT": att, **(extra or {})}
     if modes:
         msgs["MODE"] = [{"TimeUS": 0, "ModeNum": m, "Mode": m} for m in modes]
-    return make_flight_log(msgs, vehicle_type="ArduPlane", vehicle_kind="plane")
+    return make_flight_log(msgs, vehicle_type="ArduPlane", vehicle_kind="plane", params=params)
+
+
+def _full_deflection_step(params):
+    # AUTOTUNE-style roll step from -55 to +55 deg; the roll follows at 30 deg/s for about 3.4 s.
+    des = [-55.0] * 20 + [55.0] * 60
+    roll = [-55.0] * 22 + [min(55.0, -55.0 + 3.0 * i) for i in range(58)]
+    return _plane_roll(des, roll, modes=[8], params=params)
+
+
+def test_plane_lag_held_back_by_the_rate_limit_is_a_warning():
+    # RLL2SRV_RMAX 40 deg/s: the controller needs (110 - 40 x 0.8) / 40 + 4 x 0.8 = 5.2 s.
+    f = AttitudeTrackingCheck().run(_full_deflection_step({"RLL2SRV_TCONST": 0.8, "RLL2SRV_RMAX": 40.0}))
+    assert [(x.severity, x.title) for x in f] == [
+        (Severity.WARN, "Attitude lagged a step in the demand (roll)")
+    ]
+
+
+def test_plane_lag_longer_than_the_controller_needs_stays_critical():
+    # No rate limit: four time constants (3.2 s) is all a first-order lag takes.
+    f = AttitudeTrackingCheck().run(_full_deflection_step({"RLL2SRV_TCONST": 0.8, "RLL2SRV_RMAX": 0.0}))
+    assert [x.severity for x in f] == [Severity.CRITICAL]
+
+
+def _roll_pid(i_term):
+    # 10 Hz PIDR: the demanded roll rate is +40 deg/s while P and FF push +8 deg of aileron.
+    n = 60
+    return {
+        "PIDR": build_series(
+            0.0, 10.0, Tar=[40.0] * n, P=[2.0] * n, I=[i_term] * n, D=[0.0] * n, FF=[6.0] * n
+        )
+    }
+
+
+def test_plane_critical_names_an_integrator_holding_the_surface_back():
+    des = [0.0] * 20 + [40.0] * 40
+    roll = [0.0] * 60  # never follows
+    f = AttitudeTrackingCheck().run(_plane_roll(des, roll, modes=[5], extra=_roll_pid(-12.0)))
+    assert [x.severity for x in f] == [Severity.CRITICAL]
+    s = f[0].evidence.samples
+    assert s["integrator_against_deg"] == 12.0 and s["other_terms_toward_deg"] == 8.0
+    assert s["integrator_held_fraction"] == 1.0
+    assert "PIDR.I, median 12 deg of aileron" in f[0].explanation
+    assert "PIDR" in f[0].evidence.message_types
+
+
+def test_plane_integrator_note_needs_the_integrator_to_outweigh_the_rest():
+    des = [0.0] * 20 + [40.0] * 40
+    f = AttitudeTrackingCheck().run(_plane_roll(des, [0.0] * 60, modes=[5], extra=_roll_pid(-5.0)))
+    assert [x.severity for x in f] == [Severity.CRITICAL]
+    assert "integrator_held_fraction" not in f[0].evidence.samples
 
 
 def test_plane_lag_after_a_demand_step_is_a_warning():

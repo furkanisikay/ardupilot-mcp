@@ -83,19 +83,35 @@ STEP_LAG_MAX_S = 1.5
 # same lag seen later. Design choice: a Plane divergence is also that lag when the demand moved
 # more than CRIT_DEG from STEP_LOOKBACK_S before it to its end, the aircraft was rotating toward
 # the demand in at least TOWARD_MIN_FRACTION of the samples where it rotated faster than
-# MOVING_RATE_DEG_S, and it was over within LAG_TCONSTS time constants (4 x 0.5 s by default:
-# a first-order lag has closed 98% of a step by then). A loss of control rotates away from the
-# demand. Validation on the 100 Plane attitude criticals in the 215 real logs: in the crash logs
-# no fixed-wing critical rotated toward the demand more than 79% of the time, and no crash log's
-# findings change; every critical it turns into a warning is in a flight that ended normally
-# (turn reversals in FBWA, AUTO, RTL and TAKEOFF, AUTOTUNE twitches). The windy FBWA upset in forum 99954 rotated toward the demand 51% of the
-# time, with the aileron and elevator at their limits, and stays critical.
+# MOVING_RATE_DEG_S, and it was over within the time the controller itself needs. That time
+# follows the firmware: the demanded rate is the angle error over the time constant, capped at
+# RLL2SRV_RMAX (PTCH2SRV_RMAX_UP / _DN), so a step of S deg is rate-limited until the error is
+# down to RMAX x TCONST and then closes like a first-order lag; LAG_TCONSTS time constants
+# (98% closed) plus (S - RMAX x TCONST) / RMAX. A loss of control rotates away from the demand.
+# Validation on the 100 Plane attitude criticals in the 215 real logs: in the crash logs no
+# fixed-wing critical rotated toward the demand more than 79% of the time, so none of them
+# changes; every critical it turns into a warning is in a flight that ended normally (turn
+# reversals in FBWA, AUTO, RTL and TAKEOFF, AUTOTUNE's full-deflection roll steps). The windy
+# FBWA upset in forum 99954 rotated toward the demand 51% of the time, with the aileron and
+# elevator at their limits, and stays critical.
 TOWARD_MIN_FRACTION = 0.90
 MOVING_RATE_DEG_S = 5.0
 LAG_TCONSTS = 4.0
 TCONST_DEFAULT_S = 0.5  # RLL2SRV_TCONST / PTCH2SRV_TCONST default
+# RLL2SRV_RMAX, PTCH2SRV_RMAX_UP and _DN default to 0, which disables the rate limit.
 # ArduPlane VTOL modes run the multicopter attitude controller, not the fixed-wing one.
 PLANE_Q_MODES = {17, 18, 19, 20, 21, 22, 23, 25}  # QSTABILIZE..QACRO, LOITER_ALT_QLAND
+# Plane's roll and pitch rate controllers command the surface as the sum of their P, I, D, FF
+# and DFF terms, in degrees of deflection (AP_RollController / AP_PitchController
+# _get_rate_out), and log each term in PIDR / PIDP. When the integrator points the surface
+# against the demanded rotation and is larger than the other terms together, the surface stays
+# on the wrong side however the demand moves. Design choice: that is reported when it held for
+# INTEGRATOR_HELD_FRACTION of the first INTEGRATOR_WINDOW_S of a Plane critical (counting
+# samples whose demanded rate is above MOVING_RATE_DEG_S). Validation on the 100 Plane attitude
+# criticals in the 215 real logs: it holds in three, all crashes (forum 128317's dive that did
+# not pull out, and the benchmark's 117787_0 and 137589_1), and in no flight that ended normally.
+INTEGRATOR_WINDOW_S = 1.5
+INTEGRATOR_HELD_FRACTION = 0.75
 
 # (desired field, actual field, axis label, is-yaw-circular).
 _AXES = (
@@ -379,6 +395,7 @@ class AttitudeTrackingCheck(Check):
                 "so the craft was likely underpowered/overweight for the demand."
             )
 
+        types = ["ATT", "RCOU"] if motors_saturated else ["ATT"]
         key = "lean" if rule == "lean" else axis
         samples: dict[str, float] = {
             f"peak_err_deg_{key}": round(peak_err, 1),
@@ -389,6 +406,11 @@ class AttitudeTrackingCheck(Check):
             if note is not None:
                 msg += note[0]
                 samples.update(note[1])
+            held = _plane_integrator_note(log, axis, t0, t1)
+            if held is not None:
+                msg += held[0]
+                samples.update(held[1])
+                types.append("PIDR" if axis == "roll" else "PIDP")
         if axis_errs is not None and worst is not None:
             win = (times >= worst.start_s) & (times <= worst.end_s)
             for name, e in axis_errs.items():
@@ -405,7 +427,7 @@ class AttitudeTrackingCheck(Check):
             recommendation=rec,
             time_start_s=t0,
             time_end_s=t1,
-            message_types=["ATT", "RCOU"] if motors_saturated else ["ATT"],
+            message_types=types,
             samples=samples,
         )
 
@@ -481,9 +503,6 @@ def _demand_step(
         step = float(np.ptp(dv[before]))
         if step > CRIT_DEG:
             return step, None
-    tconst = log.params.get("RLL2SRV_TCONST" if axis == "roll" else "PTCH2SRV_TCONST", TCONST_DEFAULT_S)
-    if iv.duration_s >= LAG_TCONSTS * tconst:
-        return None
     around = (td >= iv.start_s - STEP_LOOKBACK_S) & (td <= iv.end_s) & np.isfinite(dv)
     inside = (td >= iv.start_s) & (td <= iv.end_s) & np.isfinite(dv) & np.isfinite(av)
     if not around.any() or np.count_nonzero(inside) < 4:
@@ -491,12 +510,68 @@ def _demand_step(
     step = float(np.ptp(dv[around]))
     if step <= CRIT_DEG:
         return None
+    if iv.duration_s >= _lag_time_s(log, axis, step, float(np.median(dv[inside] - av[inside]))):
+        return None
     rate = np.gradient(av[inside], td[inside])
     moving = np.abs(rate) > MOVING_RATE_DEG_S
     if np.count_nonzero(moving) < 3:
         return None
     toward = float(np.mean(np.sign(rate[moving]) == np.sign((dv[inside] - av[inside])[moving])))
     return (step, toward) if toward >= TOWARD_MIN_FRACTION else None
+
+
+def _plane_integrator_note(
+    log: FlightLog, axis: str, t0: float | None, t1: float | None
+) -> tuple[str, dict[str, float]] | None:
+    """Text and samples when the rate integrator held the surface against the demand."""
+    pid = {"roll": "PIDR", "pitch": "PIDP"}.get(axis)
+    if pid is None or t0 is None or t1 is None or not log.has(pid):
+        return None
+    terms = ["Tar", "P", "I", "D", "FF"]
+    has_dff = "DFF" in log.fields(pid)  # Plane 4.5+
+    times, values = log.series_many(pid, terms + (["DFF"] if has_dff else []))
+    win = (times >= t0) & (times <= min(t1, t0 + INTEGRATOR_WINDOW_S))
+    tar, p, i, d, ff = (v[win] for v in values[:5])
+    rest = p + d + ff + (values[5][win] if has_dff else 0.0)
+    demanded = np.isfinite(tar) & np.isfinite(i) & np.isfinite(rest) & (np.abs(tar) > MOVING_RATE_DEG_S)
+    if np.count_nonzero(demanded) < 3:
+        return None
+    sign = np.sign(tar[demanded])
+    against, toward = -i[demanded] * sign, rest[demanded] * sign
+    held = (against > 0) & (against >= toward)
+    frac = float(np.mean(held))
+    if frac < INTEGRATOR_HELD_FRACTION:
+        return None
+    surface, pre = ("aileron", "RLL") if axis == "roll" else ("elevator", "PTCH")
+    i_deg, rest_deg = float(np.median(against)), float(np.median(toward))
+    text = (
+        f" For {frac * 100:.0f}% of its first {INTEGRATOR_WINDOW_S:.1f} s the {axis} rate controller's integrator "
+        f"held the {surface} against the demanded rotation ({pid}.I, median {i_deg:.0f} deg of {surface}), more than "
+        f"the P, D and FF terms pushed toward it (median {rest_deg:.0f} deg), so the {surface} did not move the way "
+        f"the demand asked. Look at the tune of this axis ({pre}_RATE_P, _FF, _I and _IMAX) and at the trim."
+    )
+    return text, {
+        "integrator_against_deg": round(i_deg, 1),
+        "other_terms_toward_deg": round(rest_deg, 1),
+        "integrator_held_fraction": round(frac, 2),
+    }
+
+
+def _lag_time_s(log: FlightLog, axis: str, step: float, gap: float) -> float:
+    """How long Plane's attitude controller takes to close a step of ``step`` deg.
+
+    The demanded rate is the angle error over the time constant, capped at the rate limit
+    (AP_RollController / AP_PitchController); ``gap`` (demand minus actual) picks the pitch
+    direction.
+    """
+    p = log.params
+    if axis == "roll":
+        tconst, rmax = p.get("RLL2SRV_TCONST", TCONST_DEFAULT_S), p.get("RLL2SRV_RMAX", 0.0)
+    else:
+        tconst = p.get("PTCH2SRV_TCONST", TCONST_DEFAULT_S)
+        rmax = p.get("PTCH2SRV_RMAX_UP" if gap > 0 else "PTCH2SRV_RMAX_DN", 0.0)
+    limited = max(0.0, step - rmax * tconst) / rmax if rmax > 0 else 0.0
+    return LAG_TCONSTS * tconst + limited
 
 
 def _dominant_axis(times: np.ndarray, axis_errs: dict[str, np.ndarray], iv: Interval) -> str:

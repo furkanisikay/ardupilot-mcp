@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- `attitude` (Plane): a critical now says when the **rate controller's integrator held the surface
+  against the demand**. The roll and pitch controllers command the aileron and elevator as the sum
+  of their P, I, D and FF terms (PIDR / PIDP); when the I term pointed the other way and outweighed
+  the rest for most of the failure's first 1.5 s, the surface never moved the way the demand
+  asked. Forum 128317 (a FBWA dive that did not pull out): 13 deg of down elevator held by the
+  integrator against 10 deg of pull from the other terms, so the elevator only crept back to
+  neutral, as the pilot saw. It also appears on the benchmark's 117787_0 and 137589_1, and on no
+  flight that ended normally.
 - `param_audit` (Copter, heli): **no EKF yaw source for compass-less flight**. With no compass in
   use, EK3_SRC1_YAW must name another yaw source on a Copter: GSF (8), GPS yaw (2, 3) or
   ExternalNav (6). The EKF sources page says Copter needs it set explicitly, unlike Plane.
@@ -131,10 +139,13 @@ All notable changes to this project are documented here. The format is based on
   90 deg reversal in RTL takes about 1.6 s) was still critical, because most of the step came
   after the divergence began. A divergence is now also that lag when the demand moved more than
   25 deg around it, the aircraft kept rotating toward the demand at least 90% of the time it was
-  rotating, and it was over within four time constants (RLL2SRV_TCONST / PTCH2SRV_TCONST, 2 s by
-  default). A loss of control rotates away from the demand: no fixed-wing critical in the crash
-  logs rotated toward it more than 79% of the time, and the windy FBWA upset of forum 99954 (51%,
-  aileron and elevator at their limits, 13 m of height lost) stays critical.
+  rotating, and it was over within the time the controller itself needs: four time constants
+  (RLL2SRV_TCONST / PTCH2SRV_TCONST, 2 s by default), plus the time the rate limit
+  (RLL2SRV_RMAX, PTCH2SRV_RMAX_UP / _DN) holds the rotation back on a large step, as
+  AP_RollController and AP_PitchController compute it. A loss of control rotates away from the
+  demand: no fixed-wing critical in the crash logs rotated toward it more than 79% of the time,
+  and the windy FBWA upset of forum 99954 (51%, aileron and elevator at their limits, 13 m of
+  height lost) stays critical.
 - An EKF rejection that began while the aircraft was already out of control (inside an attitude
   tracking failure, or within 2 s of its end) was a second CRITICAL that read as an independent
   fault. It began after the loss of control, so it cannot have caused it: it is now a WARN that
