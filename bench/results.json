@@ -3,11 +3,11 @@
   "logs": 49,
   "scored": 41,
   "top1_hits": 14,
-  "top3_hits": 24,
+  "top3_hits": 25,
   "logs_with_false_critical": 22,
-  "false_criticals_total": 29,
+  "false_criticals_total": 27,
   "false_criticals_by_check": {
-   "attitude": 16,
+   "attitude": 14,
    "ekf": 5,
    "rcin": 3,
    "power": 2,
@@ -15,10 +15,10 @@
    "events": 1,
    "gps": 1
   },
-  "false_criticals_before_impact": 27,
+  "false_criticals_before_impact": 25,
   "measured_on": {
    "version": "1.0.0",
-   "revision": "fb06cd3"
+   "revision": "c55dadb"
   }
  },
  "scores": [
@@ -340,17 +340,15 @@
     "prearm",
     "sensors"
    ],
-   "top_check": "attitude",
+   "top_check": "ekf",
    "hit": false,
-   "top3": false,
+   "top3": true,
    "onset_check": "attitude",
    "false_criticals": [
-    "attitude",
-    "attitude",
     "ekf",
     "ekf"
    ],
-   "false_criticals_before_impact": 4
+   "false_criticals_before_impact": 2
   },
   {
    "id": "142533_0",
